@@ -10,8 +10,12 @@ env:
 
 jobs:
   rust:
-    name: Rust (fmt, clippy, test)
-    runs-on: ubuntu-latest
+    name: Rust (fmt, clippy, test) on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     defaults:
       run:
         working-directory: impl

@@ -131,7 +131,7 @@ cargo test
 
 - [Specification overview](docs/spec/00-overview.md)
 - [Shared devices and groups](docs/spec/10-shared-devices-and-groups.md)
-- [Milestone 1 plan: two Linux devices share the clipboard](docs/milestones/01-clipboard-poc.md)
+- [Milestone 1 plan: a Linux machine and a Mac share the clipboard](docs/milestones/01-clipboard-poc.md)
 - [Architecture decisions](docs/adr/)
 - [Glossary](docs/glossary.md)
 - [Prior art](docs/prior-art.md)

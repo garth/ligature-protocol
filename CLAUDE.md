@@ -108,7 +108,8 @@ The reference implementation is Rust and is also the production implementation
   `lpctl` (CLI). `integrations/wireguard-integration` is a non-core placeholder.
   Dependency direction: the three layer crates depend only on `lp-core`; binaries depend on
   the layer crates; integrations depend on `lp-core` and never the other way round.
-- `.github/workflows/ci.yml`: fmt, clippy, test, markdownlint, JSON Schema compile (ajv).
+- `.github/workflows/ci.yml`: fmt, clippy, test on Linux and macOS; markdownlint; JSON
+  Schema compile (ajv).
 
 ## Commands
 

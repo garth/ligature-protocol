@@ -1,52 +1,65 @@
-# Milestone 1: two Linux devices pair and share the clipboard
+# Milestone 1: a Linux machine and a Mac share the clipboard
 
 **Status:** Plan.
 
 ## 1. Goal
 
-One person. Two Linux machines on the same LAN (or two daemons on one machine with
-separate data directories). Pair them with the proximity ceremony, then copy text on one
-and paste it on the other, in both directions, with no server, no account and no internet.
-Revoke one and show it can no longer connect. Restart both and show the pairing survived.
+One person. One Linux machine and one Mac on the same LAN. Pair them with the proximity
+ceremony, then copy text on either and paste it on the other, in both directions, with no
+server, no account and no internet. Revoke one and show it can no longer connect. Restart
+both and show the pairing survived.
+
+The milestone is deliberately cross-platform from the first commit: it proves the design
+on both desktop platforms at once, and it forces the platform-specific parts (clipboard,
+daemon lifecycle, presence) behind traits from the start rather than after a Linux-only
+proof.
 
 ## 2. Non-goals for this milestone
 
 Groups and group devices (chapter 10), relays, hole punching and the DHT (chapter 04
-section 5), the `share` family, non-text clipboard
-content, BLE, headless pairing pages, macOS, Android or iOS, the system-level principal daemon as
-a separate process (section 5, phase F), and the optional WireGuard integration.
+section 5), the `share` family, non-text clipboard content, BLE, headless pairing pages,
+Android or iOS, the system-level principal daemon as a separate process (section 5, phase
+F), D-Bus desktop integration on Linux, code signing or notarisation on macOS, and the
+optional WireGuard integration.
 
-## 3. Decisions to pin before coding
+## 3. Decisions
 
-All five are now decided; each has its ADR.
+All five are decided; each has its ADR.
 
-1. **Signature algorithm.** Decided: Ed25519 only ([ADR 0027](../adr/0027-ed25519.md)),
-   rendered as multibase/multicodec `z6Mk…`.
-2. **Wire encoding of messages.** Decided: CBOR from the start
-   ([ADR 0025](../adr/0025-cbor-wire-encoding.md)). Byte fields are CBOR byte strings,
-   timestamps and keys stay text, signed facts use core deterministic encoding. `lpctl`
-   may print messages as diagnostic notation for debugging.
-3. **QUIC stack.** Decided: quinn over rustls
-   ([ADR 0028](../adr/0028-quinn-over-rustls.md)); mutual raw-public-key authentication,
-   rustls default suites, no 0-RTT. Task B1 is the verification gate.
-4. **Binding the ceremony code to the session.** Decided: a six-digit (or two-word) short
-   authentication string derived from the TLS exporter
-   ([ADR 0029](../adr/0029-ceremony-code-from-tls-exporter.md)).
-5. **Implementation language.** Decided: Rust, the existing workspace under `impl/`
-   ([ADR 0026](../adr/0026-rust-reference-implementation.md)).
+1. **Signature algorithm.** Ed25519 only ([ADR 0027](../adr/0027-ed25519.md)), rendered as
+   multibase/multicodec `z6Mk…`.
+2. **Wire encoding.** CBOR from the start ([ADR 0025](../adr/0025-cbor-wire-encoding.md)).
+   Byte fields are CBOR byte strings, timestamps and keys stay text, signed facts use core
+   deterministic encoding. `lpctl` may print messages as diagnostic notation for debugging.
+3. **QUIC stack.** quinn over rustls ([ADR 0028](../adr/0028-quinn-over-rustls.md)); mutual
+   raw-public-key authentication, rustls default suites, no 0-RTT. Task B1 is the
+   verification gate, on both platforms.
+4. **Ceremony code.** A six-digit (or two-word) short authentication string derived from the
+   TLS exporter ([ADR 0029](../adr/0029-ceremony-code-from-tls-exporter.md)).
+5. **Implementation language.** Rust, the existing workspace under `impl/`
+   ([ADR 0026](../adr/0026-rust-reference-implementation.md)), building and running on
+   Linux and macOS ([ADR 0033](../adr/0033-supported-platforms.md)).
+
+One plumbing choice made here rather than in an ADR, because it is an implementation
+convenience: the control channel between `lpctl` and `ligatured` is a Unix domain socket
+carrying the same CBOR messages on both platforms. D-Bus integration for Linux desktops is
+deferred to a later milestone.
 
 ## 4. Exit criteria
 
-- Two freshly initialised daemons pair in one ceremony started from `lpctl pair`.
+- A freshly initialised Linux daemon and a freshly initialised macOS daemon pair in one
+  ceremony started from `lpctl pair`.
 - After pairing, each daemon's `lpctl devices` lists the other as a binding of the same
   person with a verified role signature.
-- Text copied on either machine appears in the other's clipboard within a second on a LAN.
+- Text copied on either machine appears in the other's clipboard within a second on a LAN,
+  in both directions.
 - `lpctl revoke` on either side stops the other from authenticating on its next connection
   attempt, and the revocation survives restarts.
 - Both daemons restart with their trust store intact and reconnect without a new ceremony.
 - Every message exchanged is CBOR that, decoded, validates against a schema under
   `schemas/`, and the fixtures used in tests are committed as the first conformance
   vectors.
+- CI builds and tests the workspace on Linux and macOS.
 
 ## 5. Work breakdown
 
@@ -77,24 +90,28 @@ flowchart LR
   sign the deterministic CBOR encoding of a key-and-role fact with `binding` or
   `principal`; verify the chain to a master key. Unit tests become the first conformance
   vectors.
-- A4. Local store on disk under `$XDG_DATA_HOME/ligature/`: own keys, device records with
-  signatures, revocations. CBOR files, the same encoding as the wire. Load, save,
-  round-trip tests.
+- A4. Local store on disk: own keys, device records with signatures, revocations. CBOR
+  files, the same encoding as the wire, under `$XDG_DATA_HOME/ligature/` on Linux and
+  `~/Library/Application Support/ligature/` on macOS, behind one path-resolution function.
+  Load, save, round-trip tests.
 - A5. Revocation fact: create, verify, apply to the store (`revoked` flag retained).
 
 ### Phase B: transport
 
 - B1. QUIC endpoint with raw-public-key TLS (`lp-crypto::session`,
-  `lp-transport::quic`): listen, dial, present the device key, read the peer's.
+  `lp-transport::quic`): listen, dial, present the device key, read the peer's. Confirm
+  mutual authentication, access to the peer's key bytes, the exporter, and migration, on
+  Linux and on macOS, before anything is built on it.
 - B2. Recognition check on connect: the peer key is a binding of mine (chain verifies
   against my master key) or the connection proceeds no further than the pairing offer.
-- B3. mDNS/DNS-SD advertise and browse (`_ligature._udp`), with a random per-boot
-  identifier in the TXT record as the placeholder for the per-epoch identifier of chapter
-  04 section 4.1.
+- B3. mDNS/DNS-SD advertise and browse (`_ligature._udp`) with one Rust implementation on
+  both platforms, with a random per-boot identifier in the TXT record as the placeholder
+  for the per-epoch identifier of chapter 04 section 4.1. Confirm it coexists with Bonjour
+  on macOS.
 - B4. Connection manager: one connection per peer, reconnect on loss, stream open per
   capability type.
 - B5. Integration test: two endpoints on loopback discover each other and open an
-  authenticated connection.
+  authenticated connection. Runs on both platforms in CI.
 
 ### Phase C: the ceremony
 
@@ -124,43 +141,57 @@ flowchart LR
 
 - E1. `org.ligatureprotocol.capability.clipboard` schema: text/plain only, a `set`
   operation, a size cap.
-- E2. Wayland clipboard watcher and setter via `wlr-data-control` (Hyprland is the first
+- E2. A `Clipboard` trait: watch for changes, read text, set text.
+- E3. Linux implementation via `wlr-data-control` on Wayland (Hyprland is the first
   target); detect changes, suppress echoes by content hash.
-- E3. Clipboard stream handler: on local change send to every connected binding of mine;
+- E4. macOS implementation via the pasteboard: poll the change count at a short interval,
+  read and set text; the same echo suppression.
+- E5. Clipboard stream handler: on local change send to every connected binding of mine;
   on receive, set locally. Last-writer-wins by timestamp.
-- E4. Implicit same-person grant recorded with basis `implicit` so the grant path exists
+- E6. Implicit same-person grant recorded with basis `implicit` so the grant path exists
   even though no prompt is shown.
 
 ### Phase F: daemon plumbing
 
-- F1. `ligatured` as a per-account systemd user service holding both the binding and, for
-  this milestone, the principal key (a personal device's principal and binding share a
-  process; the separate system-level daemon is deferred).
-- F2. D-Bus interface for `lpctl` (zbus): status, pair, devices, revoke, caps.
-- F3. Persistence across restart: keys, store, and reconnection without a new ceremony.
+- F1. `ligatured` holds both the binding and, for this milestone, the principal key (a
+  personal device's principal and binding share a process; the separate system-level
+  daemon is deferred). One binary, platform differences behind traits.
+- F2. Control channel: a Unix domain socket in the runtime directory carrying CBOR
+  messages, used by `lpctl` for status, pair, devices, revoke and caps. Identical on both
+  platforms.
+- F3. Linux service: systemd user unit (`crates/ligatured/systemd/`).
+- F4. macOS service: launchd agent plist (`crates/ligatured/launchd/`), run from a local
+  build without signing or notarisation.
+- F5. Persistence across restart: keys, store, and reconnection without a new ceremony, on
+  both platforms.
 
 ### Phase G: verification and write-up
 
-- G1. End-to-end script: two daemons with separate `XDG_*` directories on one machine;
-  pair, copy both ways, revoke, restart. Runs in CI on Linux.
-- G2. Commit the test fixtures as the first conformance vectors under `vectors/`.
-- G3. Update chapters 02, 03, 04, 05 and 06 with what was actually built, still marked
+- G1. End-to-end script for two machines on one LAN: pair, copy both ways, revoke, restart.
+  Run by hand between a Linux machine and a Mac and recorded in the ticket.
+- G2. Loopback end-to-end test with two daemons and separate data directories on one
+  machine, runs in CI on Linux and macOS.
+- G3. Commit the test fixtures as the first conformance vectors under `vectors/`.
+- G4. Update chapters 02, 03, 04, 05, 06 and 08 with what was actually built, still marked
   draft; record any deviation as an ADR.
 
 ## 6. Risks
 
-- The QUIC stack's raw-public-key support may be incomplete on one side (client or server
-  authentication). Check in B1 before anything else is built on it.
+- The QUIC stack's raw-public-key support may be incomplete on one side or one platform.
+  B1 checks both before anything is built on it.
+- Pasteboard polling on macOS adds latency and a little CPU; the interval needs choosing
+  against the one-second exit criterion.
+- Two mDNS stacks on one Mac (ours and Bonjour) may interfere; B3 confirms coexistence or
+  falls back to Bonjour through a platform-specific implementation behind the same trait.
 - The Wayland clipboard path differs by compositor; `wlr-data-control` covers Hyprland and
-  other wlroots-style compositors but not GNOME. Out of scope here, but the watcher should
-  be behind a trait.
-- Channel binding of the ceremony code depends on exporter support in the TLS library;
-  ADR 0029 defines the fallback and requires the gap to be recorded.
+  other wlroots-style compositors but not GNOME. Out of scope here, behind the trait.
+- Cross-platform end-to-end runs cannot happen in hosted CI; G1 is a manual run and G2 is
+  the automated stand-in.
 
 ## 7. After this milestone
 
-Milestone 2 candidates, in no order: the macOS daemons under launchd as the second desktop
-platform; offline or passphrase-derived master keys and the introducer choice at pairing;
-the `share` family between two people (requires the `person` role and the second master
-key); the headless pairing page; a group with one group device; relays and the DHT for the
-away-from-home case.
+Milestone 2 candidates, in no order: offline or passphrase-derived master keys and the
+introducer choice at pairing; D-Bus desktop integration on Linux; the `share` family between
+two people (requires the `person` role and the second master key); the headless pairing
+page; a group with one group device; relays and the DHT for the away-from-home case; the
+separate system-level principal daemon.

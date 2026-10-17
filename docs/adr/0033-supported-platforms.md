@@ -29,7 +29,8 @@ and keystores are recorded in chapter 08 and nowhere else.
 
 ## Consequences
 
-The Rust implementation (ADR 0026) must build and run on Linux and macOS from milestone 2
-on, with Android following. Capability families are specified once; a platform that cannot
-offer one simply does not advertise it. Chapter 08 gains a macOS section; the device
-schema's platform examples and `lp-core::Platform` gain `macos`.
+The Rust implementation (ADR 0026) builds and runs on Linux and macOS from milestone 1,
+whose target is a Linux machine and a Mac sharing the clipboard, with Android following.
+Capability families are specified once; a platform that cannot offer one simply does not
+advertise it. Chapter 08 gains a macOS section; the device schema's platform examples and
+`lp-core::Platform` gain `macos`.

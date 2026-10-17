@@ -5,6 +5,19 @@
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DeviceId(pub String);
 
+/// Whether a device record describes the device itself or one person's
+/// account on it. Spec chapter 10.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DeviceKind {
+    /// The device itself: its own key, a system-level daemon, owner of the
+    /// device-scoped capabilities.
+    Principal,
+    /// One person's account on a device: member of that person's device set,
+    /// owner of their user-scoped capabilities there. A personal device is a
+    /// single binding.
+    Binding,
+}
+
 /// Platform family a device runs on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -29,6 +42,8 @@ pub enum Platform {
 pub struct DeviceRecord {
     /// The device's identifier.
     pub id: DeviceId,
+    /// Principal or binding.
+    pub kind: DeviceKind,
     /// User-chosen display name.
     pub display_name: String,
     /// Platform family.

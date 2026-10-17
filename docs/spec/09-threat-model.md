@@ -24,6 +24,9 @@ information.
 - A compromised device within the set.
 - A malicious guardian, or a coalition of guardians below threshold.
 - A physical attacker with brief access to an unlocked device.
+- A curious or malicious member of the user's group, including a departed member whose
+  access was not fully revoked.
+- A compromised shared device, which affects every person bound to it.
 
 ## 4. Security goals
 
@@ -31,6 +34,16 @@ Confidentiality and integrity of peer traffic against network attackers, the PDS
 helper. Authenticity of device membership. Recovery that cannot be completed by fewer than
 the threshold of guardians, nor without the time delay. Open question: forward secrecy and
 post-compromise security targets beyond what MLS provides by default.
+
+### 4.0 Groups and shared devices
+
+A group member must not be able to read another member's user-scoped traffic or use
+another member's capabilities without a grant. On a shared device, one account's daemon
+must not be able to read another account's clipboard or MLS state; LP relies on the
+operating system's account isolation for this and says so (chapter 08). A departed member
+is removed from the group record and from every cross-identity MLS group. Open question:
+whether a device-scoped capability invoked by a group member should be visible to the
+present user even after approval (an indicator), to limit silent use.
 
 ### 4.1 Helpers
 
@@ -77,4 +90,5 @@ version.
 ## 7. Open questions
 
 - Should a compromised device be able to revoke all others? See chapter 02.
-- How does the model change when household members join?
+- What a shared device's system-level daemon can see of each account's traffic, and how
+  that is minimised.

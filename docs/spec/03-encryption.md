@@ -32,8 +32,10 @@ whether the QUIC layer should use the MLS exporter to bind the two layers togeth
 ## 2. Group lifecycle
 
 A device set has one MLS group. The first device creates it; each added device is
-committed into the group by an existing member; a revoked device is removed. Open question:
-whether households use a second group or a sub-group mechanism.
+committed into the group by an existing member; a revoked device is removed. On a shared
+device, each user-device binding is a member of its own person's group; the device
+principal is in none of them. Cross-identity grants create narrower MLS groups (chapter 10
+section 6); another person's device never joins this one.
 
 ## 3. Credentials
 
@@ -63,3 +65,5 @@ sees plaintext secrets.
 
 - Which ciphersuite(s) are mandatory to implement?
 - How do devices that are offline for a long time catch up on epochs?
+- How many cross-identity MLS groups a busy household ends up with, and whether that is
+  acceptable (chapter 10).

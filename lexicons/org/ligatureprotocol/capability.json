@@ -6,12 +6,23 @@
     "descriptor": {
       "type": "object",
       "description": "One capability offered by one device. Embedded in org.ligatureprotocol.device and announced over the transport.",
-      "required": ["type"],
+      "required": [
+        "type",
+        "scope"
+      ],
       "properties": {
         "type": {
           "type": "string",
           "description": "NSID of the capability type, for example org.ligatureprotocol.capability.clipboard.",
           "format": "nsid"
+        },
+        "scope": {
+          "type": "string",
+          "description": "Whether the capability belongs to a user's session on the device (user) or to the device itself (device). See spec chapter 10.",
+          "knownValues": [
+            "user",
+            "device"
+          ]
         },
         "version": {
           "type": "integer",

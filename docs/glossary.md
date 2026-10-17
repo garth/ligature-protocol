@@ -17,12 +17,22 @@ keys so that trust in the user implies trust in their devices.
 **Device**: A single piece of hardware (or a software instance) holding its own keys and
 belonging to a device set.
 
-**Device set**: All devices trusted by one identity. Corresponds to one MLS group.
+**Device principal**: The device itself on a shared device: its own key and system-level
+daemon, owner of the device-scoped capabilities.
+
+**Device set**: All devices (or user-device bindings) trusted by one identity. Corresponds
+to one MLS group.
+
+**Device-scoped capability**: A capability that belongs to the device rather than to any
+account on it: display, speakers, sensors, physical input.
 
 **DID**: Decentralized Identifier. LP supports `did:plc` and `did:web`.
 
 **Grant**: A record authorising one device to use a capability of another, with scope and
 expiry.
+
+**Group**: A set of identities, such as a household, with admins, a membership record,
+shared devices and a policy. Membership alone grants nothing; access is by grant.
 
 **Guardian**: A person or device holding a Shamir share of the user's recovery secret.
 
@@ -53,6 +63,9 @@ end-to-end encryption with efficient membership changes.
 **pkarr**: Public-Key Addressable Resource Records: signed DNS-style records keyed by a
 public key, published to the BitTorrent Mainline DHT. One of LP's discovery options.
 
+**Present**: Having an active, unlocked session on a device. The present person approves
+cross-identity requests for that device's device-scoped capabilities.
+
 **PDS**: Personal Data Server. The atproto server that hosts a user's repository and, in
 LP, their Space.
 
@@ -72,5 +85,12 @@ as the recovery root.
 
 **Threshold share**: One piece of a secret split with Shamir's Secret Sharing; a threshold
 number of shares reconstructs the secret.
+
+**User-device binding**: One person's account on one device: its own key, cross-signed by
+that person's identity, member of their device set, owner of their user-scoped
+capabilities there.
+
+**User-scoped capability**: A capability that belongs to a person's session on a device:
+clipboard, notifications, personal files.
 
 **UWB**: Ultra-wideband radio, used for precise ranging in in-person verification.

@@ -9,9 +9,9 @@ explicit grants. See [ADR 0008](../adr/0008-capability-model.md).
 
 ## 2. Capability descriptors
 
-A capability descriptor names a capability type (an NSID), the device that offers it, and
-type-specific parameters. Descriptors are published in the device record and announced
-over the transport. See
+A capability descriptor names a capability type (an NSID), the principal that offers it,
+its scope (`user` or `device`, chapter 10), and type-specific parameters. Descriptors are
+published in the device record and announced over the transport. See
 [`org.ligatureprotocol.capability`](../../lexicons/org/ligatureprotocol/capability.json).
 
 ## 3. Initial capability families
@@ -25,9 +25,13 @@ Lexicon. Open question: which two or three families the proof of concept should 
 
 A device requests a capability from a peer; the peer (or the user, through the peer)
 grants or denies. Grants are typed records with scope and expiry. See
-[`org.ligatureprotocol.grant`](../../lexicons/org/ligatureprotocol/grant.json). Open
-question: whether grants between a user's own devices should default to allow, with
-household grants defaulting to deny.
+[`org.ligatureprotocol.grant`](../../lexicons/org/ligatureprotocol/grant.json).
+
+Defaults follow identity boundaries (ADR 0015): a person's own devices may use that
+person's user-scoped capabilities without a prompt; anything across identities needs an
+explicit grant, approved by the person whose capability it is or, for a device-scoped
+capability, by the person present on the device or the device's policy (chapter 10).
+Open question: whether a person may opt their own devices out of the implicit default.
 
 ## 5. Invocation
 
@@ -43,4 +47,5 @@ A bridge is just a device that advertises a capability on behalf of something el
 ## 7. Open questions
 
 - Versioning and negotiation of capability types.
-- Capability discovery across household identities.
+- Capability discovery across group identities: what a member can see of another
+  member's devices before asking.

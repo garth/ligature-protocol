@@ -9,7 +9,14 @@
       "key": "tid",
       "record": {
         "type": "object",
-        "required": ["deviceId", "displayName", "platform", "signingKey", "mlsKeyPackage", "createdAt"],
+        "required": [
+          "deviceId",
+          "displayName",
+          "platform",
+          "signingKey",
+          "mlsKeyPackage",
+          "createdAt"
+        ],
         "properties": {
           "deviceId": {
             "type": "string",
@@ -25,7 +32,32 @@
           "platform": {
             "type": "string",
             "description": "Platform family of the device.",
-            "knownValues": ["linux", "android", "ios", "hub", "other"]
+            "knownValues": [
+              "linux",
+              "android",
+              "ios",
+              "hub",
+              "other"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "description": "Whether this record describes the device itself (principal) or one person's account on it (binding). A personal device is a single binding. See spec chapter 10.",
+            "knownValues": [
+              "principal",
+              "binding"
+            ],
+            "default": "binding"
+          },
+          "owner": {
+            "type": "string",
+            "description": "For a principal: the DID of the identity or group that owns the device. For a binding: the DID of the account holder (also the record's repository owner).",
+            "format": "did"
+          },
+          "principal": {
+            "type": "string",
+            "description": "For a binding on a shared device: the deviceId of the device principal it runs on.",
+            "maxLength": 128
           },
           "signingKey": {
             "type": "string",
@@ -45,7 +77,10 @@
           "capabilities": {
             "type": "array",
             "description": "Capabilities this device currently advertises.",
-            "items": { "type": "ref", "ref": "org.ligatureprotocol.capability#descriptor" },
+            "items": {
+              "type": "ref",
+              "ref": "org.ligatureprotocol.capability#descriptor"
+            },
             "maxLength": 256
           },
           "revoked": {

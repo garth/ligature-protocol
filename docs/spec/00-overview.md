@@ -14,8 +14,8 @@ remaining chapters fit together.
 
 LP aims to be local-first, self-hostable, end-to-end encrypted, and built on existing open
 standards. It does not aim to be a general messaging protocol, a file-sync engine, or a
-replacement for the protocols it bridges to. Open question: whether multi-user households
-(several identities sharing hub devices) are a first-class goal or a later extension.
+replacement for the protocols it bridges to. Shared devices with several user accounts,
+and groups of identities such as a household, are first-class goals (chapter 10).
 
 ## 3. Terminology
 
@@ -37,7 +37,8 @@ LP is organised as five layers plus a shared-state store:
 
 Shared state (chapter 06) lives in an atproto Space on a PDS. Recovery (chapter 07)
 describes how a person regains control after losing devices. Chapters 08 and 09 cover
-platform constraints and the threat model.
+platform constraints and the threat model. Chapter 10 covers shared multi-user devices and
+groups of identities.
 
 ## 5. Document conventions
 

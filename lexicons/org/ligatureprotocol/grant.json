@@ -9,7 +9,12 @@
       "key": "tid",
       "record": {
         "type": "object",
-        "required": ["grantor", "grantee", "capability", "createdAt"],
+        "required": [
+          "grantor",
+          "grantee",
+          "capability",
+          "createdAt"
+        ],
         "properties": {
           "grantor": {
             "type": "string",
@@ -34,6 +39,25 @@
           "scope": {
             "type": "unknown",
             "description": "Capability-specific restriction on what the grantee may do. Schema defined by the capability type."
+          },
+          "approvedBy": {
+            "type": "string",
+            "description": "DID of the person who approved a cross-identity grant: the capability's owner, or the person present on the device for a device-scoped capability. Absent for implicit same-identity grants and for grants made by device policy.",
+            "format": "did"
+          },
+          "basis": {
+            "type": "string",
+            "description": "How the grant came about.",
+            "knownValues": [
+              "implicit",
+              "approval",
+              "policy"
+            ]
+          },
+          "standing": {
+            "type": "boolean",
+            "description": "True when the approver chose to remember the answer; false for a one-time approval.",
+            "default": false
           },
           "expiresAt": {
             "type": "string",

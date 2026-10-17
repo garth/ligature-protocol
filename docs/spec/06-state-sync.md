@@ -12,12 +12,15 @@ atproto, which this chapter treats as an accepted risk.
 ## 2. What lives in the Space
 
 Device records, capability descriptors, grants, guardian records and non-secret settings.
-Anything secret is stored as an MLS-encrypted payload (chapter 03).
+Anything secret is stored as an MLS-encrypted payload (chapter 03). Group records and the
+records of shared devices live in a group-owned Space rather than any one person's
+(chapter 10). Open question: who hosts it; the household hub's PDS is the natural choice.
 
 ## 3. Permissions
 
-A Space is permissioned: the user's devices can read and write; guardians and household
-members receive narrower permissions. Open question: how LP permissions map onto whatever
+A Space is permissioned: the user's devices can read and write; guardians and group
+members receive narrower permissions. In a group Space, members read membership and shared
+device records; admins change them. Open question: how LP permissions map onto whatever
 permission model Spaces ship with.
 
 ## 4. Consistency and conflicts

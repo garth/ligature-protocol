@@ -12,8 +12,12 @@ those constraints so capability specs do not assume more than a platform allows.
 The reference daemon (`ligatured`) runs as a systemd user service and exposes D-Bus
 interfaces. Clipboard, notifications and remote input on Wayland go through compositor
 protocols and portals (for example `wlr-data-control`, `xdg-desktop-portal`), which differ
-by compositor. Open question: the minimum set of compositors and portals to support
-(Hyprland is the first target).
+by compositor. On a multi-account machine each account runs its own `ligatured` as a
+systemd user service for user-scoped capabilities, and a system-level service owns the
+device principal and device-scoped capabilities, learning who is present from logind. LP
+relies on the OS's account isolation to keep one account's keys and clipboard from another.
+Open question: the minimum set of compositors and portals to support (Hyprland is the first
+target), and how the system service drives audio and display without a session of its own.
 
 ## 3. Android
 

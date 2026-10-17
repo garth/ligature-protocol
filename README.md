@@ -22,6 +22,9 @@ Apple-Continuity-like ecosystem for Linux users, built on existing open standard
 - **Helpers are replaceable and untrusted.** Remote connectivity may use discovery,
   hole-punching and relay services. Any helper may be operated by anyone, is listed in the
   user's own records, and is never trusted with plaintext or identity.
+- **Permission across people, not just devices.** Shared devices with several accounts
+  and groups such as a household are first-class. Your own devices work together without
+  prompts; using someone else's device or capability asks the person who is there.
 - **Interoperate, don't replace.** Bridge to KDE Connect, LocalSend, Matter/Thread,
   CalDAV/CardDAV and Syncthing where practical.
 
@@ -116,6 +119,7 @@ cargo test
 ## Documentation
 
 - [Specification overview](docs/spec/00-overview.md)
+- [Shared devices and groups](docs/spec/10-shared-devices-and-groups.md)
 - [Architecture decisions](docs/adr/)
 - [Glossary](docs/glossary.md)
 - [Prior art](docs/prior-art.md)

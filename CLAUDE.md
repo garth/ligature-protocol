@@ -45,6 +45,14 @@ The authoritative record is `docs/adr/`. Summary, in layer order:
    refresh. (ADR 0009)
 9. **Interop**: bridge to KDE Connect, LocalSend, Matter/Thread, CalDAV/CardDAV, Syncthing;
    iPhone via BLE accessory profiles (ANCS/AMS, HFP/MAP/PBAP) and EU DMA APIs. (ADR 0010)
+10. **Shared devices and groups**: capabilities are `user`-scoped (clipboard,
+    notifications, files; owned by a user-device binding in that person's MLS group) or
+    `device`-scoped (display, speakers, sensors, input; owned by a device principal). A
+    shared device has one principal plus one binding per account. Groups (households) are
+    first-class with admins, members, shared devices and policy. Same-identity use of
+    user-scoped capabilities is implicit; anything across identities needs approval by the
+    capability's owner or, for device-scoped, by the person present on the device, else
+    device policy. Cross-identity traffic uses narrower per-grant MLS groups. (ADR 0015)
 
 Changing any of these means a new ADR that supersedes the old one, not an edit.
 
@@ -54,12 +62,13 @@ not restructure `impl/` until that ADR is confirmed.
 
 ## Repository layout
 
-- `docs/spec/NN-*.md`: spec chapters, one per layer plus platform notes and threat model.
+- `docs/spec/NN-*.md`: spec chapters, one per layer plus platform notes, threat model and
+  shared devices/groups (chapter 10).
   Each section has an intent paragraph and inline open questions. No wire formats yet.
 - `docs/adr/`: Nygard-format ADRs (Context / Decision / Consequences), status "Proposed".
 - `docs/glossary.md`, `docs/prior-art.md`.
 - `lexicons/org/ligatureprotocol/*.json`: Lexicon v1 drafts (device, capability, grant,
-  guardian). Spec chapters link to these by relative path.
+  guardian, group). Spec chapters link to these by relative path.
 - `impl/`: Rust cargo workspace, edition 2024. Crates: `lp-core` (shared types, capability
   model), `lp-identity` (DID resolution, cross-signing), `lp-crypto` (MLS wrapper),
   `lp-transport` (QUIC connections, local discovery, remote discovery and relay clients),

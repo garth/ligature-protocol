@@ -54,9 +54,8 @@ Each chapter states its intent per section and lists open questions inline. Wire
 message encodings and state machines are deliberately absent from this draft and will be
 added once the architecture decisions in `docs/adr/` are accepted.
 
-## 6. Relationship to AT Protocol
+## 6. Schemas and encoding
 
-None remains. Early drafts used AT Protocol DIDs for identity, Spaces for shared state and
-schemas for schemas; each was dropped in turn (ADRs 0016, 0017 and 0020) and nothing
-specific to AT Protocol is used. Schemas are JSON Schema (chapter 05 and
-[ADR 0020](../adr/0020-json-schema-and-reverse-dns-names.md)).
+Records and messages are defined in JSON Schema 2020-12 under `schemas/`, with reverse-DNS
+type names ([ADR 0020](../adr/0020-json-schema-and-reverse-dns-names.md)), and encoded as
+CBOR on the wire ([ADR 0025](../adr/0025-cbor-wire-encoding.md)).

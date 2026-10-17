@@ -2,7 +2,7 @@
 
 **Status:** Proposed
 **Date:** 2026-10-17
-**Supersedes:** [ADR 0004](0004-mls-group-encryption.md)
+**Supersedes:** [ADR 0004](superseded/0004-mls-group-encryption.md)
 
 ## Context
 

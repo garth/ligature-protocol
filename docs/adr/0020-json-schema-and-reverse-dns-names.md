@@ -2,7 +2,7 @@
 
 **Status:** Proposed
 **Date:** 2026-10-17
-**Supersedes:** [ADR 0007](0007-atproto-lexicons.md)
+**Supersedes:** [ADR 0007](superseded/0007-atproto-lexicons.md)
 
 ## Context
 

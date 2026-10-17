@@ -1,6 +1,6 @@
 # 0007. Define schemas as AT Protocol Lexicons under org.ligatureprotocol.*
 
-**Status:** Superseded by [ADR 0020](0020-json-schema-and-reverse-dns-names.md)
+**Status:** Superseded by [ADR 0020](../0020-json-schema-and-reverse-dns-names.md)
 **Date:** 2026-10-17
 
 ## Context

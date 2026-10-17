@@ -75,7 +75,7 @@ peer.
 ## 6. Backup
 
 An implementation may export a device's local store, encrypted to a key only the user
-holds, to any storage they choose, including a PDS. No other device depends on that backup
+holds, to any storage they choose. No other device depends on that backup
 and the protocol does not define it. Open question: whether a standard backup format is
 worth specifying so implementations can restore each other's exports.
 

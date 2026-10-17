@@ -2,7 +2,7 @@
 
 **Status:** Proposed
 **Date:** 2026-10-17
-**Supersedes:** [ADR 0005](0005-direct-transport.md)
+**Supersedes:** [ADR 0005](superseded/0005-direct-transport.md)
 
 ## Context
 

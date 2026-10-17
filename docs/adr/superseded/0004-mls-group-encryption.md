@@ -1,8 +1,8 @@
 # 0004. One MLS group per device set for end-to-end encryption
 
-**Status:** Superseded by [ADR 0019](0019-pairwise-least-exposure-encryption.md)
+**Status:** Superseded by [ADR 0019](../0019-pairwise-least-exposure-encryption.md)
 **Date:** 2026-10-17
-**Note (2026-10-17):** [ADR 0016](0016-no-required-shared-state.md) removed stored payloads
+**Note (2026-10-17):** [ADR 0016](../0016-no-required-shared-state.md) removed stored payloads
 and offline delivery, two of the three reasons for MLS given below. MLS now rests on relay
 fan-out and group-wide post-compromise security. The proof of concept is to be built on QUIC
 with cross-signed raw public keys alone; MLS is adopted afterwards if the evidence supports

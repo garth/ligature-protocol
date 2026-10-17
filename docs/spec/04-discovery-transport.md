@@ -8,7 +8,7 @@ Devices connect to each other directly over application-level QUIC (RFC 9000),
 authenticating with their LP device keys. Locally they find each other with mDNS/DNS-SD
 and BLE and need no server at all. When apart they use a small set of *helpers* for
 discovery, hole-punch coordination and relaying. Helpers are replaceable and untrusted.
-No traffic of any kind routes through a PDS. See
+No traffic of any kind routes through a server LP depends on. See
 [ADR 0011](../adr/0011-quic-application-transport.md),
 [ADR 0012](../adr/0012-decentralised-untrusted-helpers.md) and
 [ADR 0013](../adr/0013-wireguard-optional-integration.md).

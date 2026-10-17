@@ -1,6 +1,6 @@
 # 0006. Store shared state as typed records in an atproto Space
 
-**Status:** Superseded by [ADR 0016](0016-no-required-shared-state.md)
+**Status:** Superseded by [ADR 0016](../0016-no-required-shared-state.md)
 **Date:** 2026-10-17
 
 ## Context

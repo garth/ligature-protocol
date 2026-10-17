@@ -1,6 +1,6 @@
 # 0009. Social recovery with threshold shares, in-person verification, delay and veto
 
-**Status:** Superseded by [ADR 0018](0018-rebuild-instead-of-recovery.md)
+**Status:** Superseded by [ADR 0018](../0018-rebuild-instead-of-recovery.md)
 **Date:** 2026-10-17
 
 ## Context

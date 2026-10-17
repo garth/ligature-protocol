@@ -28,17 +28,14 @@ never receive it simply treat those bindings as an unknown person's. Open questi
 the abandonment statement should be signed by the old key as well when it is still
 available (loss without compromise), to defeat a forged abandonment by a third party.
 
-## 4. Optional extensions
+## 4. Published keys
 
-- A person who has published their key (chapter 01) publishes the new one in the same
-  place, so contacts who are not in the room learn of the rebuild.
-- The social recovery design of [ADR 0009](../adr/0009-social-recovery.md) (guardians,
-  threshold shares, delay with veto) remains documented for users who want to preserve a
-  key across the loss of all devices. It is not part of the core protocol.
+A person who has published their key (chapter 01) publishes the new one in the same place,
+so contacts who are not in the room learn of the rebuild.
 
 ## 5. Open questions
 
 - Whether implementations should offer an encrypted export of the local store (chapter 06
-  section 6) as a middle path between rebuild and social recovery.
+  section 6) so a rebuild can restore grants and known persons.
 - How a shared device whose only owner has rebuilt gets a new owner without a factory
   reset.

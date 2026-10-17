@@ -2,7 +2,7 @@
 
 **Status:** Proposed
 **Date:** 2026-10-17
-**Supersedes:** [ADR 0006](0006-atproto-space-shared-state.md)
+**Supersedes:** [ADR 0006](superseded/0006-atproto-space-shared-state.md)
 
 ## Context
 

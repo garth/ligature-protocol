@@ -1,6 +1,6 @@
 # 0002. Use AT Protocol DIDs as the user identity root
 
-**Status:** Superseded by [ADR 0017](0017-master-key-identity-and-proximity-ceremony.md)
+**Status:** Superseded by [ADR 0017](../0017-master-key-identity-and-proximity-ceremony.md)
 **Date:** 2026-10-17
 
 ## Context

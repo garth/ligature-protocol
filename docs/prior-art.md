@@ -30,14 +30,6 @@ Sidecar, phone calls on Mac. LP aims at equivalent user experience on open platf
 master key signs self-signing and user-signing keys, which sign devices and other users.
 LP keeps the structure and drops the server-side user ID above it.
 
-**Germ (and the AC protocol)**: An end-to-end encrypted messenger built on atproto identity
-plus MLS with a separate transport. LP's early layering followed this pattern (ADR 0004,
-superseded); it was dropped when stored payloads and offline delivery were removed and the
-least-exposure requirement ruled out a group key (ADR 0019).
-
-**MLS (RFC 9420) and OpenMLS**: The group encryption standard. No longer in LP's core; the
-candidate if a capability-scoped multicast key is ever needed.
-
 **Bluetooth and Wi-Fi Easy Connect pairing**: Proximity ceremonies with a displayed code
 or QR, verified by the user comparing both sides. LP's ceremony (chapter 02) is the same
 gesture with a signature attached.
@@ -45,12 +37,14 @@ gesture with a signature attached.
 **TLS 1.3 raw public keys (RFC 7250)**: Certificate-free mutual authentication; with
 ephemeral key exchange it is LP's end-to-end encryption layer (ADR 0019).
 
-## Shared state and schemas
+## State and schemas
 
-**AT Protocol (DIDs, Spaces, Lexicons)**: Early drafts of LP used atproto DIDs for identity,
-Spaces for shared state and Lexicons for schemas. Each was dropped in turn (ADRs 0016,
-0017, 0020) and nothing specific to AT Protocol remains. The reverse-DNS naming of
-capability types predates atproto (D-Bus, Java) and is kept.
+**Matrix device lists and Secure Scuttlebutt feeds**: Both distribute per-device signed
+facts (device keys, revocations, posts) by replication rather than through a shared
+database. LP's gossip of signed facts (spec chapter 06) follows the same shape.
+
+**D-Bus and Java naming**: Reverse-DNS type names such as `org.ligatureprotocol.device`
+follow this long-standing convention (ADR 0020).
 
 **JSON Schema**: LP's schema language (ADR 0020).
 
@@ -59,22 +53,9 @@ encryption layer, used by WebAuthn, CWT and much constrained-device work. LP's w
 encoding (ADR 0025); COSE is a reference for signed-object layout if LP's own signed-fact
 format ever needs to interoperate.
 
-**Matrix device lists and Secure Scuttlebutt feeds**: Both distribute per-device signed
-facts (device keys, revocations, posts) by replication rather than through a shared
-database. LP's gossip of signed facts (spec chapter 06) follows the same shape.
-
 **Syncthing**: Peer-to-peer file synchronisation with device IDs derived from TLS
 certificates and introducer-based device discovery. A possible bridge target and a design
 reference for device-to-device sync without a server.
-
-## Recovery
-
-**Dark Crystal**: Social recovery using Shamir shares distributed to trusted peers over
-Secure Scuttlebutt. Inspiration for ADR 0009, now superseded: LP keeps no state worth
-recovering and rebuilds instead (ADR 0018). Documented as a possible opt-in extension.
-
-**Argon / Ethereum social recovery wallets**: Guardian-based account recovery with time
-delays; evidence that delay-plus-veto is a workable pattern if LP ever adds it back.
 
 ## Transport and connectivity
 
@@ -103,8 +84,9 @@ certificate-free authentication mode LP uses to bind connections to device keys.
 
 **mDNS/DNS-SD (RFC 6762, RFC 6763)**: Local service discovery.
 
-**WireGuard**: The kernel-level VPN protocol. Formerly LP's remote transport (ADR 0005,
-superseded); now an optional integration for users who want a full home-network overlay.
+**WireGuard**: The kernel-level VPN protocol. LP's optional integration generates
+WireGuard/Headscale configurations from the device list for users who want a full
+home-network overlay (ADR 0013).
 
 ## Smart home and iOS interop
 

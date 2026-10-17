@@ -2,7 +2,7 @@
 
 **Status:** Proposed
 **Date:** 2026-10-17
-**Supersedes:** [ADR 0002](0002-atproto-did-identity.md)
+**Supersedes:** [ADR 0002](superseded/0002-atproto-did-identity.md)
 
 ## Context
 

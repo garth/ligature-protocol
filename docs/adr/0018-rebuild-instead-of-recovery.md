@@ -2,7 +2,7 @@
 
 **Status:** Proposed
 **Date:** 2026-10-17
-**Supersedes:** [ADR 0009](0009-social-recovery.md)
+**Supersedes:** [ADR 0009](superseded/0009-social-recovery.md)
 
 ## Context
 

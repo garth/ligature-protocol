@@ -24,8 +24,8 @@ Data is encrypted only to the device that needs it. A clipboard change meant for
 my devices is three sessions, not one message readable by all three and by every other
 device that happens to hold a shared key. Hubs, relays and uninvolved devices see only
 ciphertext. Open question: whether any capability needs genuine multicast badly enough to
-justify a key scoped to that capability's audience; if so, MLS is the candidate, and it
-would be introduced by its own ADR.
+justify a key scoped to exactly that capability's audience; if so, it would be introduced
+by its own ADR.
 
 ## 4. Nothing before authentication
 

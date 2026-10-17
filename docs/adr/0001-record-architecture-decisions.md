@@ -15,7 +15,9 @@ and what the alternatives were.
 We record architecture decisions as ADRs in `docs/adr/`, using the format described by
 Michael Nygard: a numbered file with Context, Decision and Consequences sections and a
 Status line. New decisions start as "Proposed". A decision is changed by adding a new ADR
-that supersedes the old one, not by rewriting history.
+that supersedes the old one, not by rewriting history. A superseded ADR moves to
+`superseded/` so the active list stays short; the specification and other documents
+describe only the current design and never refer to superseded ideas.
 
 ## Consequences
 

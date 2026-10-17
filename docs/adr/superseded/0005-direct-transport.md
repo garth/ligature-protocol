@@ -1,8 +1,8 @@
 # 0005. Direct device-to-device transport with local discovery and a WireGuard overlay
 
-**Status:** Superseded by [ADR 0011](0011-quic-application-transport.md),
-[ADR 0012](0012-decentralised-untrusted-helpers.md) and
-[ADR 0013](0013-wireguard-optional-integration.md)
+**Status:** Superseded by [ADR 0011](../0011-quic-application-transport.md),
+[ADR 0012](../0012-decentralised-untrusted-helpers.md) and
+[ADR 0013](../0013-wireguard-optional-integration.md)
 **Date:** 2026-10-17
 
 ## Context

@@ -1,7 +1,6 @@
 # Milestone 1: two Linux devices pair and share the clipboard
 
-**Status:** Plan. Reflects the design as of ADR 0024. Supersedes the plan sketched before
-ADRs 0011 to 0024, which assumed a PDS, DIDs, MLS and a Space; none of those remain.
+**Status:** Plan.
 
 ## 1. Goal
 
@@ -10,20 +9,14 @@ separate data directories). Pair them with the proximity ceremony, then copy tex
 and paste it on the other, in both directions, with no server, no account and no internet.
 Revoke one and show it can no longer connect. Restart both and show the pairing survived.
 
-## 2. What the current design makes unnecessary
-
-Compared with the first sketch, this milestone no longer needs DID resolution, a PDS or
-Space, OpenMLS, guardians, or any storage integration. It is: keys, one ceremony, QUIC with
-raw public keys, a handful of gossiped facts, a manifest, one clipboard stream.
-
-## 3. Non-goals for this milestone
+## 2. Non-goals for this milestone
 
 Groups and group devices (chapter 10), relays, hole punching and the DHT (chapter 04
 section 5), key publication (chapter 01 section 4), the `share` family, non-text clipboard
 content, BLE, headless pairing pages, Android or iOS, the system-level principal daemon as
-a separate process (section 6, phase F), and the optional WireGuard integration.
+a separate process (section 5, phase F), and the optional WireGuard integration.
 
-## 4. Decisions to pin before coding
+## 3. Decisions to pin before coding
 
 All five are now decided; each has its ADR.
 
@@ -42,7 +35,7 @@ All five are now decided; each has its ADR.
 5. **Implementation language.** Decided: Rust, the existing workspace under `impl/`
    ([ADR 0026](../adr/0026-rust-reference-implementation.md)).
 
-## 5. Exit criteria
+## 4. Exit criteria
 
 - Two freshly initialised daemons pair in one ceremony started from `lpctl pair`.
 - After pairing, each daemon's `lpctl devices` lists the other as a binding of the same
@@ -55,7 +48,7 @@ All five are now decided; each has its ADR.
   `schemas/`, and the fixtures used in tests are committed as the first conformance
   vectors.
 
-## 6. Work breakdown
+## 5. Work breakdown
 
 Each task is intended to be one ticket and one commit. Phases may overlap where their
 dependencies allow.
@@ -139,7 +132,7 @@ dependencies allow.
 - G3. Update chapters 02, 03, 04, 05 and 06 with what was actually built, still marked
   draft; record any deviation as an ADR.
 
-## 7. Risks
+## 6. Risks
 
 - The QUIC stack's raw-public-key support may be incomplete on one side (client or server
   authentication). Check in B1 before anything else is built on it.
@@ -149,7 +142,7 @@ dependencies allow.
 - Channel binding of the ceremony code depends on exporter support in the TLS library;
   ADR 0029 defines the fallback and requires the gap to be recorded.
 
-## 8. After this milestone
+## 7. After this milestone
 
 Milestone 2 candidates, in no order: the split key configuration and the introducer
 choice at pairing; the `share` family between two people (requires the `person` role and

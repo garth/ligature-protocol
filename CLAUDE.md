@@ -21,8 +21,8 @@ The authoritative record is `docs/adr/`. Summary, in layer order:
    multicodec-prefixed, `z6Mk…`), created on their first device. Publishing it at a DNS
    name (TXT or well-known HTTPS path) is optional, for a name and remote invitations. Key
    configuration (split master/self-signing/user-signing vs one key; which devices are
-   introducers) follows the user's requirements. Nothing AT Protocol-specific remains.
-   (ADR 0017; ADR 0002 superseded)
+   introducers) follows the user's requirements.
+   (ADR 0017)
 2. **Device trust**: one proximity ceremony (QR + a six-digit short authentication string
    derived from the TLS exporter, ADR 0029; BLE/NFC/UWB optional, never required). An
    introducer signs the verified key with a role: `binding` (my account on a device),
@@ -31,8 +31,7 @@ The authoritative record is `docs/adr/`. Summary, in layer order:
    pairing web page on the LAN. Revocation is a gossiped signed fact. (ADR 0003, 0017)
 3. **Encryption**: the pairwise QUIC/TLS 1.3 session with raw public keys is the
    end-to-end layer. Least exposure: no device can decrypt what it does not need, so no
-   group key; MLS is only a candidate for a future capability-scoped multicast key.
-   Nothing is sent before mutual authentication. (ADR 0019; ADR 0004 superseded)
+   group key. Nothing is sent before mutual authentication. (ADR 0019)
 4. **Transport**: application-level QUIC (RFC 9000), one connection per device pair, one
    stream per capability, device keys as TLS raw public keys (RFC 7250), connection
    migration; quinn over rustls, mutual RPK, rustls default suites, no 0-RTT (ADR 0028).
@@ -41,26 +40,25 @@ The authoritative record is `docs/adr/`. Summary, in layer order:
    in a DHT via pkarr, gossiped relays, optional published key), hole-punch coordination, relay
    (default: the user's home hub). Rule: any helper may be operated by anyone, is listed in
    the user's own records, and is never trusted with plaintext or identity. Real-time
-   traffic never goes through a PDS. WireGuard/Headscale is an optional non-core
-   integration only. (ADR 0011, 0012, 0013; ADR 0005 superseded)
+   traffic never goes through a server LP depends on. WireGuard/Headscale is an optional
+   non-core integration. (ADR 0011, 0012, 0013)
 5. **State**: no shared state, no server. Each device keeps a local store (own keys,
    device records with role signatures, known persons, revocations and abandonments,
    issued grants, group memberships, relays) and gossips signed facts to peers after
    authentication at the start of every session, revocations first. Capabilities are
    live: a manifest on connect, updates during the session, withdrawn on disconnect,
-   never persisted. No required off-device state at all. (ADR 0016; ADR 0006 superseded)
+   never persisted. No required off-device state at all. (ADR 0016)
 6. **Schemas**: JSON Schema 2020-12 under `schemas/`, one file per type; reverse-DNS type
    names `org.ligatureprotocol.*` (placeholder domain). Keys are multibase strings,
    timestamps RFC 3339, bytes base64url in JSON and byte strings in CBOR. Wire encoding is
    CBOR; signed facts use RFC 8949 core deterministic encoding and the signature covers the
-   fact without its `signature` field. (ADR 0020, 0025; ADR 0007 superseded)
+   fact without its `signature` field. (ADR 0020, 0025)
 7. **Capabilities**: devices advertise typed capabilities (notifications, clipboard, files,
    remote input, media control, telephony/SMS, displays, sensors); peers discover, request,
    and receive explicit grants. (ADR 0008)
 8. **Loss and compromise**: nothing to recover; rebuild with a new master key, re-pair
    the devices you hold, re-verify with household members, gossip an abandonment of the
-   old key. Social recovery (ADR 0009) is documented as an optional extension only.
-   (ADR 0018; ADR 0009 superseded)
+   old key. (ADR 0018)
 9. **Interop**: bridge to KDE Connect, LocalSend, Matter/Thread, CalDAV/CardDAV, Syncthing;
    iPhone via BLE accessory profiles (ANCS/AMS, HFP/MAP/PBAP) and EU DMA APIs. (ADR 0010)
 10. **Shared devices and groups**: capabilities are `user`-scoped (clipboard,
@@ -74,8 +72,7 @@ The authoritative record is `docs/adr/`. Summary, in layer order:
     carries the authority of the authenticated person behind it: a group device with
     nobody signed in has group authority only and can never reach a member's user-scoped
     capabilities; data reaches it by push. A person signed in to a group device acts with
-    their full authority while the device reports the session present. (ADR 0023, items 4
-    and 5 superseded by 0024)
+    their full authority while the device reports the session present. (ADR 0023)
     Same-person use of user-scoped capabilities is implicit; anything across people needs
     approval by the capability's owner or, for device-scoped, by the person present on the
     device, else device policy. `share` is the AirDrop-like family: user-scoped, visible
@@ -93,7 +90,8 @@ The reference implementation is Rust and is also the production implementation
 - `docs/spec/NN-*.md`: spec chapters, one per layer plus platform notes, threat model and
   shared devices/groups (chapter 10).
   Each section has an intent paragraph and inline open questions. No wire formats yet.
-- `docs/adr/`: Nygard-format ADRs (Context / Decision / Consequences), status "Proposed".
+- `docs/adr/`: Nygard-format ADRs (Context / Decision / Consequences). Superseded ones
+  live in `docs/adr/superseded/`.
 - `docs/glossary.md`, `docs/prior-art.md`.
 - `docs/milestones/`: one plan per milestone with scope, non-goals, decisions to pin, exit
   criteria and a task breakdown; `01-clipboard-poc.md` is the current one.
@@ -149,8 +147,10 @@ npx ajv compile --spec=draft2020 -c ajv-formats -s schemas/<name>.schema.json
   or local-store-protection requirements to the spec. The protocol defines authority (who
   is authenticated behind a request) and trust (which keys are recognised), and takes a
   present session as whatever the device reports.
-- Nothing AT Protocol-specific is used. Do not reintroduce DIDs, Lexicons, NSIDs, PDS or
-  Spaces; the history is in ADRs 0002, 0006, 0007 and their successors.
+- The design has no server, no shared database, no group encryption key and nothing
+  AT Protocol-specific. Do not reintroduce any of them; the history is in
+  `docs/adr/superseded/`. Documentation describes the current design only and never
+  mentions superseded ideas.
 - Security reports go through GitHub Security Advisories, not issues (`SECURITY.md`).
 
 ## Working tickets

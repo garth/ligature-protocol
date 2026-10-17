@@ -93,9 +93,8 @@ signed by your self-signing key; revocations and other signed facts travel betwe
 devices when they meet. Data flows directly between devices over QUIC, or through a relay
 that sees only ciphertext when a direct path is impossible. The QUIC/TLS session between
 two devices is the end-to-end encryption; there is no group key, so nothing can be read by
-a device that was not meant to read it. WireGuard
-is not part of the protocol; an optional integration can generate Headscale/WireGuard
-configurations for users who want a full home-network overlay.
+a device that was not meant to read it. An optional integration generates
+Headscale/WireGuard configurations for users who want a full home-network overlay.
 
 ## Repository layout
 

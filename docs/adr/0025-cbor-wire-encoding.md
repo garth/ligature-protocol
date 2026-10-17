@@ -1,6 +1,6 @@
 # 0025. CBOR as the wire encoding
 
-**Status:** Proposed
+**Status:** Proposed; item 3 amended by [ADR 0035](0035-byte-exact-signatures-forgiving-decoding.md)
 **Date:** 2026-10-17
 **Resolves:** the wire-encoding question left open by [ADR 0020](0020-json-schema-and-reverse-dns-names.md)
 

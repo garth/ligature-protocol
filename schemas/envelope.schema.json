@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ligatureprotocol.org/schemas/envelope.schema.json",
+  "title": "org.ligatureprotocol.envelope",
+  "description": "DRAFT. The one container for every signed fact (ADR 0035). The payload is the encoded fact as bytes and is never re-encoded; the signature is Ed25519 over the byte concatenation of the ASCII prefix \"ligature/fact/1\", the type and the payload. Verifiers check the bytes as received, then decode the payload and validate it against the schema the type names. The fact identifier is the SHA-256 of the payload bytes. The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "$defs": {
+    "publicKey": {
+      "type": "string",
+      "description": "A public key as a multibase string with a multicodec prefix (an Ed25519 key renders as z6Mk\u2026).",
+      "pattern": "^z[1-9A-HJ-NP-Za-km-z]+$"
+    },
+    "bytes": {
+      "type": "string",
+      "description": "Bytes as base64url without padding; a CBOR byte string on the wire.",
+      "pattern": "^[A-Za-z0-9_-]*$"
+    },
+    "typeName": {
+      "type": "string",
+      "description": "A reverse-DNS type name such as org.ligatureprotocol.device.",
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+    }
+  },
+  "type": "object",
+  "required": [
+    "type",
+    "payload",
+    "signer",
+    "signature"
+  ],
+  "properties": {
+    "type": {
+      "$ref": "#/$defs/typeName",
+      "description": "The payload's type: which schema it validates against once decoded."
+    },
+    "payload": {
+      "$ref": "#/$defs/bytes",
+      "description": "The encoded fact, as transmitted. Stored and forwarded byte-exact."
+    },
+    "signer": {
+      "$ref": "#/$defs/publicKey",
+      "description": "The key that made the signature: a self-signing key, user-signing key, group key or device key. The verifier resolves it to a trusted chain through person facts."
+    },
+    "signature": {
+      "$ref": "#/$defs/bytes",
+      "description": "Ed25519 signature over \"ligature/fact/1\" || type || payload."
+    }
+  }
+}

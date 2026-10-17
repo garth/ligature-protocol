@@ -10,6 +10,7 @@
 
 pub mod capability;
 pub mod device;
+pub mod envelope;
 pub mod error;
 pub mod identity;
 

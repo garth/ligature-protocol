@@ -55,8 +55,10 @@ The authoritative record is `docs/adr/`. Summary, in layer order:
 6. **Schemas**: JSON Schema 2020-12 under `schemas/`, one file per type; reverse-DNS type
    names `org.ligatureprotocol.*` (placeholder domain). Keys are multibase strings,
    timestamps RFC 3339, bytes base64url in JSON and byte strings in CBOR. Wire encoding is
-   CBOR; signed facts use RFC 8949 core deterministic encoding and the signature covers the
-   fact without its `signature` field. (ADR 0020, 0025)
+   CBOR. Every signed fact travels in an envelope (type, payload bytes, signer, signature
+   over `"ligature/fact/1" || type || payload`); verify the bytes as received, then
+   decode; never re-encode; no canonical form; decoders ignore unknown fields and schemas
+   never set `additionalProperties: false`. (ADR 0020, 0025, 0035)
 7. **Capabilities**: devices advertise typed capabilities (notifications, clipboard, files,
    remote input, media control, telephony/SMS, displays, sensors); peers discover, request,
    and receive explicit grants. (ADR 0008)

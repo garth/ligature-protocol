@@ -14,8 +14,8 @@ media control. Identified by a reverse-DNS type name. Always live, never persist
 **Capability descriptor**: One capability offered right now, with type, scope and
 type-specific parameters. Sent in a manifest.
 
-**CBOR**: Concise Binary Object Representation, RFC 8949. LP's wire encoding; signed facts
-use its core deterministic encoding.
+**CBOR**: Concise Binary Object Representation, RFC 8949. LP's wire encoding. Decoders
+accept any valid CBOR; nothing requires a canonical form.
 
 **Ceremony**: The proximity pairing step: an introducer verifies a key physically in front
 of it and signs it with a role. One ceremony makes the newcomer known to all my devices.
@@ -34,6 +34,10 @@ owner of the device-scoped capabilities.
 
 **Device-scoped capability**: A capability that belongs to the device rather than to any
 account on it: display, speakers, sensors, physical input.
+
+**Envelope**: The one container for a signed fact: type, payload bytes as the signer
+produced them, signing key, and a signature over the prefix, type and payload. Facts are
+verified over the bytes as received and never re-encoded.
 
 **Gossip**: The exchange, after authentication at the start of every session, of signed
 facts (revocations, bindings, principals, known persons, group membership, relays) that one
@@ -150,8 +154,9 @@ accepted per item by the receiving person. A user-scoped capability.
 **Self-signing key**: The key, signed by the master key, that introducers hold to sign
 bindings and principals.
 
-**Signed fact**: A record signed by a device key or a person's key that any device can
-verify without a server. The unit of gossip.
+**Signed fact**: A record in an envelope, signed by a device key or a person's key, that
+any device can verify without a server. The unit of gossip; identified by the SHA-256 of
+its payload bytes.
 
 **Type name**: The reverse-DNS identifier of a schema or capability type, such as
 `org.ligatureprotocol.capability.clipboard`. The domain is a placeholder until registered.

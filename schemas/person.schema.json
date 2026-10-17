@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ligatureprotocol.org/schemas/person.schema.json",
   "title": "org.ligatureprotocol.person",
-  "description": "DRAFT. A person fact: the master key, the self-chosen display name, and the self-signing and user-signing public keys with the master key's signatures over them, signed by the self-signing key. Handed over in the pairing ceremony that establishes the person role and gossiped like any other fact (spec chapters 01 and 06). The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "description": "DRAFT. The payload of a person fact: the master key, the self-chosen display name, and the self-signing and user-signing public keys with the master key's signatures over them. Carried in an envelope signed by the self-signing key; handed over in the pairing ceremony that establishes the person role and gossiped like any other fact (spec chapters 01 and 06). The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
   "$defs": {
     "publicKey": {
       "type": "string",
@@ -21,14 +21,13 @@
         "key",
         "masterSignature"
       ],
-      "additionalProperties": false,
       "properties": {
         "key": {
           "$ref": "#/$defs/publicKey"
         },
         "masterSignature": {
           "$ref": "#/$defs/bytes",
-          "description": "The master key's signature over this key and its purpose."
+          "description": "Ed25519 signature by the master key over the byte concatenation \"ligature/subkey/1\" || purpose (\"self-signing\" or \"user-signing\") || the key's raw bytes (ADR 0035)."
         }
       }
     }
@@ -40,10 +39,8 @@
     "selfSigningKey",
     "userSigningKey",
     "version",
-    "signature",
     "updatedAt"
   ],
-  "additionalProperties": false,
   "properties": {
     "masterKey": {
       "$ref": "#/$defs/publicKey",
@@ -66,10 +63,6 @@
       "type": "integer",
       "minimum": 1,
       "description": "Increases with every change; a device keeps the highest version it has verified."
-    },
-    "signature": {
-      "$ref": "#/$defs/bytes",
-      "description": "Signature by the self-signing key over the deterministic CBOR encoding of this fact without this field."
     },
     "updatedAt": {
       "type": "string",

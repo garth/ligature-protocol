@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ligatureprotocol.org/schemas/group.schema.json",
   "title": "org.ligatureprotocol.group",
-  "description": "DRAFT. A group's membership document: its group key, members by master key with roles, the devices the group owns by principal key, and policy. Signed by the group key and gossiped among members' devices and group-owned devices; a higher version replaces a lower; there is no group repository (spec chapter 10). The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "description": "DRAFT. The payload of a group's membership document: group key, members by master key with roles, the devices the group owns by principal key, and policy. Carried in an envelope signed by the group key and gossiped among members' devices and group-owned devices; a higher version replaces a lower; there is no group repository (spec chapter 10). The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
   "$defs": {
     "publicKey": {
       "type": "string",
@@ -26,7 +26,6 @@
         "role",
         "acceptedAt"
       ],
-      "additionalProperties": false,
       "properties": {
         "person": {
           "$ref": "#/$defs/publicKey",
@@ -43,7 +42,7 @@
         },
         "acceptance": {
           "$ref": "#/$defs/bytes",
-          "description": "Signature by the member's user-signing key over their acceptance (spec chapter 01)."
+          "description": "Ed25519 signature by the member's user-signing key over the byte concatenation \"ligature/accept/1\" || group key raw bytes || member master key raw bytes (ADR 0035)."
         },
         "acceptedAt": {
           "type": "string",
@@ -59,7 +58,6 @@
     "policy": {
       "type": "object",
       "description": "What members may do with the group's shared devices when nobody is present. Anything not listed is denied.",
-      "additionalProperties": false,
       "properties": {
         "unattendedAllow": {
           "type": "array",
@@ -82,7 +80,6 @@
       "required": [
         "key"
       ],
-      "additionalProperties": false,
       "properties": {
         "key": {
           "$ref": "#/$defs/publicKey",
@@ -109,10 +106,8 @@
     "version",
     "displayName",
     "members",
-    "signature",
     "createdAt"
   ],
-  "additionalProperties": false,
   "properties": {
     "groupKey": {
       "$ref": "#/$defs/publicKey",
@@ -148,10 +143,6 @@
     "createdAt": {
       "type": "string",
       "format": "date-time"
-    },
-    "signature": {
-      "$ref": "#/$defs/bytes",
-      "description": "Signature by the group key over the document without this field."
     }
   }
 }

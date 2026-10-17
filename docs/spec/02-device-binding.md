@@ -27,7 +27,9 @@ signed device record.
 
 ## 3. Roles
 
-A signature made in the ceremony carries exactly one role:
+A signature made in the ceremony is its own fact
+([`org.ligatureprotocol.role`](../../schemas/role.schema.json)) in an envelope (chapter 06
+section 3), and carries exactly one role:
 
 | Role | Signed key | Meaning for all my devices |
 | --- | --- | --- |

@@ -32,9 +32,10 @@ Every fact that travels between devices is signed and self-verifying:
 
 | Fact | Signed by | Verified against |
 | --- | --- | --- |
-| Person fact (master key, display name, self-signing and user-signing keys) | The person's self-signing key, with the master key's signatures over the two subordinate keys | The master key itself; learned in the ceremony |
-| Device binding or principal | My self-signing key, with a role | My master key |
-| Known person | My user-signing key, role `person` | My master key |
+| Person fact (master key, display name, self-signing and user-signing keys, each with the master key's signature) | The person's self-signing key | The master key itself; learned in the ceremony |
+| Device record (key, name, platform, kind) | The device's own key | A role fact naming that key |
+| Role fact (`binding` or `principal` over a device key) | My self-signing key | My master key, via my person fact |
+| Role fact (`person` over a master key) | My user-signing key | My master key, via my person fact |
 | Revocation or key abandonment | An introducer's self-signing key | The relevant master key |
 | Group key introduction | The inviting admin's binding key | The admin's master key, already a known person |
 | Group membership acceptance | The member's user-signing key | The member's master key, already known |
@@ -42,10 +43,17 @@ Every fact that travels between devices is signed and self-verifying:
 | Standing grant | The granting device's key | The trust store |
 | Relay list | The device's own key | The trust store |
 
-A fact is encoded as CBOR; its signature covers the core deterministic encoding of the
-fact without its signature field ([ADR 0025](../adr/0025-cbor-wire-encoding.md)). A device
-accepts a fact only if the signature verifies against a key it already trusts; there is no
-external directory to consult. Open question: whether facts carry a sequence number per
+Every signed fact travels in one envelope
+([`org.ligatureprotocol.envelope`](../../schemas/envelope.schema.json)): its type, its
+payload as the bytes the signer produced, the signing key, and an Ed25519 signature over
+`"ligature/fact/1" || type || payload`
+([ADR 0035](../adr/0035-byte-exact-signatures-forgiving-decoding.md)). A verifier checks
+the signature over the bytes as received, resolves the signer to a trusted chain, then
+decodes the payload and validates it against its schema. Facts are stored and forwarded
+byte-exact and never re-encoded; a fact's identifier is the SHA-256 of its payload bytes.
+Decoders accept any valid CBOR and ignore unknown fields. A device accepts a fact only if
+the signature verifies against a key it already trusts; there is no external directory to
+consult. Open question: whether facts carry a sequence number per
 signer so that an older fact can never replace a newer one.
 
 ## 4. Gossip

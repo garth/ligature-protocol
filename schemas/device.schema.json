@@ -2,87 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ligatureprotocol.org/schemas/device.schema.json",
   "title": "org.ligatureprotocol.device",
-  "description": "DRAFT. A device principal or a user-device binding, with the role signatures that make it trusted. Carried by the device itself and gossiped between devices; there is no shared repository. The key is the identifier; there is no separate deviceId. Capabilities are not part of this record: they are announced live in a capability manifest (spec chapters 02, 05, 06). The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "description": "DRAFT. The payload of a device record: a device principal or a user-device binding described by its owner, carried in an envelope signed by the device's own key. Role signatures that make it trusted are separate role facts; revocations are separate revocation facts (ADR 0035). The key is the identifier; there is no separate deviceId. Capabilities are not part of this record: they are announced live in a capability manifest (spec chapters 02, 05, 06). The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
   "$defs": {
     "publicKey": {
       "type": "string",
       "description": "A public key as a multibase string with a multicodec prefix (an Ed25519 key renders as z6Mk\u2026).",
       "pattern": "^z[1-9A-HJ-NP-Za-km-z]+$"
-    },
-    "bytes": {
-      "type": "string",
-      "description": "Bytes as base64url without padding.",
-      "pattern": "^[A-Za-z0-9_-]*$"
-    },
-    "roleSignature": {
-      "type": "object",
-      "description": "A signature made in the pairing ceremony. Spec chapter 02 section 3.",
-      "required": [
-        "role",
-        "signer",
-        "signature",
-        "signedAt"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "role": {
-          "type": "string",
-          "enum": [
-            "binding",
-            "principal",
-            "person"
-          ],
-          "description": "binding: my account on this device; principal: a device I use; person: another master key I know."
-        },
-        "signer": {
-          "$ref": "#/$defs/publicKey",
-          "description": "The master key of the person whose self-signing or user-signing key made the signature."
-        },
-        "signature": {
-          "$ref": "#/$defs/bytes",
-          "description": "Signature over the signed key and role."
-        },
-        "signedAt": {
-          "type": "string",
-          "format": "date-time"
-        }
-      }
-    },
-    "revocation": {
-      "type": "object",
-      "description": "A gossiped statement that a key is no longer trusted. Spec chapters 02 and 07.",
-      "required": [
-        "subject",
-        "signer",
-        "signature",
-        "revokedAt"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "subject": {
-          "$ref": "#/$defs/publicKey",
-          "description": "The revoked key: a binding, a principal, a known person, or an abandoned master key."
-        },
-        "kind": {
-          "type": "string",
-          "enum": [
-            "revocation",
-            "abandonment"
-          ],
-          "default": "revocation"
-        },
-        "signer": {
-          "$ref": "#/$defs/publicKey",
-          "description": "The master key on whose behalf an introducer signed."
-        },
-        "signature": {
-          "$ref": "#/$defs/bytes"
-        },
-        "revokedAt": {
-          "type": "string",
-          "format": "date-time"
-        }
-      }
     }
   },
   "type": "object",
@@ -93,7 +18,6 @@
     "key",
     "createdAt"
   ],
-  "additionalProperties": false,
   "properties": {
     "displayName": {
       "type": "string",
@@ -152,19 +76,6 @@
       "type": "boolean",
       "default": false,
       "description": "For a binding: whether it holds the self-signing key and may perform the ceremony for others. Chosen at pairing time according to the user's requirements; implementations should default it to false on a group device."
-    },
-    "signatures": {
-      "type": "array",
-      "maxItems": 64,
-      "items": {
-        "$ref": "#/$defs/roleSignature"
-      },
-      "description": "Role signatures by people who trust this key. A binding carries one from its owner; a principal one per person who uses it."
-    },
-    "revoked": {
-      "type": "boolean",
-      "default": false,
-      "description": "Retained after revocation so the revocation can be gossiped."
     },
     "createdAt": {
       "type": "string",

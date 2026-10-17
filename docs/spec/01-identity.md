@@ -60,7 +60,8 @@ the in-person step is a security feature
 Each person has a **person fact** (see
 [`org.ligatureprotocol.person`](../../schemas/person.schema.json)): their master key, their
 self-chosen display name, and their self-signing and user-signing public keys with the
-master key's signatures over them, the whole signed by the self-signing key. It is handed
+master key's signatures over them, carried in an envelope signed by the self-signing key
+(chapter 06 section 3). It is handed
 over in the ceremony and gossiped like any other fact (chapter 06); it is what a verifier
 uses to check a binding's signature back to the master key, and what a prompt shows instead
 of the key ([ADR 0032](../adr/0032-no-publication-self-asserted-names.md)). Whether an

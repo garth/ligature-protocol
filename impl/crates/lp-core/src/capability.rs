@@ -1,8 +1,8 @@
 //! The capability model: descriptors, manifests and grants. Spec chapter 05
 //! and the `capability` and `grant` schemas under `schemas/`.
 
-/// A reverse-DNS type name for a capability, such as
-/// `org.ligatureprotocol.capability.clipboard`.
+/// A reverse-DNS type name, such as `org.ligatureprotocol.capability.clipboard`
+/// for a capability or `org.ligatureprotocol.device` for a fact.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CapabilityType(pub String);
 

@@ -39,7 +39,6 @@
         "type",
         "scope"
       ],
-      "additionalProperties": false,
       "properties": {
         "type": {
           "$ref": "#/$defs/typeName"
@@ -69,7 +68,6 @@
     "capabilities",
     "issuedAt"
   ],
-  "additionalProperties": false,
   "properties": {
     "capabilities": {
       "type": "array",

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ligatureprotocol.org/schemas/revocation.schema.json",
+  "title": "org.ligatureprotocol.revocation",
+  "description": "DRAFT. The payload of a revocation or key abandonment (spec chapters 02 and 07), carried in an envelope signed by an introducer's self-signing key. The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "$defs": {
+    "publicKey": {
+      "type": "string",
+      "description": "A public key as a multibase string with a multicodec prefix (an Ed25519 key renders as z6Mk\u2026).",
+      "pattern": "^z[1-9A-HJ-NP-Za-km-z]+$"
+    }
+  },
+  "type": "object",
+  "required": [
+    "subject",
+    "person",
+    "revokedAt"
+  ],
+  "properties": {
+    "subject": {
+      "$ref": "#/$defs/publicKey",
+      "description": "The key no longer trusted: a binding, a principal, a known person, or an abandoned master key."
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "revocation",
+        "abandonment"
+      ],
+      "default": "revocation"
+    },
+    "person": {
+      "$ref": "#/$defs/publicKey",
+      "description": "The master key on whose behalf the revocation is made."
+    },
+    "revokedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

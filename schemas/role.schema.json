@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ligatureprotocol.org/schemas/role.schema.json",
+  "title": "org.ligatureprotocol.role",
+  "description": "DRAFT. The payload of a role signature made in the pairing ceremony (spec chapter 02 section 3), carried in an envelope signed by the introducer's self-signing key (roles binding and principal) or by the user-signing key (role person). The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "$defs": {
+    "publicKey": {
+      "type": "string",
+      "description": "A public key as a multibase string with a multicodec prefix (an Ed25519 key renders as z6Mk\u2026).",
+      "pattern": "^z[1-9A-HJ-NP-Za-km-z]+$"
+    }
+  },
+  "type": "object",
+  "required": [
+    "subject",
+    "role",
+    "person",
+    "signedAt"
+  ],
+  "properties": {
+    "subject": {
+      "$ref": "#/$defs/publicKey",
+      "description": "The key being signed: a binding key, a principal key, or another person's master key."
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "binding",
+        "principal",
+        "person"
+      ],
+      "description": "binding: my account on a device; principal: a device I use; person: another master key I know."
+    },
+    "person": {
+      "$ref": "#/$defs/publicKey",
+      "description": "The master key of the person on whose behalf the signature is made."
+    },
+    "introducer": {
+      "type": "boolean",
+      "default": false,
+      "description": "For role binding: whether the new binding holds the self-signing key and may perform the ceremony for others."
+    },
+    "signedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

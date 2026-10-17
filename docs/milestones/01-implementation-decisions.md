@@ -16,13 +16,14 @@ for example outbound gossip or pending prompts.
 so the database can be inspected, copied or exported without touching secrets. Wrapping
 that file with a platform keystore is guidance under chapter 08, not a milestone 1 task.
 
-**Schema.** One `facts` table holds every signed fact as it travels in gossip:
-`hash` (primary key: SHA-256 of the deterministic CBOR, lowercase hex, which is also the
-fact's gossip identifier), `kind` (the reverse-DNS type), `cbor` (the bytes), `signer`,
-`subject`, `created_at`, and `quarantined`. Kind-specific columns and views are added when
-a query needs them, not in advance. Grants, group documents and relays are facts like any
-other. Schema versioning uses `PRAGMA user_version`; migrations are code in the daemon run
-once at startup; a database with a higher version than the daemon knows is refused.
+**Schema.** One `facts` table holds every signed fact as it travels in gossip: `hash`
+(primary key: SHA-256 of the payload bytes as received, lowercase hex, which is also the
+fact's gossip identifier), `kind` (the envelope's type), `payload` and `signature` (the
+bytes, never re-encoded), `signer`, `subject`, `created_at`, and `quarantined`. Kind-
+specific columns and views are added when a query needs them, not in advance. Grants,
+group documents and relays are facts like any other. Schema versioning uses `PRAGMA
+user_version`; migrations are code in the daemon run once at startup; a database with a
+higher version than the daemon knows is refused.
 
 **Durability.** WAL journal mode, `synchronous=FULL` (writes are rare), foreign keys on.
 Directory 0700, database and WAL files 0600, set at creation.

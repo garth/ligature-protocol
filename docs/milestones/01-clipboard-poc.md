@@ -31,8 +31,10 @@ made.
 1. **Signature algorithm.** Ed25519 only ([ADR 0027](../adr/0027-ed25519.md)), rendered as
    multibase/multicodec `z6Mk…`.
 2. **Wire encoding.** CBOR from the start ([ADR 0025](../adr/0025-cbor-wire-encoding.md)).
-   Byte fields are CBOR byte strings, timestamps and keys stay text, signed facts use core
-   deterministic encoding. `lpctl` may print messages as diagnostic notation for debugging.
+   Byte fields are CBOR byte strings, timestamps and keys stay text. Signed facts travel in
+   an envelope and are verified over their bytes as received, never re-encoded
+   ([ADR 0035](../adr/0035-byte-exact-signatures-forgiving-decoding.md)). `lpctl` may
+   print messages as diagnostic notation for debugging.
 3. **QUIC stack.** quinn over rustls ([ADR 0028](../adr/0028-quinn-over-rustls.md)); mutual
    raw-public-key authentication, rustls default suites, no 0-RTT. Task B1 is the
    verification gate, on both platforms.
@@ -87,11 +89,11 @@ flowchart LR
 - A2. The three-key structure (chapter 01 section 3): master key signs a self-signing key
   and a user-signing key; the master private key lives on the first device for this
   milestone, with offline or passphrase-derived storage as a later task.
-- A3. Person fact and role signatures (`lp-identity::cross_signing`): build and verify the
-  person fact (master key, display name, subordinate keys with the master's signatures);
-  sign the deterministic CBOR encoding of a key-and-role fact with `binding` or
-  `principal`; verify the chain to a master key. Unit tests become the first conformance
-  vectors.
+- A3. Envelopes, person facts and role facts (`lp-identity::cross_signing`): sign and
+  verify an envelope over its payload bytes; build and verify the person fact (master key,
+  display name, subordinate keys with the master's signatures); build role facts for
+  `binding` and `principal`; verify the chain to a master key. Unit tests become the first
+  conformance vectors.
 - A4. Local store on disk: a SQLite database of signed facts plus a separate 0600 key file,
   under `$XDG_DATA_HOME/ligature/` on Linux and `~/Library/Application Support/ligature/`
   on macOS, behind one path-resolution function (see

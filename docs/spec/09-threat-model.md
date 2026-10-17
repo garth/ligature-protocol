@@ -105,6 +105,14 @@ nothing is sent before mutual authentication (chapter 03). A person who publishe
 key reveals what they publish. Open question: whether a device's bare public key, seen by
 anyone who connects, is itself an identifier worth hiding behind a per-epoch value.
 
+### 4.5 No remote trust
+
+Nothing a stranger can do over the network makes any device recognise them. A `person`
+role and a group membership exist only through the in-person ceremony
+([ADR 0030](../adr/0030-in-person-verification-mandatory.md)), and a published key never
+establishes trust. Impersonation at a distance is therefore excluded by construction rather
+than mitigated.
+
 ## 6. Out of scope
 
 **Device security.** How a device authenticates its local user, whether and when it locks,

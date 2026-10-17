@@ -37,20 +37,20 @@ usability, with the split keys offered as an upgrade.
 ## 4. Optional publication
 
 A person may publish their master key at a DNS name, as a TXT record or at a well-known
-HTTPS path. This adds a human-readable name (`alice.example.org`) and a way to invite
-someone who is not in the room. Nothing else in this specification depends on it. Open
-question: the exact record and path formats, and whether a published key should also list
-the person's relays (chapter 04).
+HTTPS path. This adds a human-readable name (`alice.example.org`) and a place to list the
+person's relays (chapter 04). It never establishes trust: knowing a person always requires
+the in-person ceremony of chapter 02
+([ADR 0030](../adr/0030-in-person-verification-mandatory.md)). Nothing else in this
+specification depends on it. Open question: the exact record and path formats.
 
 ## 5. Referring to other people
 
-Another person is known by their master key once it has been verified in the ceremony of
-chapter 02 and signed with the *person* role. Their bindings are then recognisably theirs
+Another person is known by their master key once it has been verified in person in the
+ceremony of chapter 02 and signed with the *person* role. There is no remote path to this;
+the in-person step is a security feature
+([ADR 0030](../adr/0030-in-person-verification-mandatory.md)). Their bindings are then recognisably theirs
 on every one of my devices, which is what a grant request needs (chapter 10). Open
 question: whether a known person's key should carry a display name signed by me, by them,
 or both.
 
 ## 6. Open questions
-
-- Whether two people who have both published their keys can skip the in-person step when
-  inviting each other remotely, and what that costs in the threat model.

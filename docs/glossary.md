@@ -113,7 +113,8 @@ cross-person requests for that device's device-scoped capabilities.
 device as one I use.
 
 **Publication**: The optional act of putting a master key at a DNS name (TXT record or
-well-known HTTPS path) to gain a human-readable name and remote invitations.
+well-known HTTPS path) to gain a human-readable name and a place to list relays. It never
+establishes trust.
 
 **QUIC**: The UDP-based transport protocol of RFC 9000, with TLS 1.3 built in, stream
 multiplexing and connection migration. LP's device-to-device transport and its end-to-end

@@ -19,10 +19,11 @@ The authoritative record is `docs/adr/`. Summary, in layer order:
 
 1. **Identity**: a person is an Ed25519 master signing key (ADR 0027; multibase,
    multicodec-prefixed, `z6Mk…`), created on their first device. Publishing it at a DNS
-   name (TXT or well-known HTTPS path) is optional, for a name and remote invitations. Key
-   configuration (split master/self-signing/user-signing vs one key; which devices are
-   introducers) follows the user's requirements.
-   (ADR 0017)
+   name (TXT or well-known HTTPS path) is optional, for a name and relay listing only; it
+   never establishes trust. Knowing a person or joining a group requires the in-person
+   ceremony; there is no remote joining (ADR 0030). Key configuration (split master/self-
+   signing/user-signing vs one key; which devices are introducers) follows the user's
+   requirements. (ADR 0017)
 2. **Device trust**: one proximity ceremony (QR + a six-digit short authentication string
    derived from the TLS exporter, ADR 0029; BLE/NFC/UWB optional, never required). An
    introducer signs the verified key with a role: `binding` (my account on a device),

@@ -31,7 +31,8 @@ available (loss without compromise), to defeat a forged abandonment by a third p
 ## 4. Published keys
 
 A person who has published their key (chapter 01) publishes the new one in the same place,
-so contacts who are not in the room learn of the rebuild.
+so contacts learn that a rebuild happened. They still verify the new key in person before
+trusting it ([ADR 0030](../adr/0030-in-person-verification-mandatory.md)).
 
 ## 5. Open questions
 

@@ -57,13 +57,14 @@ with roles, the devices the group owns (section 5) and the group policy (see
 [`org.ligatureprotocol.group`](../../schemas/group.schema.json)). Members must already know
 each other (the `person` role, chapter 02).
 
-A person joins by invitation: an admin's device hands one of the person's devices the
-group's public key and the current document, and the person's user-signing key (chapter
-01) signs the acceptance. Leaving or removal is a new version of the document; every
-member's devices and every group-owned device learn it by gossip (chapter 06), and the
-member's standing grants are revoked. Open questions: whether a person can be in several
-groups; what a child account restricts; whether admins' devices should push a new document
-to group-owned devices rather than wait for gossip.
+A person joins in person: an admin's device hands one of the person's devices the group's
+public key and the current document in the ceremony of chapter 02, and the person's user-
+signing key (chapter 01) signs the acceptance. There is no remote joining ([ADR
+0030](../adr/0030-in-person-verification-mandatory.md)). Leaving or removal is a new
+version of the document; every member's devices and every group-owned device learn it by
+gossip (chapter 06), and the member's standing grants are revoked. Open questions: whether
+a person can be in several groups; what a child account restricts; whether admins' devices
+should push a new document to group-owned devices rather than wait for gossip.
 
 ## 5. Group devices
 

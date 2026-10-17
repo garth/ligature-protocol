@@ -50,6 +50,21 @@ string derived from the TLS exporter of the pairing connection, so an interposed
 holding two sessions cannot show the same code to both sides
 ([ADR 0029](../adr/0029-ceremony-code-from-tls-exporter.md)).
 
+```text
+  Newcomer                                     Introducer (holds the self-signing key)
+  --------                                     --------------------------------------
+  generate keys
+  show fingerprint + one-time code  -------->  scan the QR, or read the pairing page
+  <-------------- QUIC connection, raw public keys presented both ways -------------
+  derive code from TLS exporter                derive code from TLS exporter
+  display code                                 display code (or ask the user to type it)
+                      user confirms the two codes match; mismatch aborts
+  <------- role signature(s), self-signing key if newcomer is an introducer, -------
+           current gossip
+  store                                        store
+                      every other device learns of the newcomer by gossip
+```
+
 ## 5. Headless devices
 
 A device without a screen or camera (a hub, a NAS, a speaker) never relies on hardware
@@ -74,6 +89,26 @@ not being an introducer, but the choice is the user's (chapter 01 section 3). Ow
 the device's policy for unattended requests. Open question: whether a person can hold a
 `principal` signature for a device they neither own nor have an account on (a guest using
 the speakers), or whether that is always a grant.
+
+```text
+  Family laptop
+  +------------------------------------------------------+
+  | device principal: key P, system daemon               |
+  |   owner set {Alice, Bob} (personal) or {group key}   |
+  |   device-scoped: display, speakers, physical input   |
+  |                                                      |
+  |  +----------------------+  +----------------------+  |
+  |  | binding Alice@laptop |  | binding Bob@laptop   |  |
+  |  | key B1, Alice's      |  | key B2, Bob's        |  |
+  |  | account daemon       |  | account daemon       |  |
+  |  | user-scoped:         |  | user-scoped:         |  |
+  |  | clipboard, notifs    |  | clipboard, notifs    |  |
+  |  +----------------------+  +----------------------+  |
+  +------------------------------------------------------+
+  Alice's self-signing key signs B1 as binding and P as principal, in one ceremony.
+  Bob's self-signing key signs B2 as binding and P as principal, in his.
+  A lamp is the same picture with no bindings and the group key as owner.
+```
 
 ## 7. Revocation
 

@@ -34,6 +34,18 @@ principal and one binding per account; a lamp has a principal and no bindings. O
 question: whether a principal with bindings needs its own key, or can be represented by
 the set of bindings plus an owner record.
 
+```text
+  Alice (master key A)         Bob (master key B)          Household (group key G)
+    phone   binding, introducer  phone   binding, introducer  admins:  A, B
+    laptop  binding              tablet  binding              members: A, B, child C
+                                                              owned:   lamp, TV
+  A --person--> B and B --person--> A : verified in person, both ways
+
+  Shared laptop   principal P, bindings Alice@P and Bob@P, owner set {A, B}
+  Lamp            principal L, no bindings, owner set {G}, listed in G's document
+  TV              principal T, owner set {G}; Alice may sign in as binding Alice@T
+```
+
 ## 3. Capability scope
 
 Every capability descriptor carries a scope (see
@@ -131,6 +143,26 @@ Requests from outside the group and from unknown persons are refused before any 
 except under the optional open sharing mode (section 7). Open questions: how presence is
 defined with several seats or a locked screen; whether a device owner can pre-approve on
 behalf of a present user; and timeouts for unanswered prompts.
+
+```text
+  a request from device D for capability X
+  |
+  +-- who is authenticated behind D?
+  |     a person (D is their binding, or their session is present on a group device)
+  |         -> the request carries that person's authority
+  |     nobody (a group device with no session)
+  |         -> group authority only
+  |
+  +-- X is user-scoped?
+  |     owner of X is the same person        -> implicit, no prompt
+  |     group authority                      -> denied
+  |     another person                       -> ask X's owner on any of their devices
+  |
+  +-- X is device-scoped?
+        someone is present on the target     -> ask them; the prompt says who or what asks
+        nobody present, or no accounts       -> the target's policy decides
+                                                (group policy for a group device)
+```
 
 ## 7. Sharing between people
 

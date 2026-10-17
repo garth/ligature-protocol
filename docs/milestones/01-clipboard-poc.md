@@ -53,6 +53,15 @@ All five are now decided; each has its ADR.
 Each task is intended to be one ticket and one commit. Phases may overlap where their
 dependencies allow.
 
+```text
+  A keys and store ---> C ceremony ---> D gossip and manifests ---> E clipboard ---> G verify
+          \                ^                    ^                       ^
+           \               |                    |                       |
+            +---> B transport ------------------+                       |
+                                                                        |
+  F daemon plumbing ---------------------------------------------------+
+```
+
 ### Phase A: keys and local store
 
 - A1. Ed25519 key generation and multibase rendering; `PersonKey`, principal key, binding

@@ -27,6 +27,16 @@ ciphertext. Open question: whether any capability needs genuine multicast badly 
 justify a key scoped to exactly that capability's audience; if so, it would be introduced
 by its own ADR.
 
+```text
+  phone =========== session A ===========> laptop
+  phone =========== session B ===========> tablet
+  phone ===== session C =====[ relay ]===> hub
+
+  Each ===== is its own QUIC/TLS 1.3 session, keyed between exactly those two
+  devices. The relay forwards packets it cannot read. There is no key that
+  opens A, B and C together, so the tablet never sees what went to the laptop.
+```
+
 ## 4. Nothing before authentication
 
 A device sends no manifest, no gossip and no capability traffic until the peer is

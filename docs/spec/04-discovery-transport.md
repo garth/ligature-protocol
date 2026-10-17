@@ -101,6 +101,18 @@ Matter controller or media server. Clients can list several relays; a project-ru
 a swappable convenience default. Open question: relay selection and failover order, and
 whether relays should be rate-limited per device key.
 
+```text
+  At home                                 Away
+  -------                                 ----
+  laptop <---- mDNS/DNS-SD, BLE ---> phone     phone --- DHT lookup ---> "where is laptop?"
+       \                           /                 <--- addresses and relays, signed by laptop
+        +------ direct QUIC -------+          phone <--- coordinator ---> laptop   (observed addresses)
+                                              phone ====== hole-punched QUIC ====== laptop   (if it works)
+  no helpers at all                           phone === QUIC ===[ relay ]=== QUIC === laptop (otherwise)
+
+                                              every helper sees addresses and ciphertext only
+```
+
 ## 6. Situations
 
 | Situation | Discovery | Path | Helpers used |

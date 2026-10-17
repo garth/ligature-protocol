@@ -57,6 +57,19 @@ facts, not millions), so a full exchange of fact identifiers on every connect is
 acceptable. Open question: whether to use a Merkle-style summary instead of a plain list
 once groups grow.
 
+```text
+  device A                                        device B
+     |---- identifiers of the facts I hold --------->|
+     |<--- identifiers of the facts I hold ----------|
+     |---- revocations and abandonments B lacks ---->|   1. first, always
+     |<--- revocations and abandonments A lacks -----|
+     |---- person facts, bindings, principals ------>|   2. the trust chain
+     |<----------------------------------------------|
+     |---- group documents, relays, grants --------->|   3. everything else
+     |<----------------------------------------------|
+  each side verifies every fact before storing it and discards what fails
+```
+
 ## 5. Revocation and the offline window
 
 A device that was offline when a peer was revoked trusts that peer until it next meets any

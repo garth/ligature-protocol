@@ -34,6 +34,18 @@ rule of chapter 03 applied to metadata. Open question: whether a device may anno
 capability on behalf of a peer it is connected to, so that two devices with no direct path
 can still see each other through a hub.
 
+```text
+  connect ---> authenticate (raw public keys) ---> recognised?
+                                                     |-- no  --> pairing offer, nothing else
+                                                     |-- yes
+                                                     v
+          gossip (revocations first) ---> manifest ---> one stream per capability
+                                            ^               |
+                                            | updates       | request, grant, invoke
+                                            +---------------+
+          disconnect ---> every capability from that peer is withdrawn
+```
+
 ## 3. Initial capability families
 
 The first families are: notifications, clipboard, files, share, remote input, media

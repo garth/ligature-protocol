@@ -33,6 +33,22 @@ key lives (on the first device, or offline or derived from a passphrase) and whi
 are introducers. A strict setup limits introducers to one or two devices; everything else
 can be paired but cannot pair others.
 
+```text
+                     master key  (the person; private key wherever the user chooses)
+                     /         \
+             signs  /           \  signs
+                   v             v
+       self-signing key        user-signing key
+       (held by introducers)   (records other people)
+           |         |                 |
+     role  |         | role       role |
+  binding  v         v principal       v person
+   my account      a device I use    another person's
+   on a device                       master key
+
+  All three keys and the display name travel together in the signed person fact.
+```
+
 ## 4. Referring to other people
 
 Another person is known by their master key once it has been verified in person in the

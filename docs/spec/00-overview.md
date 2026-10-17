@@ -50,6 +50,27 @@ after loss or compromise. Chapters 08 and 09 cover
 platform constraints and the threat model. Chapter 10 covers shared multi-user devices and
 groups of identities.
 
+```text
++------------------------------------------------------------------+
+| 5  Capabilities   manifests on connect, requests, explicit grants |
++------------------------------------------------------------------+
+| 4  Transport      QUIC: one connection per device pair,           |
+|                   one stream per capability                       |
+|                   mDNS/DNS-SD + BLE at home; untrusted helpers    |
+|                   (discovery, hole punching, relay) when away     |
++------------------------------------------------------------------+
+| 3  Encryption     the QUIC/TLS 1.3 session itself, raw public     |
+|                   keys, least exposure: no group key              |
++------------------------------------------------------------------+
+| 2  Device trust   one in-person ceremony, role signatures         |
+|                   (binding, principal, person)                    |
++------------------------------------------------------------------+
+| 1  Identity       master key + person fact                        |
++------------------------------------------------------------------+
+  State: a local store on every device, signed facts gossiped on
+  every session. No server, nothing to recover.
+```
+
 ## 5. Document conventions
 
 Each chapter states its intent per section and lists open questions inline. Wire formats,

@@ -50,8 +50,9 @@ The authoritative record is `docs/adr/`. Summary, in layer order:
    never persisted. No required off-device state at all. (ADR 0016; ADR 0006 superseded)
 6. **Schemas**: JSON Schema 2020-12 under `schemas/`, one file per type; reverse-DNS type
    names `org.ligatureprotocol.*` (placeholder domain). Keys are multibase strings,
-   timestamps RFC 3339, bytes base64url. Wire encoding still open. (ADR 0020; ADR 0007
-   superseded)
+   timestamps RFC 3339, bytes base64url in JSON and byte strings in CBOR. Wire encoding is
+   CBOR; signed facts use RFC 8949 core deterministic encoding and the signature covers the
+   fact without its `signature` field. (ADR 0020, 0025; ADR 0007 superseded)
 7. **Capabilities**: devices advertise typed capabilities (notifications, clipboard, files,
    remote input, media control, telephony/SMS, displays, sensors); peers discover, request,
    and receive explicit grants. (ADR 0008)

@@ -29,9 +29,10 @@ Each is a short ADR; none should take long.
 
 1. **Signature algorithm.** Ed25519 only for now. Multibase/multicodec rendering of public
    keys as specified in chapter 01.
-2. **Wire encoding of messages.** JSON for the proof of concept, since the schemas are JSON
-   Schema and readability matters more than bytes at this stage. CBOR remains the likely
-   production choice and can be adopted without changing the schemas.
+2. **Wire encoding of messages.** Decided: CBOR from the start
+   ([ADR 0025](../adr/0025-cbor-wire-encoding.md)). Byte fields are CBOR byte strings,
+   timestamps and keys stay text, signed facts use core deterministic encoding. `lpctl`
+   may print messages as diagnostic notation for debugging.
 3. **QUIC stack.** Must support TLS 1.3 raw public keys (RFC 7250) on both sides. In Rust,
    quinn over rustls is the candidate; rustls has raw-public-key support. Whatever is
    chosen for the reference implementation under ADR 0014 must clear this bar, which is a
@@ -53,8 +54,9 @@ Each is a short ADR; none should take long.
 - `lpctl revoke` on either side stops the other from authenticating on its next connection
   attempt, and the revocation survives restarts.
 - Both daemons restart with their trust store intact and reconnect without a new ceremony.
-- Every message exchanged validates against a schema under `schemas/`, and the fixtures
-  used in tests are committed as the first conformance vectors.
+- Every message exchanged is CBOR that, decoded, validates against a schema under
+  `schemas/`, and the fixtures used in tests are committed as the first conformance
+  vectors.
 
 ## 6. Work breakdown
 
@@ -67,12 +69,12 @@ dependencies allow.
   key types in `lp-core` and `lp-crypto`.
 - A2. Simplest key configuration (chapter 01 section 3): one key serves as master,
   self-signing and user-signing key. The split configuration is a later task.
-- A3. Role signature format and verification (`lp-identity::cross_signing`): sign a key
-  with `binding` or `principal`, verify the chain to a master key. Unit tests become the
-  first conformance vectors.
+- A3. Role signature format and verification (`lp-identity::cross_signing`): sign the
+  deterministic CBOR encoding of a key-and-role fact with `binding` or `principal`, verify
+  the chain to a master key. Unit tests become the first conformance vectors.
 - A4. Local store on disk under `$XDG_DATA_HOME/ligature/`: own keys, device records with
-  signatures, revocations. JSON files for the proof of concept. Load, save, round-trip
-  tests.
+  signatures, revocations. CBOR files, the same encoding as the wire. Load, save,
+  round-trip tests.
 - A5. Revocation fact: create, verify, apply to the store (`revoked` flag retained).
 
 ### Phase B: transport
@@ -110,7 +112,8 @@ dependencies allow.
 - D2. `lpctl revoke` and the propagation test: revoke on A, B learns on next connect to A.
 - D3. Manifest after gossip (`lp-core::Manifest`): send current capabilities, update on
   change, withdraw on disconnect. `lpctl caps` shows the live view.
-- D4. Message schemas for gossip and manifests under `schemas/`, validated in tests.
+- D4. Message schemas for gossip and manifests under `schemas/`; tests decode CBOR and
+  validate the result against the schema.
 
 ### Phase E: clipboard
 

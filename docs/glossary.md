@@ -14,6 +14,9 @@ media control. Identified by a reverse-DNS type name. Always live, never persist
 **Capability descriptor**: One capability offered right now, with type, scope and
 type-specific parameters. Sent in a manifest.
 
+**CBOR**: Concise Binary Object Representation, RFC 8949. LP's wire encoding; signed facts
+use its core deterministic encoding.
+
 **Ceremony**: The proximity pairing step: an introducer verifies a key physically in front
 of it and signs it with a role. One ceremony makes the newcomer known to all my devices.
 
@@ -129,7 +132,8 @@ It sees only addresses and ciphertext. The default personal relay is the user's 
 device), `principal` (a device I use) or `person` (someone I know).
 
 **Schema**: A JSON Schema 2020-12 document under `schemas/` defining one LP record or
-message type.
+message type. Messages are CBOR on the wire and validate against the schema after
+decoding.
 
 **Share**: The ad-hoc, AirDrop-like push of text, links or files to a chosen device,
 accepted per item by the receiving person. A user-scoped capability.

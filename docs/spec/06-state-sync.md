@@ -41,8 +41,10 @@ Every fact that travels between devices is signed and self-verifying:
 | Standing grant | The granting device's key | The trust store |
 | Relay list | The device's own key | The trust store |
 
-A device accepts a fact only if the signature verifies against a key it already trusts;
-there is no external directory to consult. Open question: whether facts carry a sequence number per
+A fact is encoded as CBOR; its signature covers the core deterministic encoding of the
+fact without its signature field ([ADR 0025](../adr/0025-cbor-wire-encoding.md)). A device
+accepts a fact only if the signature verifies against a key it already trusts; there is no
+external directory to consult. Open question: whether facts carry a sequence number per
 signer so that an older fact can never replace a newer one.
 
 ## 4. Gossip

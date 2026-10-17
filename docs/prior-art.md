@@ -54,6 +54,11 @@ capability types predates atproto (D-Bus, Java) and is kept.
 
 **JSON Schema**: LP's schema language (ADR 0020).
 
+**CBOR (RFC 8949) and COSE (RFC 9052)**: The IETF's binary encoding and its signing and
+encryption layer, used by WebAuthn, CWT and much constrained-device work. LP's wire
+encoding (ADR 0025); COSE is a reference for signed-object layout if LP's own signed-fact
+format ever needs to interoperate.
+
 **Matrix device lists and Secure Scuttlebutt feeds**: Both distribute per-device signed
 facts (device keys, revocations, posts) by replication rather than through a shared
 database. LP's gossip of signed facts (spec chapter 06) follows the same shape.

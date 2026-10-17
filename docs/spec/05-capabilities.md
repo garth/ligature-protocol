@@ -83,6 +83,6 @@ A bridge is just a device that advertises a capability on behalf of something el
 
 - Versioning and negotiation of capability types.
 - Schemas are JSON Schema 2020-12 ([ADR 0020](../adr/0020-json-schema-and-reverse-dns-names.md));
-  the wire encoding is still open.
+  the wire encoding is CBOR ([ADR 0025](../adr/0025-cbor-wire-encoding.md)).
 - Capability discovery across group identities: what a member can see of another
   member's devices before asking.

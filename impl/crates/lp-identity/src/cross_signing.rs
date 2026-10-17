@@ -2,10 +2,10 @@
 //!
 //! Follows the Matrix model with a role attached: a master key signs a
 //! self-signing key (used by introducers to sign bindings and principals) and
-//! a user-signing key (used to sign known persons and group acceptances). In
-//! the simplest configuration all three are one key. This module will create
-//! keys in whichever configuration the user requires, produce role signatures,
-//! and verify chains back to a master key.
+//! a user-signing key (used to sign known persons and group acceptances). All
+//! three always exist (ADR 0031). This module will create them, keep the
+//! master private key where the user chooses, produce role signatures, and
+//! verify chains back to a master key.
 
 /// The role a ceremony signature asserts about a key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

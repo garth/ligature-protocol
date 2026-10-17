@@ -57,8 +57,9 @@ dependencies allow.
 
 - A1. Ed25519 key generation and multibase rendering; `PersonKey`, principal key, binding
   key types in `lp-core` and `lp-crypto`.
-- A2. Simplest key configuration (chapter 01 section 3): one key serves as master,
-  self-signing and user-signing key. The split configuration is a later task.
+- A2. The three-key structure (chapter 01 section 3): master key signs a self-signing key
+  and a user-signing key; the master private key lives on the first device for this
+  milestone, with offline or passphrase-derived storage as a later task.
 - A3. Role signature format and verification (`lp-identity::cross_signing`): sign the
   deterministic CBOR encoding of a key-and-role fact with `binding` or `principal`, verify
   the chain to a master key. Unit tests become the first conformance vectors.
@@ -88,8 +89,8 @@ dependencies allow.
   TLS exporter, display it.
 - C2. Introducer side (`Introducer`): scan or type the fingerprint, connect, derive the same
   code, ask the user to confirm it matches, sign the newcomer's binding (and principal) with
-  the chosen roles, send signatures, the self-signing key (simplest configuration) and
-  current gossip.
+  the chosen roles, send signatures, the self-signing key if the newcomer is to be an
+  introducer, and current gossip.
 - C3. Both sides store the result; the newcomer is now an introducer too (configurable
   later).
 - C4. `lpctl pair` (both roles) and `lpctl devices`.
@@ -144,7 +145,7 @@ dependencies allow.
 
 ## 7. After this milestone
 
-Milestone 2 candidates, in no order: the split key configuration and the introducer
-choice at pairing; the `share` family between two people (requires the `person` role and
+Milestone 2 candidates, in no order: offline or passphrase-derived master keys and the
+introducer choice at pairing; the `share` family between two people (requires the `person` role and
 the second master key); the headless pairing page; a group with one group device; relays
-and the DHT for the away-from-home case; the split key configuration's stricter variant.
+and the DHT for the away-from-home case.

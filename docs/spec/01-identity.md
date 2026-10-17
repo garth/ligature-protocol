@@ -18,21 +18,20 @@ algorithm is Ed25519 ([ADR 0027](../adr/0027-ed25519.md)), so every key renders 
 must chain to it. A master key does not expire; rebuilding (chapter 07) is a response to
 loss or compromise, not a scheduled event.
 
-## 3. Key configuration
+## 3. Key structure and configuration
 
-The protocol requires only that signatures chain to the master key. How the private keys
-are arranged is the user's choice, made to their own requirements:
+Every person has three keys ([ADR 0031](../adr/0031-split-keys-from-the-start.md)):
 
-- **Default.** A self-signing key, signed by the master key, is held by every device the
-  user marks as an *introducer*; a user-signing key, likewise signed, is used to record
-  known persons. The master private key is kept offline or derived from a passphrase.
-- **Simplest.** One key serves as master, self-signing and user-signing key and lives on
-  every introducer. Appropriate when rebuilding (chapter 07) is cheap, which it is.
-- **Strictest.** Introducers are limited to one or two devices; everything else can be
-  paired but cannot pair others.
+- the **master key**, which is the person;
+- a **self-signing key**, signed by the master key and held by every device the user marks
+  as an *introducer*, used to sign bindings and principals;
+- a **user-signing key**, signed by the master key, used to sign known persons and group
+  acceptances.
 
-Open question: whether the default should be the simplest configuration for first-run
-usability, with the split keys offered as an upgrade.
+Two things are the user's choice, made to their own requirements: where the master private
+key lives (on the first device, or offline or derived from a passphrase) and which devices
+are introducers. A strict setup limits introducers to one or two devices; everything else
+can be paired but cannot pair others.
 
 ## 4. Optional publication
 

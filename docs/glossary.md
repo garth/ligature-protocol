@@ -143,7 +143,7 @@ accepted per item by the receiving person. A user-scoped capability.
 (*group*), chosen by the introducer at pairing.
 
 **Self-signing key**: The key, signed by the master key, that introducers hold to sign
-bindings and principals. In the simplest configuration it is the master key itself.
+bindings and principals.
 
 **Signed fact**: A record signed by a device key or a person's key that any device can
 verify without a server. The unit of gossip.
@@ -158,7 +158,7 @@ verify without a server. The unit of gossip.
 clipboard, notifications, personal files.
 
 **User-signing key**: The key, signed by the master key, used to sign known persons and
-group membership acceptances. In the simplest configuration it is the master key itself.
+group membership acceptances.
 
 **UWB**: Ultra-wideband radio, usable for precise ranging to strengthen the ceremony where
 hardware allows. Never required.

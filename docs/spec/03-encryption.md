@@ -44,8 +44,11 @@ The protocol stores nothing off-device. Each device protects its own local store
 platform facilities (chapter 08). An optional backup (chapter 06 section 6) is encrypted
 to a key only the user holds.
 
-## 6. Open questions
+## 6. Settled points
 
-- Which TLS 1.3 cipher suites are mandatory to implement.
-- Whether 0-RTT resumption is permitted, given replay risk for capability invocations.
-- How the ceremony's short code is bound to the TLS session (chapter 02 section 4).
+- Mandatory TLS 1.3 cipher suites are `TLS_AES_128_GCM_SHA256`, `TLS_AES_256_GCM_SHA384`
+  and `TLS_CHACHA20_POLY1305_SHA256`; `ed25519` is the only signature scheme
+  ([ADR 0028](../adr/0028-quinn-over-rustls.md)).
+- 0-RTT is not used (ADR 0028).
+- The ceremony's short code is derived from the TLS exporter
+  ([ADR 0029](../adr/0029-ceremony-code-from-tls-exporter.md)).

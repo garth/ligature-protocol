@@ -23,19 +23,20 @@ The authoritative record is `docs/adr/`. Summary, in layer order:
    configuration (split master/self-signing/user-signing vs one key; which devices are
    introducers) follows the user's requirements. Nothing AT Protocol-specific remains.
    (ADR 0017; ADR 0002 superseded)
-2. **Device trust**: one proximity ceremony (QR + spoken code baseline; BLE/NFC/UWB
-   optional, never required). An introducer signs the verified key with a role: `binding`
-   (my account on a device), `principal` (a device I use), `person` (someone I know). One
-   ceremony makes the newcomer known to all my devices; pairwise-only is rejected.
-   Headless devices serve a pairing web page on the LAN. Revocation is a gossiped signed
-   fact. (ADR 0003, 0017)
+2. **Device trust**: one proximity ceremony (QR + a six-digit short authentication string
+   derived from the TLS exporter, ADR 0029; BLE/NFC/UWB optional, never required). An
+   introducer signs the verified key with a role: `binding` (my account on a device),
+   `principal` (a device I use), `person` (someone I know). One ceremony makes the
+   newcomer known to all my devices; pairwise-only is rejected. Headless devices serve a
+   pairing web page on the LAN. Revocation is a gossiped signed fact. (ADR 0003, 0017)
 3. **Encryption**: the pairwise QUIC/TLS 1.3 session with raw public keys is the
    end-to-end layer. Least exposure: no device can decrypt what it does not need, so no
    group key; MLS is only a candidate for a future capability-scoped multicast key.
    Nothing is sent before mutual authentication. (ADR 0019; ADR 0004 superseded)
 4. **Transport**: application-level QUIC (RFC 9000), one connection per device pair, one
    stream per capability, device keys as TLS raw public keys (RFC 7250), connection
-   migration. The session is the end-to-end layer (decision 3). mDNS/DNS-SD + BLE
+   migration; quinn over rustls, mutual RPK, rustls default suites, no 0-RTT (ADR 0028).
+   The session is the end-to-end layer (decision 3). mDNS/DNS-SD + BLE
    locally. Remotely, three replaceable untrusted helper roles: discovery (signed records
    in a DHT via pkarr, gossiped relays, optional published key), hole-punch coordination, relay
    (default: the user's home hub). Rule: any helper may be operated by anyone, is listed in

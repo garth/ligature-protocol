@@ -25,7 +25,7 @@ a separate process (section 6, phase F), and the optional WireGuard integration.
 
 ## 4. Decisions to pin before coding
 
-Each is a short ADR; none should take long.
+All five are now decided; each has its ADR.
 
 1. **Signature algorithm.** Decided: Ed25519 only ([ADR 0027](../adr/0027-ed25519.md)),
    rendered as multibase/multicodec `z6Mk…`.
@@ -33,13 +33,12 @@ Each is a short ADR; none should take long.
    ([ADR 0025](../adr/0025-cbor-wire-encoding.md)). Byte fields are CBOR byte strings,
    timestamps and keys stay text, signed facts use core deterministic encoding. `lpctl`
    may print messages as diagnostic notation for debugging.
-3. **QUIC stack.** Must support TLS 1.3 raw public keys (RFC 7250) on both sides. quinn
-   over rustls is the candidate; rustls has raw-public-key support. Confirm client and
-   server authentication both work before building on it (task B1).
-4. **Binding the ceremony code to the session.** The short code shown on both sides is
-   derived from the TLS exporter of the pairing connection (RFC 9266 style channel binding),
-   so a relayed impostor cannot complete the ceremony. This resolves the open question in
-   chapter 02 section 4 for the proof of concept.
+3. **QUIC stack.** Decided: quinn over rustls
+   ([ADR 0028](../adr/0028-quinn-over-rustls.md)); mutual raw-public-key authentication,
+   rustls default suites, no 0-RTT. Task B1 is the verification gate.
+4. **Binding the ceremony code to the session.** Decided: a six-digit (or two-word) short
+   authentication string derived from the TLS exporter
+   ([ADR 0029](../adr/0029-ceremony-code-from-tls-exporter.md)).
 5. **Implementation language.** Decided: Rust, the existing workspace under `impl/`
    ([ADR 0026](../adr/0026-rust-reference-implementation.md)).
 
@@ -148,7 +147,7 @@ dependencies allow.
   other wlroots-style compositors but not GNOME. Out of scope here, but the watcher should
   be behind a trait.
 - Channel binding of the ceremony code depends on exporter support in the TLS library;
-  if absent, fall back to comparing key fingerprints and record the gap.
+  ADR 0029 defines the fallback and requires the gap to be recorded.
 
 ## 8. After this milestone
 

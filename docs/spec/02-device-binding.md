@@ -45,8 +45,10 @@ user chooses at pairing time according to their requirements. Open question: whe
 4. Both sides store what they received. Every other device learns of it by gossip.
 
 BLE, NFC or UWB ranging may be used to tighten the proximity check where hardware allows
-but are never required. Open question: the exact code length and the binding of the code
-to the TLS session so that a relayed impostor cannot complete the ceremony.
+but are never required. The short code is a six-digit (or two-word) short authentication
+string derived from the TLS exporter of the pairing connection, so an interposed attacker
+holding two sessions cannot show the same code to both sides
+([ADR 0029](../adr/0029-ceremony-code-from-tls-exporter.md)).
 
 ## 5. Headless devices
 

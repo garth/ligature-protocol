@@ -61,9 +61,11 @@ Hubs have no screen or camera and never rely on hardware for pairing: they serve
 web page on the LAN that shows the ceremony's fingerprint and code (chapter 02 section 5).
 A hub is also the default personal relay and hole-punch coordinator (chapter 04), so
 it should be always on and reachable from the internet, which on an IPv4-only home
-connection means a port forward or a global IPv6 address. Open question: how the pairing page is
-protected from a stranger on the same LAN before the first owner claims the device
-(likely: it only displays, and the signing happens on the trusted device).
+connection means a port forward or a global IPv6 address. Before the first owner claims the device,
+anyone on the LAN can open its pairing page and claim it; this setup-window risk is
+accepted for milestone 1 ([ADR 0029](../adr/0029-ceremony-code-from-tls-exporter.md)). If
+later judged insufficient, the options are a claim window opened by a power cycle or a
+printed code.
 
 ## 6. Open questions
 

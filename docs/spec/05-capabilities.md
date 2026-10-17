@@ -25,16 +25,34 @@ of descriptors it currently offers. While the session lasts it sends updates as
 capabilities appear (a display is plugged in) or disappear (a phone goes to the background
 and loses clipboard access). When the session ends, every capability from that peer is
 withdrawn. A device's view of the network is therefore the union of the manifests of the
-peers it is connected to, and a hub's directory is nothing more than that. Open question:
-whether a device may announce a capability on behalf of a peer it is connected to, so that
-two devices with no direct path can still see each other through a hub.
+peers it is connected to, and a hub's directory is nothing more than that.
+
+A manifest is filtered by audience: to another person's device it lists only the
+capabilities that person could use (for example `share`, and device-scoped capabilities
+the group policy allows them), not everything the device offers. This is the least-exposure
+rule of chapter 03 applied to metadata. Open question: whether a device may announce a
+capability on behalf of a peer it is connected to, so that two devices with no direct path
+can still see each other through a hub.
 
 ## 3. Initial capability families
 
-The first families are: notifications, clipboard, files, remote input, media control,
-telephony/SMS, displays, sensors. Each will become its own spec section with its own
-schema. Open question: which two or three families the proof of concept should cover
+The first families are: notifications, clipboard, files, share, remote input, media
+control, telephony/SMS, displays, sensors. Each will become its own spec section with its
+own schema. Open question: which two or three families the proof of concept should cover
 (clipboard is the current target).
+
+## 3a. Sharing between people
+
+`org.ligatureprotocol.capability.share` is the ad-hoc, AirDrop-like push of text, links or
+files to a chosen device, usually another person's. It is user-scoped: it belongs to a
+binding, so a share to the family laptop is a share to a particular account on it. The
+receiver accepts or declines each share on the receiving device; acceptance is a one-time
+grant, which the receiver may make standing for a particular sender. The payload travels
+on the `share` stream of the pairwise session. `files` keeps its meaning of browsing and
+transferring files among a person's own devices. See
+[ADR 0022](../adr/0022-ad-hoc-sharing-between-people.md). Open question: size limits and
+resumption for large shares, and whether a share may be addressed to several devices at
+once (which is several sessions under chapter 03).
 
 ## 4. Requests and grants
 

@@ -23,13 +23,14 @@
         "notifications",
         "clipboard",
         "files",
+        "share",
         "remoteInput",
         "mediaControl",
         "telephony",
         "displays",
         "sensors"
       ],
-      "description": "The initial capability families. Each will receive its own schema."
+      "description": "The initial capability families. Each will receive its own schema. share is the ad-hoc, AirDrop-like push of text, links or files to a chosen device, accepted per item (spec chapter 05 section 3a)."
     },
     "descriptor": {
       "type": "object",

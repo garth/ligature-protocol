@@ -12,9 +12,8 @@ pub struct PersonKey(pub String);
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PublishedName(pub String);
 
-/// Identifier of a group of people such as a household. Spec chapter 10.
-///
-/// Whether this is a key of its own or derived from the founding admin's key
-/// is an open question; the newtype keeps callers independent of the answer.
+/// A group's public key, as a multibase string with a multicodec prefix. The
+/// group's identity: it signs the membership document and owns group-owned
+/// devices. Spec chapter 10.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct GroupId(pub String);
+pub struct GroupKey(pub String);

@@ -18,7 +18,8 @@ never stored; they are announced live (chapter 05). No off-device state is requi
   known persons (chapter 02, [`org.ligatureprotocol.device`](../../schemas/device.schema.json)).
 - Revocations and key-abandonment statements it has learned (chapter 07).
 - Grants it has issued (chapter 05) and, optionally, grants it has received.
-- Group memberships it is party to (chapter 10).
+- Group keys and membership documents for the groups it is party to or owned by
+  (chapter 10).
 - Relays it uses (chapter 04).
 
 Nothing here is a cache of a remote truth; the local store *is* the truth as far as that
@@ -34,8 +35,9 @@ Every fact that travels between devices is signed and self-verifying:
 | Device binding or principal | My self-signing key, with a role | My master key |
 | Known person | My user-signing key, role `person` | My master key |
 | Revocation or key abandonment | An introducer's self-signing key | The relevant master key |
+| Group key introduction | The inviting admin's binding key | The admin's master key, already a known person |
 | Group membership acceptance | The member's user-signing key | The member's master key, already known |
-| Group membership document | A group admin's binding key | The group's admin list |
+| Group membership document (versioned) | The group key | The group key learned at joining; a higher version replaces a lower |
 | Standing grant | The granting device's key | The trust store |
 | Relay list | The device's own key | The trust store |
 

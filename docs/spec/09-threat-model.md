@@ -19,7 +19,10 @@ information.
 - An active network attacker able to inject or modify traffic.
 - A stranger on the local network during pairing, including on a headless device's pairing
   page.
-- An attacker who has obtained a self-signing key from a compromised introducer.
+- An attacker who has obtained a self-signing key from a compromised introducer, or a
+  group key from a compromised admin device.
+- A stranger nearby offering unsolicited shares, if the optional open sharing mode is
+  enabled.
 - A malicious or compromised helper: relay, hole-punch coordinator or discovery service.
 - An attacker able to write to the DHT used for discovery (DHT poisoning) or to spoof
   discovery records.
@@ -48,6 +51,17 @@ operating system's account isolation for this and says so (chapter 08). A depart
 is removed from the group record and their standing grants are revoked. Open question:
 whether a device-scoped capability invoked by a group member should be visible to the
 present user even after approval (an indicator), to limit silent use.
+
+### 4.0a Group-owned devices and sharing
+
+A group-owned device accepts only bindings whose chain reaches a member listed in a
+membership document signed by the group key, so a forged or stale document cannot admit an
+outsider; versioning stops an old document from re-admitting a removed member. A leaked
+group key lets an attacker add members until the group is rebuilt. Shares are accepted per
+item by the receiving person and only from known persons and group members by default, so
+the worst a member can do is annoy; open mode, if adopted, would let a stranger reach a
+prompt and must be time-boxed and off by default. Open question: whether a group-owned
+device should rate-limit requests per member to resist a compromised member device.
 
 ### 4.1 Helpers
 

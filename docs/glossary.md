@@ -32,8 +32,17 @@ device holds and the other lacks.
 **Grant**: A record authorising one device to use a capability of another, with scope and
 expiry. Held by the device that issued it.
 
-**Group**: A set of people, such as a household, with admins, a membership document, shared
-devices and a policy. Membership alone grants nothing; access is by grant.
+**Group**: A set of people, such as a household, with a group key, admins, a membership
+document, group-owned devices and a policy. Membership alone grants nothing between
+people; access to group-owned devices follows the group policy.
+
+**Group key**: The signing key that is a group's identity, created by the founding admin
+and held by every admin. It signs the membership document and is the owner of group-owned
+devices.
+
+**Group-owned device**: A device with no user accounts (a lamp, a hub) whose owner set is
+the group key and which every member may use under the group policy after one pairing by
+an admin.
 
 **Headscale**: An open-source implementation of the Tailscale coordination server. LP's
 optional WireGuard integration generates configurations compatible with it.
@@ -69,8 +78,12 @@ authentication and updated while the session lasts. Withdrawn entirely when it e
 Created on their first device; everything they trust chains to it. Written as a multibase
 string with a multicodec prefix.
 
-**Owner set**: The master keys allowed to administer a device principal: set its policy
-and add other owners. The first person to pair a binding on an unowned principal is its
+**Open sharing mode**: A proposed opt-in state in which a device accepts share offers from
+anyone nearby for a few minutes. Off by default; an open question.
+
+**Owner set**: The master keys, or the group key, allowed to administer a device
+principal: set its policy and add other owners. The first person to pair a binding on an
+unowned principal is its
 first owner.
 
 **Pairing page**: The basic web page a headless device serves on the LAN so the ceremony
@@ -106,6 +119,9 @@ device), `principal` (a device I use) or `person` (someone I know).
 
 **Schema**: A JSON Schema 2020-12 document under `schemas/` defining one LP record or
 message type.
+
+**Share**: The ad-hoc, AirDrop-like push of text, links or files to a chosen device,
+accepted per item by the receiving person. A user-scoped capability.
 
 **Self-signing key**: The key, signed by the master key, that introducers hold to sign
 bindings and principals. In the simplest configuration it is the master key itself.

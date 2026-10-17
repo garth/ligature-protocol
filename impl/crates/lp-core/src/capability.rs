@@ -15,8 +15,11 @@ pub enum Family {
     Notifications,
     /// Shared clipboard.
     Clipboard,
-    /// File transfer and browsing.
+    /// File transfer and browsing among a person's own devices.
     Files,
+    /// Ad-hoc, AirDrop-like push of text, links or files to a chosen device,
+    /// usually another person's, accepted per item by the receiver.
+    Share,
     /// Keyboard, mouse and touch input to a remote device.
     RemoteInput,
     /// Play, pause, seek, volume.

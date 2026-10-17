@@ -60,13 +60,16 @@ owners.
 
 ## 6. Shared devices
 
-A shared device has a principal and one binding per account. The first person to pair a
-binding on an unowned principal becomes its **owner**; owners may add other owners.
-Pairing a binding on a shared device signs the binding as `binding` and the principal as
-`principal` in one ceremony, since the account's daemon can attest the principal key over
-local IPC. Owners set the device's policy for unattended requests (chapter 10). Open
-question: whether a person can hold a `principal` signature for a device on which they
-have no account (a guest using the speakers), or whether that is always a grant.
+A shared device has a principal and zero or more bindings. The first person to pair an
+unowned principal becomes its **owner**; owners may add other owners. Pairing a binding on
+a shared device signs the binding as `binding` and the principal as `principal` in one
+ceremony, since the account's daemon can attest the principal key over local IPC. A device
+with no accounts (a lamp) is paired through its pairing page: the introducer signs its
+principal with the `principal` role and becomes its owner, or, when the introducer is a
+group admin, makes the group the owner by adding the device to the group's membership
+document (chapter 10 section 5). Owners set the device's policy for unattended requests.
+Open question: whether a person can hold a `principal` signature for a device they neither
+own nor have an account on (a guest using the speakers), or whether that is always a grant.
 
 ## 7. Revocation
 

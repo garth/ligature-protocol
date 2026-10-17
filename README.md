@@ -32,7 +32,9 @@ Apple-Continuity-like ecosystem for Linux users, built on existing open standard
   user's own records, and is never trusted with plaintext or identity.
 - **Permission across people, not just devices.** Shared devices with several accounts
   and groups such as a household are first-class. Your own devices work together without
-  prompts; using someone else's device or capability asks the person who is there.
+  prompts; using someone else's device or capability asks the person who is there. A
+  device the household owns, like a lamp, is paired once and works for every member.
+  Sending a photo to a family member's phone asks them, then it arrives.
 - **Interoperate, don't replace.** Bridge to KDE Connect, LocalSend, Matter/Thread,
   CalDAV/CardDAV and Syncthing where practical.
 
@@ -66,7 +68,7 @@ flowchart TB
     subgraph Caps["Capability layer"]
         ADV["Advertise typed capabilities"]
         GRANT["Discover, request, grant"]
-        USE["Notifications, clipboard, files,<br/>remote input, media, telephony,<br/>displays, sensors"]
+        USE["Notifications, clipboard, files, sharing,<br/>remote input, media, telephony,<br/>displays, sensors"]
     end
 
     subgraph State["Local state, per device"]

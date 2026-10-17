@@ -33,8 +33,10 @@ A device sends no manifest, no gossip and no capability traffic until the peer i
 authenticated and its key is recognised: a binding of mine, a principal I use, or a
 binding of a known person. An unknown key is answered only with the pairing offer of
 chapter 02, if the device is accepting pairings. Bystanders learn nothing beyond a public
-key. Open question: whether even the public key should be hidden behind a per-epoch
-identifier, as the discovery advertisements already are (chapter 04).
+key. Open questions: whether even the public key should be hidden behind a per-epoch
+identifier, as the discovery advertisements already are (chapter 04); and whether to allow
+an opt-in open sharing mode (chapter 10 section 7) in which an unknown but authenticated
+key may offer a share and nothing else for a limited time.
 
 ## 5. Secrets at rest
 

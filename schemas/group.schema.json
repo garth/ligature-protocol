@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ligatureprotocol.org/schemas/group.schema.json",
   "title": "org.ligatureprotocol.group",
-  "description": "DRAFT. A signed document describing a group of people (for example a household): members by master key, admins, shared devices and policy. Signed by an admin's binding key and gossiped among members' devices; there is no group repository (spec chapter 10). The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "description": "DRAFT. A group's membership document: its group key, members by master key with roles, the devices the group owns by principal key, and policy. Signed by the group key and gossiped among members' devices and group-owned devices; a higher version replaces a lower; there is no group repository (spec chapter 10). The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
   "$defs": {
     "publicKey": {
       "type": "string",
@@ -75,16 +75,59 @@
           "description": "How long a present person has to answer before a request is treated as denied."
         }
       }
+    },
+    "ownedDevice": {
+      "type": "object",
+      "description": "A device the group owns: no user accounts, owner set is the group key.",
+      "required": [
+        "deviceId",
+        "key"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "deviceId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "key": {
+          "$ref": "#/$defs/publicKey",
+          "description": "The device's principal key, which members' devices trust because this document lists it."
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "memberAllow": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/typeName"
+          },
+          "description": "Capability types members may use on this device. Overrides the group-wide unattendedAllow for this device."
+        }
+      }
     }
   },
   "type": "object",
   "required": [
+    "groupKey",
+    "version",
     "displayName",
     "members",
+    "signature",
     "createdAt"
   ],
   "additionalProperties": false,
   "properties": {
+    "groupKey": {
+      "$ref": "#/$defs/publicKey",
+      "description": "The group's identity. Held by every admin."
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Increases with every change. A device keeps only the highest version it has verified."
+    },
     "displayName": {
       "type": "string",
       "maxLength": 64
@@ -96,14 +139,13 @@
         "$ref": "#/$defs/member"
       }
     },
-    "sharedDevices": {
+    "ownedDevices": {
       "type": "array",
       "maxItems": 256,
       "items": {
-        "type": "string",
-        "maxLength": 128
+        "$ref": "#/$defs/ownedDevice"
       },
-      "description": "deviceIds of principals owned by the group."
+      "description": "Devices the group owns (spec chapter 10 section 5)."
     },
     "policy": {
       "$ref": "#/$defs/policy"
@@ -111,6 +153,10 @@
     "createdAt": {
       "type": "string",
       "format": "date-time"
+    },
+    "signature": {
+      "$ref": "#/$defs/bytes",
+      "description": "Signature by the group key over the document without this field."
     }
   }
 }

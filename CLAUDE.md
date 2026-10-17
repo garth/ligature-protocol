@@ -64,11 +64,15 @@ The authoritative record is `docs/adr/`. Summary, in layer order:
 10. **Shared devices and groups**: capabilities are `user`-scoped (clipboard,
     notifications, files; owned by a user-device binding in that person's device set) or
     `device`-scoped (display, speakers, sensors, input; owned by a device principal). A
-    shared device has one principal plus one binding per account. Groups (households) are
-    first-class with admins, members, shared devices and policy. Same-identity use of
-    user-scoped capabilities is implicit; anything across identities needs approval by the
-    capability's owner or, for device-scoped, by the person present on the device, else
-    device policy. Cross-person traffic is an ordinary pairwise session. (ADR 0015)
+    shared device has one principal plus zero or more bindings. Groups (households) have
+    a group key held by admins; the membership document is signed by it, versioned, and
+    lists members by master key and group-owned devices (a lamp) by principal key, so one
+    pairing by an admin makes a device available to every member under group policy.
+    Same-person use of user-scoped capabilities is implicit; anything across people needs
+    approval by the capability's owner or, for device-scoped, by the person present on the
+    device, else device policy. `share` is the AirDrop-like family: user-scoped, visible
+    only to known persons and group members, accepted per item. Manifests are filtered by
+    audience. Cross-person traffic is an ordinary pairwise session. (ADR 0015, 0021, 0022)
 
 Changing any of these means a new ADR that supersedes the old one, not an edit.
 

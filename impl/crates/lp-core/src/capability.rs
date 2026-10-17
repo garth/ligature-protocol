@@ -89,10 +89,10 @@ pub enum GrantBasis {
 pub struct Grant {
     /// How the grant came about.
     pub basis: GrantBasis,
-    /// Device offering the capability.
-    pub grantor: crate::device::DeviceId,
-    /// Device permitted to use it.
-    pub grantee: crate::device::DeviceId,
+    /// Key of the device offering the capability.
+    pub grantor: crate::device::DeviceKey,
+    /// Key of the device permitted to use it.
+    pub grantee: crate::device::DeviceKey,
     /// The granted capability type.
     pub capability_type: CapabilityType,
 }

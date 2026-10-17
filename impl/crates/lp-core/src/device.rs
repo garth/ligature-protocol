@@ -1,13 +1,15 @@
-//! Device identifiers and records. Spec chapter 02 and the `device` schema
-//! under `schemas/`.
+//! Device keys and records. Spec chapter 02 and the `device` schema under
+//! `schemas/`. A device is identified by its key; there is no separate id
+//! (ADR 0034).
 //!
 //! A [`DeviceRecord`] is a signed fact carried by the device and gossiped to
 //! peers (spec chapter 06). It does not list capabilities; those are live
 //! (see [`crate::capability::Manifest`]).
 
-/// Stable opaque identifier for a device, derived from its signing key.
+/// A device's principal or binding public key in multibase form (`z6Mk…`).
+/// This is the device's identifier.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct DeviceId(pub String);
+pub struct DeviceKey(pub String);
 
 /// Whether a device record describes the device itself or one person's
 /// account on it. Spec chapter 10.
@@ -58,11 +60,11 @@ pub enum Registration {
 /// `lp-identity` are implemented.
 #[derive(Debug, Clone)]
 pub struct DeviceRecord {
-    /// The device's identifier.
-    pub id: DeviceId,
+    /// The device's key, which is its identifier.
+    pub key: DeviceKey,
     /// Principal or binding.
     pub kind: DeviceKind,
-    /// User-chosen display name.
+    /// Display name: the host name by default, overridable by the user.
     pub display_name: String,
     /// Platform family.
     pub platform: Platform,

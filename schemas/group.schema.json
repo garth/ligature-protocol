@@ -80,18 +80,13 @@
       "type": "object",
       "description": "A device the group owns: no user accounts, owner set is the group key.",
       "required": [
-        "deviceId",
         "key"
       ],
       "additionalProperties": false,
       "properties": {
-        "deviceId": {
-          "type": "string",
-          "maxLength": 128
-        },
         "key": {
           "$ref": "#/$defs/publicKey",
-          "description": "The device's principal key, which members' devices trust because this document lists it."
+          "description": "The device's principal key, which is its identifier; members' devices trust it because this document lists it."
         },
         "displayName": {
           "type": "string",

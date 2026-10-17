@@ -30,7 +30,9 @@ The authoritative record is `docs/adr/`. Summary, in layer order:
    introducer signs the verified key with a role: `binding` (my account on a device),
    `principal` (a device I use), `person` (someone I know). One ceremony makes the
    newcomer known to all my devices; pairwise-only is rejected. Headless devices serve a
-   pairing web page on the LAN. Revocation is a gossiped signed fact. (ADR 0003, 0017)
+   pairing web page on the LAN. Revocation is a gossiped signed fact. Devices and people
+   are identified by their public keys; there is no `deviceId`; a device's name defaults
+   to its host name and the user may override it (ADR 0034). (ADR 0003, 0017)
 3. **Encryption**: the pairwise QUIC/TLS 1.3 session with raw public keys is the
    end-to-end layer. Least exposure: no device can decrypt what it does not need, so no
    group key. Nothing is sent before mutual authentication. (ADR 0019)

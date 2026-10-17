@@ -19,6 +19,12 @@ a role. One ceremony makes the newcomer available to every device the person own
   binding; a family laptop has one per account.
 - **Self-signing key**, if this device is an introducer (chapter 01).
 
+A device is identified by its key; there is no separate identifier, and a short fingerprint
+shown in a terminal is presentation only
+([ADR 0034](../adr/0034-keys-are-identifiers.md)). Its display name defaults to the host
+name the operating system reports and the user may override it; the name is part of the
+signed device record.
+
 ## 3. Roles
 
 A signature made in the ceremony carries exactly one role:

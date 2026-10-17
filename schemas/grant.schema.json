@@ -25,14 +25,12 @@
   "additionalProperties": false,
   "properties": {
     "grantor": {
-      "type": "string",
-      "maxLength": 128,
-      "description": "deviceId of the principal or binding offering the capability."
+      "$ref": "#/$defs/publicKey",
+      "description": "Key of the principal or binding offering the capability."
     },
     "grantee": {
-      "type": "string",
-      "maxLength": 128,
-      "description": "deviceId of the device permitted to use it."
+      "$ref": "#/$defs/publicKey",
+      "description": "Key of the device permitted to use it."
     },
     "granteePerson": {
       "$ref": "#/$defs/publicKey",

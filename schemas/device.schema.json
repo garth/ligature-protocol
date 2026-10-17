@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ligatureprotocol.org/schemas/device.schema.json",
   "title": "org.ligatureprotocol.device",
-  "description": "DRAFT. A device principal or a user-device binding, with the role signatures that make it trusted. Carried by the device itself and gossiped between devices; there is no shared repository. Capabilities are not part of this record: they are announced live in a capability manifest (spec chapters 02, 05, 06). The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "description": "DRAFT. A device principal or a user-device binding, with the role signatures that make it trusted. Carried by the device itself and gossiped between devices; there is no shared repository. The key is the identifier; there is no separate deviceId. Capabilities are not part of this record: they are announced live in a capability manifest (spec chapters 02, 05, 06). The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
   "$defs": {
     "publicKey": {
       "type": "string",
@@ -87,7 +87,6 @@
   },
   "type": "object",
   "required": [
-    "deviceId",
     "displayName",
     "platform",
     "kind",
@@ -96,15 +95,10 @@
   ],
   "additionalProperties": false,
   "properties": {
-    "deviceId": {
-      "type": "string",
-      "maxLength": 128,
-      "description": "Stable opaque identifier derived from the key."
-    },
     "displayName": {
       "type": "string",
       "maxLength": 64,
-      "description": "Human-readable name chosen by the user."
+      "description": "Human-readable name. Defaults to the device's host name as the operating system reports it, without a domain suffix; the user may override it (ADR 0034). Changing it is a new version of this record."
     },
     "platform": {
       "type": "string",
@@ -136,16 +130,15 @@
     },
     "key": {
       "$ref": "#/$defs/publicKey",
-      "description": "The principal key or binding key."
+      "description": "The principal key or binding key. This is the device's identifier; there is no separate id (ADR 0034)."
     },
     "person": {
       "$ref": "#/$defs/publicKey",
       "description": "For a binding: the master key of the account holder."
     },
     "principal": {
-      "type": "string",
-      "maxLength": 128,
-      "description": "For a binding: the deviceId of the principal it runs on."
+      "$ref": "#/$defs/publicKey",
+      "description": "For a binding: the principal key of the device it runs on."
     },
     "ownerSet": {
       "type": "array",

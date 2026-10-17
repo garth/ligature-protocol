@@ -39,3 +39,11 @@ the code never sees SQLite.
 `~/Library/Application Support/ligature/` on macOS, resolved by one function and overridable
 with `--data-dir` (LP-32). The control socket lives in the runtime directory, not here
 (LP-30).
+
+## LP-26: the key is the identifier
+
+Became [ADR 0034](../adr/0034-keys-are-identifiers.md) because it changes every schema's
+references. There is no `deviceId`; devices and people are referenced by their public keys.
+Display names default to the host name and are user-overridable. Implementation note:
+`lp-core::DeviceKey` replaces `DeviceId`; terminals and logs show the display name and, when
+needed, a short fingerprint of the key, which is never stored or compared.

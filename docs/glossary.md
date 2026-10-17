@@ -23,6 +23,10 @@ of it and signs it with a role. One ceremony makes the newcomer known to all my 
 **Device security**: How a device authenticates its local user, locks, and protects its
 storage. Out of scope for the protocol, which defines authority and trust only.
 
+**Device key**: A device's principal or binding public key in multibase form. It is the
+device's identifier; there is no separate id. A short fingerprint shown in a terminal is
+presentation only.
+
 **Device principal**: The device itself: its own key, system-level daemon and owner set,
 owner of the device-scoped capabilities.
 

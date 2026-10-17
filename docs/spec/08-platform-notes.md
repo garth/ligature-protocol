@@ -30,10 +30,22 @@ and contacts via a Linux device acting as an accessory) and on EU Digital Market
 interoperability APIs where they exist. Open question: which features are realistic with
 no app installed versus with a companion app.
 
+## 4a. Networks and IPv6
+
+Where both devices have global IPv6 addresses, a direct QUIC connection usually succeeds
+without hole punching or a relay, since there is no NAT to traverse (only stateful
+firewalls, which commonly admit outbound-initiated flows). Implementations should try IPv6
+first when a discovery record offers it. IPv4 behind CGNAT, common on mobile networks, is
+where relays are most often needed. Open question: whether to require IPv6 support in all
+implementations.
+
 ## 5. Home hubs and headless devices
 
 Hubs have no screen or camera, so pairing and recovery flows need an alternative to QR
-codes. Open question: whether a trusted device can pair a hub on its behalf.
+codes. A hub is also the default personal relay and hole-punch coordinator (chapter 04), so
+it should be always on and reachable from the internet, which on an IPv4-only home
+connection means a port forward or a global IPv6 address. Open question: whether a trusted
+device can pair a hub on its behalf.
 
 ## 6. Open questions
 

@@ -59,12 +59,35 @@ time delay with veto, liveness checks and share refresh.
 **Argon / Ethereum social recovery wallets**: Guardian-based account recovery with time
 delays; evidence that delay-plus-veto is a workable pattern.
 
-## Transport
+## Transport and connectivity
 
-**WireGuard, Tailscale and Headscale**: The overlay network and self-hostable coordination
-server LP targets for remote connectivity (ADR 0005).
+**iroh**: A Rust networking library that dials peers by public key over QUIC, with hole
+punching, relays, and discovery through signed records in the BitTorrent Mainline DHT (via
+pkarr) or DNS. The closest existing design to LP's transport (ADR 0011, ADR 0012); its
+endpoint abstraction is a candidate for direct reuse in the production core.
+
+**libp2p**: The modular peer-to-peer networking stack from IPFS: transports (QUIC among
+them), peer identity from public keys, NAT traversal (DCUtR), relays (circuit relay v2) and
+a Kademlia DHT. A reference for how to separate transport, identity and discovery; heavier
+than LP needs.
+
+**pkarr and the BitTorrent Mainline DHT**: pkarr publishes signed DNS-style records keyed
+by an Ed25519 public key into Mainline, the largest deployed DHT. LP's DHT-based discovery
+option (spec chapter 04 section 5.1) follows this pattern.
+
+**Tailscale and Headscale (DERP relays)**: Tailscale's DERP relays forward WireGuard
+packets between peers that cannot hole-punch, are run by anyone, and are trusted with
+nothing but addresses. LP's relay role is modelled on DERP's trust posture (ADR 0012).
+Headscale is the self-hostable coordination server; LP's optional WireGuard integration
+(ADR 0013) generates configurations compatible with it.
+
+**QUIC (RFC 9000) and TLS raw public keys (RFC 7250)**: The transport protocol and the
+certificate-free authentication mode LP uses to bind connections to device keys.
 
 **mDNS/DNS-SD (RFC 6762, RFC 6763)**: Local service discovery.
+
+**WireGuard**: The kernel-level VPN protocol. Formerly LP's remote transport (ADR 0005,
+superseded); now an optional integration for users who want a full home-network overlay.
 
 ## Smart home and iOS interop
 

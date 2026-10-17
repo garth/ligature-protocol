@@ -29,7 +29,15 @@ expiry.
 **Handle**: A DNS name (for example `alice.example.org`) that resolves to a DID.
 
 **Headscale**: An open-source implementation of the Tailscale coordination server. LP's
-remote overlay aims to be compatible with it.
+optional WireGuard integration generates configurations compatible with it.
+
+**Helper**: A service that assists remote connectivity in one of three roles: discovery,
+hole-punch coordination, or relay. Any helper may be operated by anyone, is listed in the
+user's own records, and is never trusted with plaintext or identity.
+
+**Hole punching**: Establishing a direct connection between two peers behind NAT by having
+each send to the other's observed public address at the same time, with a coordinator
+exchanging those addresses.
 
 **Lexicon**: atproto's schema language. LP schemas live under `org.ligatureprotocol.*`.
 
@@ -42,8 +50,20 @@ end-to-end encryption with efficient membership changes.
 **NSID**: Namespaced Identifier, atproto's reverse-DNS naming for Lexicons, such as
 `org.ligatureprotocol.device`.
 
+**pkarr**: Public-Key Addressable Resource Records: signed DNS-style records keyed by a
+public key, published to the BitTorrent Mainline DHT. One of LP's discovery options.
+
 **PDS**: Personal Data Server. The atproto server that hosts a user's repository and, in
 LP, their Space.
+
+**QUIC**: The UDP-based transport protocol of RFC 9000, with TLS 1.3 built in, stream
+multiplexing and connection migration. LP's device-to-device transport.
+
+**Raw public key (RPK)**: The TLS mode of RFC 7250 in which a peer presents a bare public
+key instead of a certificate. LP uses it to authenticate QUIC connections with device keys.
+
+**Relay**: A helper that forwards traffic between two devices that cannot connect directly.
+It sees only addresses and ciphertext. The default personal relay is the user's home hub.
 
 **Rotation key**: In `did:plc`, a key authorised to update the DID document. LP treats it
 as the recovery root.

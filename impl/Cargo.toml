@@ -7,6 +7,8 @@ members = [
     "crates/lp-transport",
     "crates/ligatured",
     "crates/lpctl",
+    # Non-core integrations. The protocol never depends on these.
+    "integrations/wireguard-integration",
 ]
 
 [workspace.package]

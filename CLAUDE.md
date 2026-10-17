@@ -23,8 +23,15 @@ The authoritative record is `docs/adr/`. Summary, in layer order:
    cross-signing model; QR/short-code approval from an existing device; revocation. (ADR 0003)
 3. **Encryption**: one MLS (RFC 9420) group per user's device set for all peer traffic;
    OpenMLS planned. Pattern from Germ: atproto identity + MLS + separate transport. (ADR 0004)
-4. **Transport**: direct device-to-device. mDNS/DNS-SD + BLE locally; Headscale-compatible
-   WireGuard overlay remotely. Real-time traffic never goes through a PDS. (ADR 0005)
+4. **Transport**: application-level QUIC (RFC 9000), one connection per device pair, one
+   stream per capability, device keys as TLS raw public keys (RFC 7250), connection
+   migration. MLS stays end-to-end on top; QUIC/TLS is defence in depth. mDNS/DNS-SD + BLE
+   locally. Remotely, three replaceable untrusted helper roles: discovery (signed records
+   in a DHT via pkarr, or in the user's DID document/Space), hole-punch coordination, relay
+   (default: the user's home hub). Rule: any helper may be operated by anyone, is listed in
+   the user's own records, and is never trusted with plaintext or identity. Real-time
+   traffic never goes through a PDS. WireGuard/Headscale is an optional non-core
+   integration only. (ADR 0011, 0012, 0013; ADR 0005 superseded)
 5. **Shared state**: device registry, settings, household permissions as typed records in
    an atproto Space (alpha) on a self-hostable PDS. Secrets only as MLS-encrypted
    payloads. (ADR 0006)
@@ -41,6 +48,10 @@ The authoritative record is `docs/adr/`. Summary, in layer order:
 
 Changing any of these means a new ADR that supersedes the old one, not an edit.
 
+**Under review** (ADR 0014, Proposed): reference implementation in TypeScript plus
+language-neutral conformance test vectors, with a Rust production core (UniFFI) later. Do
+not restructure `impl/` until that ADR is confirmed.
+
 ## Repository layout
 
 - `docs/spec/NN-*.md`: spec chapters, one per layer plus platform notes and threat model.
@@ -51,9 +62,11 @@ Changing any of these means a new ADR that supersedes the old one, not an edit.
   guardian). Spec chapters link to these by relative path.
 - `impl/`: Rust cargo workspace, edition 2024. Crates: `lp-core` (shared types, capability
   model), `lp-identity` (DID resolution, cross-signing), `lp-crypto` (MLS wrapper),
-  `lp-transport` (mDNS/BLE/connections), `ligatured` (Linux user daemon, D-Bus, systemd
-  unit in `crates/ligatured/systemd/`), `lpctl` (CLI). Dependency direction: the three
-  layer crates depend only on `lp-core`; binaries depend on the layer crates.
+  `lp-transport` (QUIC connections, local discovery, remote discovery and relay clients),
+  `ligatured` (Linux user daemon, D-Bus, systemd unit in `crates/ligatured/systemd/`),
+  `lpctl` (CLI). `integrations/wireguard-integration` is a non-core placeholder.
+  Dependency direction: the three layer crates depend only on `lp-core`; binaries depend on
+  the layer crates; integrations depend on `lp-core` and never the other way round.
 - `.github/workflows/ci.yml`: fmt, clippy, test, markdownlint, Lexicon JSON parse.
 
 ## Commands

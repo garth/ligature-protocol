@@ -1,12 +1,24 @@
 //! Discovery and transport layer.
 //!
-//! Implements spec chapter 04 (ADR 0005): mDNS/DNS-SD and BLE for local
-//! discovery, direct connections between devices, and a WireGuard overlay for
-//! remote connectivity. Authentication is derived from the MLS group, not from
-//! the transport.
+//! Implements spec chapter 04 (ADRs 0011 and 0012). Devices connect directly
+//! over application-level QUIC (RFC 9000), authenticating with their LP device
+//! keys as TLS raw public keys (RFC 7250). Locally they find each other with
+//! mDNS/DNS-SD and BLE and need no server. Remotely they use replaceable,
+//! untrusted helpers in three roles: discovery, hole-punch coordination and
+//! relaying.
+//!
+//! Design rule: any helper may be operated by anyone, is listed in the user's
+//! own records, and is never trusted with plaintext or identity. MLS
+//! (`lp-crypto`) is the end-to-end layer above this crate; QUIC/TLS here is
+//! defence in depth.
+//!
+//! WireGuard is not part of this crate or of the protocol; see the non-core
+//! `wireguard-integration` crate.
 //!
 //! **Status:** scaffold. Stub modules and documentation only.
 
 pub mod ble;
-pub mod connection;
+pub mod discovery;
 pub mod mdns;
+pub mod quic;
+pub mod relay;

@@ -17,7 +17,11 @@ Apple-Continuity-like ecosystem for Linux users, built on existing open standard
 - **End-to-end encrypted.** All device-to-device traffic is protected by an MLS group
   (RFC 9420). Secrets at rest are stored only as MLS-encrypted payloads.
 - **Build on open standards.** AT Protocol for identity and shared state, MLS for group
-  encryption, mDNS/DNS-SD and BLE for discovery, WireGuard for the remote overlay.
+  encryption, QUIC with raw-public-key TLS for transport, mDNS/DNS-SD and BLE for
+  discovery.
+- **Helpers are replaceable and untrusted.** Remote connectivity may use discovery,
+  hole-punching and relay services. Any helper may be operated by anyone, is listed in the
+  user's own records, and is never trusted with plaintext or identity.
 - **Interoperate, don't replace.** Bridge to KDE Connect, LocalSend, Matter/Thread,
   CalDAV/CardDAV and Syncthing where practical.
 
@@ -37,9 +41,15 @@ flowchart TB
         MLS["MLS group (RFC 9420)<br/>one group per user's device set"]
     end
 
-    subgraph Transport["Transport layer"]
-        LAN["Local: mDNS/DNS-SD + BLE discovery,<br/>direct connections"]
-        WAN["Remote: WireGuard overlay<br/>(Headscale-compatible)"]
+    subgraph Transport["Transport layer: QUIC (RFC 9000)"]
+        QUIC["One QUIC connection per device pair,<br/>one stream per capability,<br/>device keys as TLS raw public keys"]
+        LAN["Local discovery:<br/>mDNS/DNS-SD + BLE"]
+    end
+
+    subgraph Helpers["Optional, untrusted helpers (remote only)"]
+        DISC["Discovery:<br/>signed records in a DHT (pkarr)<br/>or in the user's own records"]
+        PUNCH["Hole-punch coordination"]
+        RELAY["Relay<br/>(default: the user's home hub)"]
     end
 
     subgraph Caps["Capability layer"]
@@ -53,15 +63,22 @@ flowchart TB
         SEC["Secrets: MLS-encrypted payloads only"]
     end
 
-    DID --> XS --> MLS --> LAN & WAN --> ADV --> GRANT --> USE
+    DID --> XS --> MLS --> QUIC --> ADV --> GRANT --> USE
+    LAN -. "finds peers" .-> QUIC
+    DISC -. "addresses only" .-> QUIC
+    PUNCH -. "addresses only" .-> QUIC
+    RELAY -. "ciphertext only" .-> QUIC
     XS -. "publishes" .-> REG
     MLS -. "encrypts" .-> SEC
     REG -. "bootstraps" .-> MLS
 ```
 
 Real-time traffic never routes through the PDS. The PDS holds the device registry and
-other shared state so that devices can find and verify each other; the data itself
-flows directly between devices.
+other shared state so that devices can find and verify each other; the data itself flows
+directly between devices over QUIC, or through a relay that sees only ciphertext when a
+direct path is impossible. MLS is the end-to-end layer; QUIC/TLS underneath it is defence
+in depth. WireGuard is not part of the protocol; an optional integration can generate
+Headscale/WireGuard configurations for users who want a full home-network overlay.
 
 ## Repository layout
 
@@ -80,9 +97,15 @@ The `impl/` workspace contains:
 - `lp-core`: shared types and the capability model
 - `lp-identity`: DID resolution and device key cross-signing
 - `lp-crypto`: MLS wrapper (planned on OpenMLS)
-- `lp-transport`: mDNS/BLE discovery and connections
+- `lp-transport`: QUIC connections, local discovery (mDNS/BLE), remote discovery and
+  relay clients
 - `ligatured`: Linux user daemon (D-Bus, systemd user unit)
 - `lpctl`: CLI for pairing and inspection
+- `integrations/wireguard-integration`: non-core; generates Headscale/WireGuard peer
+  configs from the device list
+
+The implementation language is under review; see
+[ADR 0014](docs/adr/0014-reference-implementation-language.md).
 
 ```sh
 cd impl

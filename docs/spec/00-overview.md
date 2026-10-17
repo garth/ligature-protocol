@@ -30,8 +30,9 @@ LP is organised as five layers plus a shared-state store:
 1. **Identity** (chapter 01): an AT Protocol DID is the root of trust for a person.
 2. **Device trust** (chapter 02): each device has its own keys, cross-signed by the identity.
 3. **Encryption** (chapter 03): one MLS group per device set protects all peer traffic.
-4. **Discovery and transport** (chapter 04): mDNS/DNS-SD and BLE locally, a WireGuard
-   overlay remotely.
+4. **Discovery and transport** (chapter 04): application-level QUIC authenticated by
+   device keys; mDNS/DNS-SD and BLE locally; replaceable, untrusted helpers (discovery,
+   hole punching, relays) remotely.
 5. **Capabilities** (chapter 05): typed capability descriptors, requests and grants.
 
 Shared state (chapter 06) lives in an atproto Space on a PDS. Recovery (chapter 07)

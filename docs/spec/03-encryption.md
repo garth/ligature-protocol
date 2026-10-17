@@ -4,10 +4,30 @@
 
 ## 1. Intent
 
-All device-to-device traffic is end-to-end encrypted using an MLS group (RFC 9420) whose
-members are exactly the user's trusted devices. See
+All LP application messages are end-to-end encrypted using an MLS group (RFC 9420) whose
+members are exactly the user's trusted devices. This includes anything stored (Space
+records, chapter 06) or relayed (chapter 04). See
 [ADR 0004](../adr/0004-mls-group-encryption.md). The design follows the pattern used by
 Germ: atproto identity, MLS for keys, and a transport that is independent of both.
+
+## 1a. Layering: why QUIC/TLS and MLS both exist
+
+Two encryption layers are present on every peer connection:
+
+- **Underneath: QUIC/TLS 1.3 authenticated by device keys** (chapter 04). It protects a
+  single hop, authenticates the two endpoints to each other using raw public keys, and
+  gives the transport its integrity and migration properties. It is defence in depth.
+- **On top: MLS, end to end for the device group.** It protects content from relays, PDS
+  hosts, DHT nodes and any other intermediary, none of which terminate MLS. It also gives
+  forward secrecy and post-compromise security across the whole device set rather than per
+  connection, and it is the only layer that covers data at rest.
+
+A relayed connection terminates QUIC at the relay only if the relay is a QUIC proxy; even
+then the relay sees MLS ciphertext. A direct connection has both layers between the same
+two devices, which is redundant for confidentiality but keeps the model uniform: the
+application never needs to know whether a path is direct or relayed. Open question:
+whether the QUIC layer should use the MLS exporter to bind the two layers together
+(channel binding) so that a QUIC peer must also be an MLS group member.
 
 ## 2. Group lifecycle
 

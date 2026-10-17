@@ -139,6 +139,10 @@ npx ajv compile --spec=draft2020 -c ajv-formats -s schemas/<name>.schema.json
 ## Conventions
 
 - Code: Apache-2.0 (`LICENSE`). Spec text under `docs/`: CC-BY-4.0 (`LICENSE-SPEC`).
+- Every diagram is Mermaid in a ```mermaid fence; no plain-text diagrams. A semicolon
+  inside a sequence-diagram note or message is a statement separator, so avoid it. Check a
+  diagram renders with `npx @mermaid-js/mermaid-cli -p puppeteer.json -i x.mmd -o x.svg`
+  where `puppeteer.json` points `executablePath` at `/usr/bin/chromium`.
 - Spec chapters and schemas are marked draft; keep the markers until the relevant ADR is
   accepted. Do not add wire formats or state machines to the spec without an accepted ADR.
 - New capability families each need a schema under `schemas/` and a section in

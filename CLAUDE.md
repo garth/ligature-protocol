@@ -180,6 +180,7 @@ are missing, reconnect it with `/mcp`. How a ticket is worked:
   `LP-7 Revise transport chapter around QUIC`, on whichever branch is checked out. A ticket
   is usually one commit, and takes more when the work needs them, such as a correction
   after review; two tickets' changes are never in one commit, so stage them separately.
+  Commit messages carry no attribution trailer (no `Co-Authored-By` line).
 - **`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`
   and `cargo test --workspace` pass in `impl/`, and markdownlint passes on the docs**,
   before the commit.

@@ -15,7 +15,8 @@ The master public key is the person as far as the protocol is concerned. Its tex
 is a multibase string with a multicodec prefix, so the algorithm is self-describing. The
 algorithm is Ed25519 ([ADR 0027](../adr/0027-ed25519.md)), so every key renders as
 `z6Mk…`. Signatures over device bindings, device principals and known persons (chapter 02)
-must chain to it.
+must chain to it. A master key does not expire; rebuilding (chapter 07) is a response to
+loss or compromise, not a scheduled event.
 
 ## 3. Key configuration
 
@@ -51,7 +52,5 @@ or both.
 
 ## 6. Open questions
 
-- Should a master key carry an expiry to encourage periodic rebuilds, or is that hostile
-  to users?
 - Whether two people who have both published their keys can skip the in-person step when
   inviting each other remotely, and what that costs in the threat model.

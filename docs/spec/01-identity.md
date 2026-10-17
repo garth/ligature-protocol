@@ -12,10 +12,10 @@ person. There is no account, no server and no name required. See
 ## 2. The master key
 
 The master public key is the person as far as the protocol is concerned. Its textual form
-is a multibase string with a multicodec prefix, so the algorithm is self-describing (an
-Ed25519 key renders as `z6Mk…`). Signatures over device bindings, device principals and
-known persons (chapter 02) must chain to it. Open question: whether to mandate Ed25519
-alone or allow a second algorithm from the start.
+is a multibase string with a multicodec prefix, so the algorithm is self-describing. The
+algorithm is Ed25519 ([ADR 0027](../adr/0027-ed25519.md)), so every key renders as
+`z6Mk…`. Signatures over device bindings, device principals and known persons (chapter 02)
+must chain to it.
 
 ## 3. Key configuration
 

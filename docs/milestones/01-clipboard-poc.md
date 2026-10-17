@@ -27,8 +27,8 @@ a separate process (section 6, phase F), and the optional WireGuard integration.
 
 Each is a short ADR; none should take long.
 
-1. **Signature algorithm.** Ed25519 only for now. Multibase/multicodec rendering of public
-   keys as specified in chapter 01.
+1. **Signature algorithm.** Decided: Ed25519 only ([ADR 0027](../adr/0027-ed25519.md)),
+   rendered as multibase/multicodec `z6Mk…`.
 2. **Wire encoding of messages.** Decided: CBOR from the start
    ([ADR 0025](../adr/0025-cbor-wire-encoding.md)). Byte fields are CBOR byte strings,
    timestamps and keys stay text, signed facts use core deterministic encoding. `lpctl`

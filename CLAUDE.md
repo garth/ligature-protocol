@@ -17,12 +17,12 @@ logic, and the `org.ligatureprotocol` type names use a placeholder domain.
 
 The authoritative record is `docs/adr/`. Summary, in layer order:
 
-1. **Identity**: a person is a master signing key (multibase, multicodec-prefixed),
-   created on their first device. Publishing it at a DNS name (TXT or well-known HTTPS
-   path) is optional, for a name and remote invitations. Key configuration (split
-   master/self-signing/user-signing vs one key; which devices are introducers) follows the
-   user's requirements. Nothing AT Protocol-specific remains. (ADR 0017; ADR 0002
-   superseded)
+1. **Identity**: a person is an Ed25519 master signing key (ADR 0027; multibase,
+   multicodec-prefixed, `z6Mk…`), created on their first device. Publishing it at a DNS
+   name (TXT or well-known HTTPS path) is optional, for a name and remote invitations. Key
+   configuration (split master/self-signing/user-signing vs one key; which devices are
+   introducers) follows the user's requirements. Nothing AT Protocol-specific remains.
+   (ADR 0017; ADR 0002 superseded)
 2. **Device trust**: one proximity ceremony (QR + spoken code baseline; BLE/NFC/UWB
    optional, never required). An introducer signs the verified key with a role: `binding`
    (my account on a device), `principal` (a device I use), `person` (someone I know). One

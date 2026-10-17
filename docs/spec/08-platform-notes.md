@@ -36,6 +36,10 @@ no app installed versus with a companion app.
 
 ## 3a. Local store protection
 
+Hardware-backed keystores on some phones support only ECDSA P-256, not Ed25519
+([ADR 0027](../adr/0027-ed25519.md)). On such devices the Ed25519 key is software-held and
+may be wrapped by a hardware key; this is a platform constraint, not a protocol one.
+
 Each device's local store (chapter 06) holds keys and trust state. Implementations are
 encouraged to keep it under the account's data directory and use the secret service or a
 TPM-backed key on Linux, the Keystore on Android and the Keychain on iOS. This is guidance:

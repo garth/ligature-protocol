@@ -17,6 +17,9 @@ type-specific parameters. Sent in a manifest.
 **Ceremony**: The proximity pairing step: an introducer verifies a key physically in front
 of it and signs it with a role. One ceremony makes the newcomer known to all my devices.
 
+**Device security**: How a device authenticates its local user, locks, and protects its
+storage. Out of scope for the protocol, which defines authority and trust only.
+
 **Device principal**: The device itself: its own key, system-level daemon and owner set,
 owner of the device-scoped capabilities.
 
@@ -96,9 +99,9 @@ can be completed from any trusted device without screen or camera hardware.
 **pkarr**: Public-Key Addressable Resource Records: signed DNS-style records keyed by a
 public key, published to the BitTorrent Mainline DHT. One of LP's discovery options.
 
-**Person session**: A member signed in to a group device: a binding that is never an
-introducer, gets implicit access only to the low sensitivity tier of their own
-capabilities, and auto-locks.
+**Person session**: A member signed in to a group device: a binding like any other, acting
+with that person's full authority while the device reports it present. How the device
+authenticates or locks it is device security, outside the protocol.
 
 **Present**: Having an active, unlocked session on a device. The present person approves
 cross-person requests for that device's device-scoped capabilities.
@@ -127,9 +130,6 @@ device), `principal` (a device I use) or `person` (someone I know).
 
 **Schema**: A JSON Schema 2020-12 document under `schemas/` defining one LP record or
 message type.
-
-**Sensitivity tier**: Low or elevated, per capability family. Governs what a person session
-on a group device may do without per-use confirmation on another of the person's devices.
 
 **Share**: The ad-hoc, AirDrop-like push of text, links or files to a chosen device,
 accepted per item by the receiving person. A user-scoped capability.

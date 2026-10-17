@@ -47,9 +47,6 @@
         "scope": {
           "$ref": "#/$defs/scope"
         },
-        "sensitivity": {
-          "$ref": "#/$defs/sensitivity"
-        },
         "version": {
           "type": "integer",
           "minimum": 1,
@@ -65,14 +62,6 @@
           "description": "Type-specific parameters; the schema is defined by the capability type's own schema."
         }
       }
-    },
-    "sensitivity": {
-      "type": "string",
-      "enum": [
-        "low",
-        "elevated"
-      ],
-      "description": "The sensitivity tier (spec chapter 05 section 3b). A descriptor may raise its family's tier but never lower it. Governs what a person session on a group device may do implicitly."
     }
   },
   "type": "object",

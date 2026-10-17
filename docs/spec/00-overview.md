@@ -14,7 +14,11 @@ remaining chapters fit together.
 
 LP aims to be local-first, self-hostable, end-to-end encrypted, and built on existing open
 standards. It does not aim to be a general messaging protocol, a file-sync engine, or a
-replacement for the protocols it bridges to. Shared devices with several user accounts,
+replacement for the protocols it bridges to. It does not cover device security: how a
+device authenticates its local user, locks, or protects its storage is the device's and the
+user's concern ([ADR 0024](../adr/0024-device-security-out-of-scope.md)); the protocol
+defines who is authenticated behind a request and which keys are trusted, and takes a
+present session as whatever the device reports. Shared devices with several user accounts,
 and groups of identities such as a household, are first-class goals (chapter 10).
 
 ## 3. Terminology

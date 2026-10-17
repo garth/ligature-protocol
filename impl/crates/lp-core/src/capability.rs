@@ -45,20 +45,6 @@ pub enum Scope {
     Device,
 }
 
-/// The sensitivity tier of a capability. Spec chapter 05 section 3b.
-///
-/// Governs what a person's own session on a group device may do without
-/// per-use confirmation on another of their devices (spec chapter 10).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Sensitivity {
-    /// Clipboard, notification display, media control, displays, share
-    /// receipt. Implicit for the same person everywhere.
-    Low,
-    /// Files, telephony, remote input into or sensors of a personal device,
-    /// notification actions. Confirmation-gated on group devices.
-    Elevated,
-}
-
 /// One capability offered by one principal.
 #[derive(Debug, Clone)]
 pub struct Descriptor {
@@ -66,8 +52,6 @@ pub struct Descriptor {
     pub capability_type: CapabilityType,
     /// Whether this is a user-scoped or device-scoped capability.
     pub scope: Scope,
-    /// Sensitivity tier; may raise the family's tier, never lower it.
-    pub sensitivity: Sensitivity,
     /// Version of the type's operation set the device implements.
     pub version: u32,
     /// Optional human-readable label.

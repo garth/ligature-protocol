@@ -67,11 +67,11 @@ group admin, the owner set is the group key, and the device is added to the memb
 document (chapter 10 section 5). A family tablet, a television or a lamp is registered to
 the group, never to an individual. Pairing a binding on a shared device signs the binding
 as `binding` and the principal as `principal` in one ceremony, since the account's daemon
-can attest the principal key over local IPC. A binding on a group device is never an
-introducer (chapter 10 section 5.2). Owners set the device's policy for unattended
-requests. Open question: whether a person can hold a `principal` signature for a device
-they neither own nor have an account on (a guest using the speakers), or whether that is
-always a grant.
+can attest the principal key over local IPC. A binding on a group device should default to
+not being an introducer, but the choice is the user's (chapter 01 section 3). Owners set
+the device's policy for unattended requests. Open question: whether a person can hold a
+`principal` signature for a device they neither own nor have an account on (a guest using
+the speakers), or whether that is always a grant.
 
 ## 7. Revocation
 

@@ -29,7 +29,6 @@ information.
 - An attacker able to write to the DHT used for discovery (DHT poisoning) or to spoof
   discovery records.
 - A compromised device within the set.
-- A physical attacker with brief access to an unlocked device.
 - A curious or malicious member of the user's group, including a departed member whose
   access was not fully revoked.
 - A compromised shared device, which affects every person bound to it.
@@ -66,12 +65,10 @@ prompt and must be time-boxed and off by default. Open question: whether a group
 device should rate-limit requests per member to resist a compromised member device.
 
 A group device with nobody signed in acts with the group's authority only, so a person at
-the television cannot reach any member's clipboard, notifications, files or telephony, and
-cannot pair devices into anyone's set; data reaches the device only by push from a member.
-A person session on a group device is confirmation-gated for elevated capabilities and
-auto-locks, so a forgotten login exposes the low tier for a short time at most. Open
-question: whether the low tier (clipboard in particular) is already too much for a
-forgotten session on a shared screen, and should require a secure unlock.
+the television cannot reach any member's clipboard, notifications, files or telephony; data
+reaches the device only by push from a member. A person who signs in to a group device and
+walks away exposes their own capabilities for as long as the device keeps the session
+present, which is a device-security choice outside this protocol (section 6).
 
 ### 4.1 Helpers
 
@@ -110,8 +107,15 @@ anyone who connects, is itself an identifier worth hiding behind a per-epoch val
 
 ## 6. Out of scope
 
-A fully compromised operating system on a device, denial of service by a network operator,
-and
+**Device security.** How a device authenticates its local user, whether and when it locks,
+and how it protects its local store are the device's and the user's concern
+([ADR 0024](../adr/0024-device-security-out-of-scope.md)). An attacker with an unlocked
+device in hand has whatever that device's session has; a user who runs a device without a
+lock has accepted that. The protocol assumes a present session is whoever the device says
+it is.
+
+Also out of scope: a fully compromised operating system on a device, denial of service by a
+network operator, and
 denial of service by every helper a user has listed at once. Traffic analysis by a helper
 (who talks to whom, when, how much) is acknowledged but not defended against in this
 version.

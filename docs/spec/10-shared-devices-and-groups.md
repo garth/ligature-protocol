@@ -45,10 +45,8 @@ Every capability descriptor carries a scope (see
 | `device` | The device principal | Display, speakers and media playback, sensors, physical keyboard and mouse, power, a lamp's switch | The person present on the device; otherwise the device's policy |
 
 Some families appear in both scopes (media control of a user's own player is `user`;
-playback through the device's speakers is `device`). Each family also has a **sensitivity
-tier**, low or elevated (chapter 05 section 3b), which governs what a person session on a
-group device may do implicitly (section 5.2). Open question: whether scope is fixed per
-capability type or chosen per descriptor by the offering device.
+playback through the device's speakers is `device`). Open question: whether scope is fixed
+per capability type or chosen per descriptor by the offering device.
 
 ## 4. Groups
 
@@ -105,19 +103,13 @@ the group device's device-scoped capability. The person's device is the actor.
 ### 5.2 Person sessions on a group device
 
 A member may sign in to a group device, which is a binding paired as usual (chapter 02).
-Such a binding is **never an introducer**. While the session is present and unlocked the
-device acts with that person's authority, with reduced defaults:
-
-| Tier | Families | On a group device, same person |
-| --- | --- | --- |
-| Low | Clipboard, notification display, media control, displays, share receipt | Implicit, as on any of the person's devices |
-| Elevated | Files, telephony and SMS, remote input into a personal device, sensors of a personal device, notification actions | Per-use confirmation on another of the person's own devices |
-
-The session auto-locks after a short idle period; on lock the device reverts to the group's
-authority and any elevated-tier sessions end. Open questions: the default idle period;
-whether the tiers should be configurable by the person as well as by the capability's
-schema; and whether a person session on a group device should be allowed at all on
-devices with no secure unlock (a television with a remote).
+While the device reports that session as present, the device acts with that person's full
+authority, exactly as any other of their devices would. When the session ends the device
+reverts to the group's authority. How the device authenticates the person, whether it
+locks, and when, are device security and outside this protocol
+([ADR 0024](../adr/0024-device-security-out-of-scope.md)). Implementations should default
+such a binding to not being an introducer; the user may change that. Open question: whether
+a group device should show on its own screen who is signed in, if anyone.
 
 ## 6. Grants across people
 
@@ -173,5 +165,3 @@ how a new member's devices first obtain the document when no admin device is rea
 - Audit: should approvals and uses of device-scoped capabilities be logged for the owners?
 - Recovery of a group whose admins have all rebuilt: re-pair every group device, or allow
   a member to claim the group with a new group key?
-- Whether a group device should show who is signed in, if anyone, on its own screen at all
-  times.

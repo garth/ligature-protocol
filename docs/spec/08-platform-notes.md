@@ -36,10 +36,11 @@ no app installed versus with a companion app.
 
 ## 3a. Local store protection
 
-Each device's local store (chapter 06) holds keys and trust state. On Linux it should live
-under the account's data directory and use the secret service or a TPM-backed key where
-available; on Android, the Keystore; on iOS, the Keychain. Open question: the minimum
-protection an implementation must provide to call itself conformant.
+Each device's local store (chapter 06) holds keys and trust state. Implementations are
+encouraged to keep it under the account's data directory and use the secret service or a
+TPM-backed key on Linux, the Keystore on Android and the Keychain on iOS. This is guidance:
+device security is out of scope and conformance does not depend on it
+([ADR 0024](../adr/0024-device-security-out-of-scope.md)).
 
 ## 4a. Networks and IPv6
 

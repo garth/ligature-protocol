@@ -157,7 +157,7 @@
     "introducer": {
       "type": "boolean",
       "default": false,
-      "description": "For a binding: whether it holds the self-signing key and may perform the ceremony for others. Chosen at pairing time according to the user's requirements. Always false for a binding on a group device."
+      "description": "For a binding: whether it holds the self-signing key and may perform the ceremony for others. Chosen at pairing time according to the user's requirements; implementations should default it to false on a group device."
     },
     "signatures": {
       "type": "array",

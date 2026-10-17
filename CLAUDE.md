@@ -71,11 +71,9 @@ The authoritative record is `docs/adr/`. Summary, in layer order:
     device is registered personal or group at pairing; a tablet or TV is group. A request
     carries the authority of the authenticated person behind it: a group device with
     nobody signed in has group authority only and can never reach a member's user-scoped
-    capabilities; data reaches it by push. A person session on a group device is a binding
-    that is never an introducer, gets implicit access only to low-sensitivity families
-    (clipboard, notification display, media, displays, share receipt), needs per-use
-    confirmation elsewhere for elevated ones (files, telephony, remote input, sensors,
-    notification actions), and auto-locks. (ADR 0023)
+    capabilities; data reaches it by push. A person signed in to a group device acts with
+    their full authority while the device reports the session present. (ADR 0023, items 4
+    and 5 superseded by 0024)
     Same-person use of user-scoped capabilities is implicit; anything across people needs
     approval by the capability's owner or, for device-scoped, by the person present on the
     device, else device policy. `share` is the AirDrop-like family: user-scoped, visible
@@ -144,6 +142,10 @@ npx ajv compile --spec=draft2020 -c ajv-formats -s schemas/<name>.schema.json
   `docs/spec/05-capabilities.md`.
 - The `org.ligatureprotocol` type names and the `ligatureprotocol.org` schema `$id`s are
   placeholders; register the domain or rename before any public release.
+- Device security is out of scope (ADR 0024): never add lock, idle, local-authentication
+  or local-store-protection requirements to the spec. The protocol defines authority (who
+  is authenticated behind a request) and trust (which keys are recognised), and takes a
+  present session as whatever the device reports.
 - Nothing AT Protocol-specific is used. Do not reintroduce DIDs, Lexicons, NSIDs, PDS or
   Spaces; the history is in ADRs 0002, 0006, 0007 and their successors.
 - Security reports go through GitHub Security Advisories, not issues (`SECURITY.md`).

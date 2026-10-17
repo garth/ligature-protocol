@@ -54,20 +54,6 @@ transferring files among a person's own devices. See
 resumption for large shares, and whether a share may be addressed to several devices at
 once (which is several sessions under chapter 03).
 
-## 3b. Sensitivity tiers
-
-Every capability family has a sensitivity tier, which governs how much a person's own
-session on a group device may do without confirmation (chapter 10 section 5.2):
-
-| Tier | Families |
-| --- | --- |
-| Low | Clipboard, notification display, media control, displays, share receipt |
-| Elevated | Files, telephony and SMS, remote input into a personal device, sensors of a personal device, notification actions (reply, dismiss) |
-
-A descriptor may raise its family's tier but never lower it. See
-[ADR 0023](../adr/0023-group-devices-sessions-and-authority.md). Open question: whether a
-person should be able to raise tiers for their own devices in settings.
-
 ## 4. Requests and grants
 
 A device requests a capability from a peer; the peer (or the user, through the peer)

@@ -62,7 +62,7 @@ apply:
 
 - Gossip revocations first, before any capability traffic.
 - A device that has seen no trusted peer for a configurable period treats its trust store
-  as stale and requires a fresh binding check before honouring sensitive capabilities.
+  as stale and requires a fresh binding check before honouring requests.
 - Every session is freshly authenticated, so a revoked device gains nothing from sessions
   it held before.
 

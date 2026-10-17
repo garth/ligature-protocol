@@ -1,6 +1,6 @@
 # 0023. Group devices: registered to the group, sessions, and the authority of a request
 
-**Status:** Proposed
+**Status:** Proposed; items 4 and 5 superseded by [ADR 0024](0024-device-security-out-of-scope.md)
 **Date:** 2026-10-17
 **Extends:** [ADR 0021](0021-group-key-and-group-owned-devices.md), [ADR 0015](0015-shared-devices-and-groups.md)
 

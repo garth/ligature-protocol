@@ -9,5 +9,8 @@ rust-version.workspace = true
 
 [dependencies]
 lp-core.workspace = true
+serde.workspace = true
+ciborium.workspace = true
+rusqlite.workspace = true
 [lints]
 workspace = true

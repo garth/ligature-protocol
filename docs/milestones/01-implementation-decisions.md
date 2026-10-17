@@ -48,3 +48,25 @@ references. There is no `deviceId`; devices and people are referenced by their p
 Display names default to the host name and are user-overridable. Implementation note:
 `lp-core::DeviceKey` replaces `DeviceId`; terminals and logs show the display name and, when
 needed, a short fingerprint of the key, which is never stored or compared.
+
+## LP-27: crates for crypto, encoding, runtime and store
+
+| Need | Crate | Why |
+| --- | --- | --- |
+| Ed25519 | `ed25519-dalek` 3 | The standard implementation; shares `curve25519-dalek` with the rustls stack; MSRV 1.85 |
+| Randomness | `rand_core` 0.9 with `os_rng` | Key generation source for dalek |
+| Hashing | `sha2` 0.11 | Fact identifiers, ceremony context |
+| Multibase | `multibase` 0.9 | base58btc with the `z` prefix; the `ed25519-pub` multicodec prefix `0xed 0x01` is a constant in `lp-crypto`, not a crate |
+| Serialisation | `serde` 1 with `derive` | One model for facts, messages, the store and the control channel |
+| CBOR | `ciborium` 0.2 | serde-based, Apache-2.0, maintained. No canonicaliser is needed anywhere: signatures are over bytes as sent (ADR 0035) |
+| Async runtime | `tokio` 1 | Required by quinn; `rt-multi-thread`, `net`, `sync`, `time`, `macros`, `fs`, `io-util` |
+| SQLite | `rusqlite` 0.40 with `bundled` | Same SQLite on both platforms, no system library (LP-25) |
+
+`minicbor` was passed over for its BlueOak licence and non-serde model. Networking,
+discovery and platform crates are LP-28 and LP-29.
+
+**Policy.** Caret requirements on the minor version in `Cargo.toml`; `Cargo.lock` committed;
+updates are deliberate commits of their own. `cargo-deny` runs in CI (`impl/deny.toml`):
+licences allowed are MIT, Apache-2.0, BSD-2/3, ISC, Zlib, Unicode-3.0 and CC0; advisories
+and yanked crates fail the build; wildcard versions and unknown sources are refused;
+multiple versions of one crate warn. MSRV stays 1.85.

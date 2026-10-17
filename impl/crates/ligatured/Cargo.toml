@@ -12,5 +12,6 @@ lp-core.workspace = true
 lp-identity.workspace = true
 lp-crypto.workspace = true
 lp-transport.workspace = true
+tokio.workspace = true
 [lints]
 workspace = true

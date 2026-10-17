@@ -50,25 +50,16 @@ after loss or compromise. Chapters 08 and 09 cover
 platform constraints and the threat model. Chapter 10 covers shared multi-user devices and
 groups of identities.
 
-```text
-+------------------------------------------------------------------+
-| 5  Capabilities   manifests on connect, requests, explicit grants |
-+------------------------------------------------------------------+
-| 4  Transport      QUIC: one connection per device pair,           |
-|                   one stream per capability                       |
-|                   mDNS/DNS-SD + BLE at home; untrusted helpers    |
-|                   (discovery, hole punching, relay) when away     |
-+------------------------------------------------------------------+
-| 3  Encryption     the QUIC/TLS 1.3 session itself, raw public     |
-|                   keys, least exposure: no group key              |
-+------------------------------------------------------------------+
-| 2  Device trust   one in-person ceremony, role signatures         |
-|                   (binding, principal, person)                    |
-+------------------------------------------------------------------+
-| 1  Identity       master key + person fact                        |
-+------------------------------------------------------------------+
-  State: a local store on every device, signed facts gossiped on
-  every session. No server, nothing to recover.
+```mermaid
+flowchart TB
+    L5["5 · Capabilities<br/>manifests on connect, requests, explicit grants"]
+    L4["4 · Transport<br/>QUIC: one connection per device pair, one stream per capability<br/>mDNS/DNS-SD and BLE at home; untrusted helpers when away"]
+    L3["3 · Encryption<br/>the QUIC/TLS 1.3 session itself, raw public keys, least exposure, no group key"]
+    L2["2 · Device trust<br/>one in-person ceremony, role signatures: binding, principal, person"]
+    L1["1 · Identity<br/>master key and person fact"]
+    S["State: a local store on every device, signed facts gossiped on every session.<br/>No server, nothing to recover."]
+    L5 --> L4 --> L3 --> L2 --> L1
+    L1 -.- S
 ```
 
 ## 5. Document conventions

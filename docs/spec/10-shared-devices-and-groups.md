@@ -34,16 +34,26 @@ principal and one binding per account; a lamp has a principal and no bindings. O
 question: whether a principal with bindings needs its own key, or can be represented by
 the set of bindings plus an owner record.
 
-```text
-  Alice (master key A)         Bob (master key B)          Household (group key G)
-    phone   binding, introducer  phone   binding, introducer  admins:  A, B
-    laptop  binding              tablet  binding              members: A, B, child C
-                                                              owned:   lamp, TV
-  A --person--> B and B --person--> A : verified in person, both ways
-
-  Shared laptop   principal P, bindings Alice@P and Bob@P, owner set {A, B}
-  Lamp            principal L, no bindings, owner set {G}, listed in G's document
-  TV              principal T, owner set {G}; Alice may sign in as binding Alice@T
+```mermaid
+flowchart TB
+    subgraph Alice["Alice · master key A"]
+        AP["phone<br/>binding, introducer"]
+        AL["laptop<br/>binding"]
+    end
+    subgraph Bob["Bob · master key B"]
+        BP["phone<br/>binding, introducer"]
+        BT["tablet<br/>binding"]
+    end
+    subgraph G["Household · group key G<br/>admins A and B · members A, B and child C"]
+        Lamp["lamp<br/>principal L, no bindings<br/>owner set: G"]
+        TV["TV<br/>principal T, owner set: G<br/>Alice may sign in as binding Alice@TV"]
+    end
+    SL["Shared laptop<br/>principal P, owner set: A and B<br/>bindings Alice@P and Bob@P"]
+    Alice <-- "person role, verified in person both ways" --> Bob
+    Alice --- SL
+    Bob --- SL
+    Alice --- G
+    Bob --- G
 ```
 
 ## 3. Capability scope
@@ -144,24 +154,18 @@ except under the optional open sharing mode (section 7). Open questions: how pre
 defined with several seats or a locked screen; whether a device owner can pre-approve on
 behalf of a present user; and timeouts for unanswered prompts.
 
-```text
-  a request from device D for capability X
-  |
-  +-- who is authenticated behind D?
-  |     a person (D is their binding, or their session is present on a group device)
-  |         -> the request carries that person's authority
-  |     nobody (a group device with no session)
-  |         -> group authority only
-  |
-  +-- X is user-scoped?
-  |     owner of X is the same person        -> implicit, no prompt
-  |     group authority                      -> denied
-  |     another person                       -> ask X's owner on any of their devices
-  |
-  +-- X is device-scoped?
-        someone is present on the target     -> ask them; the prompt says who or what asks
-        nobody present, or no accounts       -> the target's policy decides
-                                                (group policy for a group device)
+```mermaid
+flowchart TD
+    R["request from device D for capability X"] --> W{"who is authenticated behind D?"}
+    W -- "a person: D is their binding, or their session is present on a group device" --> PA["acts with that person's authority"]
+    W -- "nobody: a group device with no session" --> GA["group authority only"]
+    PA --> SC{"scope of X?"}
+    GA --> SC
+    SC -- "user-scoped, owner is the same person" --> IMP["implicit, no prompt"]
+    SC -- "user-scoped, group authority" --> DEN["denied"]
+    SC -- "user-scoped, another person" --> ASK["ask X's owner on any of their devices"]
+    SC -- "device-scoped, someone present on the target" --> PR["ask them; the prompt says who or what is asking"]
+    SC -- "device-scoped, nobody present or no accounts" --> POL["the target's policy decides<br/>group policy for a group device"]
 ```
 
 ## 7. Sharing between people

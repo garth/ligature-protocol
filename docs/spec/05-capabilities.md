@@ -34,16 +34,13 @@ rule of chapter 03 applied to metadata. Open question: whether a device may anno
 capability on behalf of a peer it is connected to, so that two devices with no direct path
 can still see each other through a hub.
 
-```text
-  connect ---> authenticate (raw public keys) ---> recognised?
-                                                     |-- no  --> pairing offer, nothing else
-                                                     |-- yes
-                                                     v
-          gossip (revocations first) ---> manifest ---> one stream per capability
-                                            ^               |
-                                            | updates       | request, grant, invoke
-                                            +---------------+
-          disconnect ---> every capability from that peer is withdrawn
+```mermaid
+flowchart LR
+    C["connect"] --> A["authenticate<br/>raw public keys"] --> Q{"recognised?"}
+    Q -- no --> PO["pairing offer, nothing else"]
+    Q -- yes --> G["gossip<br/>revocations first"] --> M["manifest"] --> S["one stream per capability<br/>request, grant, invoke"]
+    S -. updates .-> M
+    S --> X["disconnect"] --> W["every capability from that peer is withdrawn"]
 ```
 
 ## 3. Initial capability families

@@ -101,16 +101,21 @@ Matter controller or media server. Clients can list several relays; a project-ru
 a swappable convenience default. Open question: relay selection and failover order, and
 whether relays should be rate-limited per device key.
 
-```text
-  At home                                 Away
-  -------                                 ----
-  laptop <---- mDNS/DNS-SD, BLE ---> phone     phone --- DHT lookup ---> "where is laptop?"
-       \                           /                 <--- addresses and relays, signed by laptop
-        +------ direct QUIC -------+          phone <--- coordinator ---> laptop   (observed addresses)
-                                              phone ====== hole-punched QUIC ====== laptop   (if it works)
-  no helpers at all                           phone === QUIC ===[ relay ]=== QUIC === laptop (otherwise)
-
-                                              every helper sees addresses and ciphertext only
+```mermaid
+flowchart LR
+    subgraph Home["At home: no helpers"]
+        L1["laptop"] <-- "mDNS/DNS-SD, BLE" --> P1["phone"]
+        L1 == "direct QUIC" ==> P1
+    end
+    subgraph Away["Away: helpers see addresses and ciphertext only"]
+        P2["phone"] -- "where is laptop?" --> DHT["DHT"]
+        DHT -- "signed addresses and relays" --> P2
+        P2 <-- "observed addresses" --> C["coordinator"]
+        C <-- "observed addresses" --> L2["laptop"]
+        P2 == "hole-punched QUIC, if it works" ==> L2
+        P2 == "QUIC" ==> Rl["relay"]
+        Rl == "QUIC, otherwise" ==> L2
+    end
 ```
 
 ## 6. Situations

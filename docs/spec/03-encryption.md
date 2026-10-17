@@ -27,15 +27,21 @@ ciphertext. Open question: whether any capability needs genuine multicast badly 
 justify a key scoped to exactly that capability's audience; if so, it would be introduced
 by its own ADR.
 
-```text
-  phone =========== session A ===========> laptop
-  phone =========== session B ===========> tablet
-  phone ===== session C =====[ relay ]===> hub
-
-  Each ===== is its own QUIC/TLS 1.3 session, keyed between exactly those two
-  devices. The relay forwards packets it cannot read. There is no key that
-  opens A, B and C together, so the tablet never sees what went to the laptop.
+```mermaid
+flowchart LR
+    Ph["phone"]
+    La["laptop"]
+    Ta["tablet"]
+    R["relay<br/>forwards packets it cannot read"]
+    Hu["hub"]
+    Ph == "session A" ==> La
+    Ph == "session B" ==> Ta
+    Ph == "session C" ==> R
+    R == "session C" ==> Hu
 ```
+
+Each session is keyed between exactly those two devices. There is no key that opens A, B
+and C together, so the tablet never sees what went to the laptop.
 
 ## 4. Nothing before authentication
 

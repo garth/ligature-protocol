@@ -57,17 +57,22 @@ facts, not millions), so a full exchange of fact identifiers on every connect is
 acceptable. Open question: whether to use a Merkle-style summary instead of a plain list
 once groups grow.
 
-```text
-  device A                                        device B
-     |---- identifiers of the facts I hold --------->|
-     |<--- identifiers of the facts I hold ----------|
-     |---- revocations and abandonments B lacks ---->|   1. first, always
-     |<--- revocations and abandonments A lacks -----|
-     |---- person facts, bindings, principals ------>|   2. the trust chain
-     |<----------------------------------------------|
-     |---- group documents, relays, grants --------->|   3. everything else
-     |<----------------------------------------------|
-  each side verifies every fact before storing it and discards what fails
+```mermaid
+sequenceDiagram
+    participant A as device A
+    participant B as device B
+    A->>B: identifiers of the facts I hold
+    B->>A: identifiers of the facts I hold
+    Note over A,B: 1. first, always
+    A->>B: revocations and abandonments B lacks
+    B->>A: revocations and abandonments A lacks
+    Note over A,B: 2. the trust chain
+    A->>B: person facts, bindings, principals
+    B->>A: person facts, bindings, principals
+    Note over A,B: 3. everything else
+    A->>B: group documents, relays, grants
+    B->>A: group documents, relays, grants
+    Note over A,B: each side verifies every fact before storing it and discards what fails
 ```
 
 ## 5. Revocation and the offline window

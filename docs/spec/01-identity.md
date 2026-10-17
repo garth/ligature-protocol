@@ -33,21 +33,22 @@ key lives (on the first device, or offline or derived from a passphrase) and whi
 are introducers. A strict setup limits introducers to one or two devices; everything else
 can be paired but cannot pair others.
 
-```text
-                     master key  (the person; private key wherever the user chooses)
-                     /         \
-             signs  /           \  signs
-                   v             v
-       self-signing key        user-signing key
-       (held by introducers)   (records other people)
-           |         |                 |
-     role  |         | role       role |
-  binding  v         v principal       v person
-   my account      a device I use    another person's
-   on a device                       master key
-
-  All three keys and the display name travel together in the signed person fact.
+```mermaid
+flowchart TB
+    M["Master key<br/>the person; private key wherever the user chooses"]
+    SS["Self-signing key<br/>held by introducers"]
+    US["User-signing key<br/>records other people"]
+    B["binding<br/>my account on a device"]
+    P["principal<br/>a device I use"]
+    K["person<br/>another person's master key"]
+    M -- signs --> SS
+    M -- signs --> US
+    SS -- role --> B
+    SS -- role --> P
+    US -- role --> K
 ```
+
+All three keys and the display name travel together in the signed person fact.
 
 ## 4. Referring to other people
 

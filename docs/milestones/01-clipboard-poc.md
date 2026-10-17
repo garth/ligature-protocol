@@ -53,13 +53,16 @@ All five are now decided; each has its ADR.
 Each task is intended to be one ticket and one commit. Phases may overlap where their
 dependencies allow.
 
-```text
-  A keys and store ---> C ceremony ---> D gossip and manifests ---> E clipboard ---> G verify
-          \                ^                    ^                       ^
-           \               |                    |                       |
-            +---> B transport ------------------+                       |
-                                                                        |
-  F daemon plumbing ---------------------------------------------------+
+```mermaid
+flowchart LR
+    A["A keys and store"] --> B["B transport"]
+    A --> C["C ceremony"]
+    B --> C
+    C --> D["D gossip and manifests"]
+    B --> D
+    D --> E["E clipboard"]
+    F["F daemon plumbing"] --> G["G verify"]
+    E --> G
 ```
 
 ### Phase A: keys and local store

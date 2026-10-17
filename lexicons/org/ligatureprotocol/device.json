@@ -1,0 +1,64 @@
+{
+  "lexicon": 1,
+  "id": "org.ligatureprotocol.device",
+  "description": "DRAFT. A device that belongs to a user's trusted device set. Published to the user's Space. The namespace org.ligatureprotocol is a placeholder; the domain is not yet registered.",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "Record describing one trusted device, its keys and the capabilities it offers.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["deviceId", "displayName", "platform", "signingKey", "mlsKeyPackage", "createdAt"],
+        "properties": {
+          "deviceId": {
+            "type": "string",
+            "description": "Stable opaque identifier for the device, derived from its signing key.",
+            "maxLength": 128
+          },
+          "displayName": {
+            "type": "string",
+            "description": "Human-readable name chosen by the user.",
+            "maxGraphemes": 64,
+            "maxLength": 640
+          },
+          "platform": {
+            "type": "string",
+            "description": "Platform family of the device.",
+            "knownValues": ["linux", "android", "ios", "hub", "other"]
+          },
+          "signingKey": {
+            "type": "string",
+            "description": "Device long-term signing public key as a did:key string.",
+            "format": "did"
+          },
+          "crossSignature": {
+            "type": "bytes",
+            "description": "Signature over signingKey by the user's self-signing key (see spec chapter 02).",
+            "maxLength": 512
+          },
+          "mlsKeyPackage": {
+            "type": "bytes",
+            "description": "Opaque MLS KeyPackage for adding this device to the device set group.",
+            "maxLength": 8192
+          },
+          "capabilities": {
+            "type": "array",
+            "description": "Capabilities this device currently advertises.",
+            "items": { "type": "ref", "ref": "org.ligatureprotocol.capability#descriptor" },
+            "maxLength": 256
+          },
+          "revoked": {
+            "type": "boolean",
+            "description": "True once the device has been revoked. Revoked records are retained for audit.",
+            "default": false
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          }
+        }
+      }
+    }
+  }
+}

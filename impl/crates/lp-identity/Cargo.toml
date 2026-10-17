@@ -1,0 +1,13 @@
+[package]
+name = "lp-identity"
+description = "Ligature Protocol identity: DID resolution and device cross-signing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+lp-core.workspace = true
+[lints]
+workspace = true

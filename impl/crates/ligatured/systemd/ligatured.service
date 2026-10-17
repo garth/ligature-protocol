@@ -1,0 +1,14 @@
+# Ligature Protocol user daemon. Install to ~/.config/systemd/user/ and run
+#   systemctl --user enable --now ligatured
+# Scaffold: the binary currently exits immediately.
+[Unit]
+Description=Ligature Protocol device daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.cargo/bin/ligatured
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

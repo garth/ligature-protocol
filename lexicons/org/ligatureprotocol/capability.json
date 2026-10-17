@@ -1,0 +1,49 @@
+{
+  "lexicon": 1,
+  "id": "org.ligatureprotocol.capability",
+  "description": "DRAFT. Capability descriptors: typed functions a device offers to its peers. The namespace org.ligatureprotocol is a placeholder; the domain is not yet registered.",
+  "defs": {
+    "descriptor": {
+      "type": "object",
+      "description": "One capability offered by one device. Embedded in org.ligatureprotocol.device and announced over the transport.",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "NSID of the capability type, for example org.ligatureprotocol.capability.clipboard.",
+          "format": "nsid"
+        },
+        "version": {
+          "type": "integer",
+          "description": "Version of the capability type's operation set this device implements.",
+          "minimum": 1,
+          "default": 1
+        },
+        "label": {
+          "type": "string",
+          "description": "Optional human-readable label, for example the name of a display.",
+          "maxGraphemes": 64,
+          "maxLength": 640
+        },
+        "params": {
+          "type": "unknown",
+          "description": "Type-specific parameters. The schema is defined by the capability type's own Lexicon."
+        }
+      }
+    },
+    "family": {
+      "type": "string",
+      "description": "Initial capability families. Each will receive its own Lexicon.",
+      "knownValues": [
+        "notifications",
+        "clipboard",
+        "files",
+        "remoteInput",
+        "mediaControl",
+        "telephony",
+        "displays",
+        "sensors"
+      ]
+    }
+  }
+}

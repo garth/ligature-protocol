@@ -1,0 +1,55 @@
+{
+  "lexicon": 1,
+  "id": "org.ligatureprotocol.grant",
+  "description": "DRAFT. A grant authorising one device to use a capability offered by another. The namespace org.ligatureprotocol is a placeholder; the domain is not yet registered.",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "Record of an explicit capability grant.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["grantor", "grantee", "capability", "createdAt"],
+        "properties": {
+          "grantor": {
+            "type": "string",
+            "description": "deviceId of the device offering the capability.",
+            "maxLength": 128
+          },
+          "grantee": {
+            "type": "string",
+            "description": "deviceId of the device permitted to use it. May belong to another identity in a household.",
+            "maxLength": 128
+          },
+          "granteeDid": {
+            "type": "string",
+            "description": "DID of the grantee's identity when it differs from the grantor's.",
+            "format": "did"
+          },
+          "capability": {
+            "type": "string",
+            "description": "NSID of the granted capability type.",
+            "format": "nsid"
+          },
+          "scope": {
+            "type": "unknown",
+            "description": "Capability-specific restriction on what the grantee may do. Schema defined by the capability type."
+          },
+          "expiresAt": {
+            "type": "string",
+            "description": "Absent means the grant does not expire.",
+            "format": "datetime"
+          },
+          "revokedAt": {
+            "type": "string",
+            "format": "datetime"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,30 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/lp-core",
+    "crates/lp-identity",
+    "crates/lp-crypto",
+    "crates/lp-transport",
+    "crates/ligatured",
+    "crates/lpctl",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/ligature-protocol/ligature-protocol"
+rust-version = "1.85"
+
+[workspace.dependencies]
+lp-core = { path = "crates/lp-core" }
+lp-identity = { path = "crates/lp-identity" }
+lp-crypto = { path = "crates/lp-crypto" }
+lp-transport = { path = "crates/lp-transport" }
+
+[workspace.lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }

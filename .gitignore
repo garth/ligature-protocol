@@ -1,0 +1,16 @@
+# Rust
+impl/target/
+**/*.rs.bk
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local tooling
+.mise.local.toml

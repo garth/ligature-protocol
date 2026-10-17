@@ -1,0 +1,20 @@
+{
+  // Markdown lint configuration for docs and top-level files.
+  "config": {
+    "default": true,
+    // Prose is wrapped at ~90 columns; tables, code and the license texts may exceed it.
+    "MD013": { "line_length": 100, "tables": false, "code_blocks": false },
+    // Allow bare "**Status:**" style emphasis lines used as metadata in spec/ADR headers.
+    "MD036": false,
+    // Multiple H1s are not used, but Mermaid blocks need fenced code without language checks.
+    "MD040": false,
+    // Inline HTML (<br/>) is used inside the Mermaid diagram only.
+    "MD033": false
+  },
+  "ignores": [
+    "impl/target/**",
+    "LICENSE",
+    "LICENSE-SPEC",
+    "CODE_OF_CONDUCT.md"
+  ]
+}

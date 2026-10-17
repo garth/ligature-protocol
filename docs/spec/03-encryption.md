@@ -1,0 +1,45 @@
+# 03. Encryption
+
+**Status:** Draft.
+
+## 1. Intent
+
+All device-to-device traffic is end-to-end encrypted using an MLS group (RFC 9420) whose
+members are exactly the user's trusted devices. See
+[ADR 0004](../adr/0004-mls-group-encryption.md). The design follows the pattern used by
+Germ: atproto identity, MLS for keys, and a transport that is independent of both.
+
+## 2. Group lifecycle
+
+A device set has one MLS group. The first device creates it; each added device is
+committed into the group by an existing member; a revoked device is removed. Open question:
+whether households use a second group or a sub-group mechanism.
+
+## 3. Credentials
+
+MLS leaf credentials bind the MLS key to the device signing key from chapter 02, so that
+group membership can be verified against the cross-signing chain. Open question: whether to
+use basic credentials carrying the device key or a custom credential type.
+
+## 4. Key packages and delivery
+
+Key packages for new devices and MLS handshake messages must reach other devices. LP
+intends to deliver them directly over the transport when devices are co-present and via
+the Space otherwise. Open question: whether the Space is acceptable as a delivery service
+for handshake messages, or whether a separate relay is needed.
+
+## 5. Application messages
+
+Capability traffic (chapter 05) is carried as MLS application messages or, for bulk data,
+as streams keyed from the MLS exporter secret. Open question: the threshold and mechanism
+for bulk transfer.
+
+## 6. Secrets at rest
+
+Any secret stored in the Space is stored only as an MLS-encrypted payload. The PDS never
+sees plaintext secrets.
+
+## 7. Open questions
+
+- Which ciphersuite(s) are mandatory to implement?
+- How do devices that are offline for a long time catch up on epochs?

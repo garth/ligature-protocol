@@ -1,11 +1,11 @@
 {
   "lexicon": 1,
   "id": "org.ligatureprotocol.device",
-  "description": "DRAFT. A device that belongs to a user's trusted device set. Published to the user's Space. The namespace org.ligatureprotocol is a placeholder; the domain is not yet registered.",
+  "description": "DRAFT. A device, or one person's account on a device, that belongs to a user's trusted device set. Carried by the device itself and gossiped between devices; there is no shared repository. Capabilities are not part of this record: they are announced live in a capability manifest. The namespace org.ligatureprotocol is a placeholder; the domain is not yet registered.",
   "defs": {
     "main": {
       "type": "record",
-      "description": "Record describing one trusted device, its keys and the capabilities it offers.",
+      "description": "Signed record describing one trusted device or user-device binding and its keys.",
       "key": "tid",
       "record": {
         "type": "object",
@@ -73,15 +73,6 @@
             "type": "bytes",
             "description": "Opaque MLS KeyPackage for adding this device to the device set group.",
             "maxLength": 8192
-          },
-          "capabilities": {
-            "type": "array",
-            "description": "Capabilities this device currently advertises.",
-            "items": {
-              "type": "ref",
-              "ref": "org.ligatureprotocol.capability#descriptor"
-            },
-            "maxLength": 256
           },
           "revoked": {
             "type": "boolean",

@@ -32,17 +32,21 @@ device principal is paired to a group (chapter 10) or to its first owner.
 
 ## 4. Device records
 
-Each trusted device has a record in the user's Space describing its keys, display name,
-platform and current capabilities (see [`org.ligatureprotocol.device`](../../lexicons/org/ligatureprotocol/device.json)).
+Each trusted device is described by a signed record (keys, display name, platform, kind)
+that the device itself carries and that peers gossip to each other (chapter 06). It does
+not list capabilities; those are live (chapter 05). See
+[`org.ligatureprotocol.device`](../../lexicons/org/ligatureprotocol/device.json).
 
 ## 5. Revocation
 
-Any trusted device can revoke another. Revocation removes the device record, removes the
-device from the MLS group (chapter 03) and publishes a revocation so peers stop trusting
-it. Open question: whether revocation should require more than one device when the device
-set is large, to limit damage from a single compromised device.
+Any trusted device can revoke another. Revocation is a signed fact gossiped to every peer
+(chapter 06) and, where MLS is in use, a removal from the group (chapter 03). A revoked
+device cannot announce its own revocation, so peers that were offline learn of it from the
+next trusted device they meet. Open question: whether revocation should require more than
+one device when the device set is large, to limit damage from a single compromised device.
 
 ## 6. Open questions
 
-- How long may a device operate without re-verifying its signature chain against the Space?
+- How long may a device go without meeting any trusted peer before its trust store is
+  treated as stale (chapter 06 section 5)?
 - How are devices with no camera and no keyboard (hubs) paired?

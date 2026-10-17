@@ -21,22 +21,28 @@ The authoritative record is `docs/adr/`. Summary, in layer order:
    rotation keys are the recovery root. (ADR 0002)
 2. **Device trust**: per-device keys cross-signed by the user identity, Matrix
    cross-signing model; QR/short-code approval from an existing device; revocation. (ADR 0003)
-3. **Encryption**: one MLS (RFC 9420) group per user's device set for all peer traffic;
-   OpenMLS planned. Pattern from Germ: atproto identity + MLS + separate transport. (ADR 0004)
+3. **Encryption**: one MLS (RFC 9420) group per user's device set is planned (OpenMLS), but
+   since ADR 0016 its justification is only relay fan-out and group PCS. The proof of
+   concept is built on QUIC with cross-signed raw public keys alone; MLS is adopted after
+   with evidence. (ADR 0004, annotated)
 4. **Transport**: application-level QUIC (RFC 9000), one connection per device pair, one
    stream per capability, device keys as TLS raw public keys (RFC 7250), connection
    migration. MLS stays end-to-end on top; QUIC/TLS is defence in depth. mDNS/DNS-SD + BLE
    locally. Remotely, three replaceable untrusted helper roles: discovery (signed records
-   in a DHT via pkarr, or in the user's DID document/Space), hole-punch coordination, relay
+   in a DHT via pkarr, or relays listed in the DID document), hole-punch coordination, relay
    (default: the user's home hub). Rule: any helper may be operated by anyone, is listed in
    the user's own records, and is never trusted with plaintext or identity. Real-time
    traffic never goes through a PDS. WireGuard/Headscale is an optional non-core
    integration only. (ADR 0011, 0012, 0013; ADR 0005 superseded)
-5. **Shared state**: device registry, settings, household permissions as typed records in
-   an atproto Space (alpha) on a self-hostable PDS. Secrets only as MLS-encrypted
-   payloads. (ADR 0006)
-6. **Schemas**: atproto Lexicons under `org.ligatureprotocol.*`, a placeholder namespace
-   until the domain is registered. (ADR 0007)
+5. **State**: no shared state, no PDS, no Space. Each device keeps a local store (own
+   keys, trusted device records with cross-signatures, revocations, issued grants, group
+   memberships, MLS state) and gossips signed facts to peers at the start of every
+   session, revocations first. Capabilities are live: a manifest on connect, updates
+   during the session, withdrawn on disconnect, never persisted. Only off-device state is
+   the DID document. (ADR 0016; ADR 0006 superseded)
+6. **Schemas**: atproto Lexicons under `org.ligatureprotocol.*` define LP's records and
+   messages; they do not imply a repository. Placeholder namespace until the domain is
+   registered. (ADR 0007)
 7. **Capabilities**: devices advertise typed capabilities (notifications, clipboard, files,
    remote input, media control, telephony/SMS, displays, sensors); peers discover, request,
    and receive explicit grants. (ADR 0008)

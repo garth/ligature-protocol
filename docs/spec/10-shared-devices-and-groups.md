@@ -45,9 +45,11 @@ record, a list of shared devices it owns and a policy (see
 [`org.ligatureprotocol.group`](../../lexicons/org/ligatureprotocol/group.json)). A person
 joins by invitation from an admin and acceptance on one of their own devices; their
 user-signing key (chapter 02) signs the acceptance. Leaving or removal updates the record
-and tears down every cross-identity MLS group the member was in (section 6). Open
-questions: whether a group has its own DID and Space (chapter 06) or lives in an admin's
-Space; whether a person can be in several groups; what a child account looks like.
+and tears down every cross-identity MLS group the member was in (section 6). The
+membership document is a signed fact held by every member's devices and gossiped like any
+other (chapter 06). Open questions: whether a group has a DID of its own, or is identified
+by its founding admin plus a key; whether a person can be in several groups; what a child
+account looks like.
 
 ## 5. Grants across identities
 
@@ -75,12 +77,14 @@ granting principal. That group is rotated when the grant changes and destroyed w
 revoked or the member leaves the group. Open question: whether to key these groups per
 grant, per identity pair, or per (identity, shared device).
 
-## 7. Shared state
+## 7. State
 
-User-scoped records stay in the person's own Space. Group records and shared-device records
-live in a group-owned Space (chapter 06); the household hub's PDS is the natural host.
-Open question: how the group Space's permissions are expressed so that every member can
-read membership but only admins can change it.
+There is no group database. The membership document and the shared-device records are
+signed facts gossiped among members' devices (chapter 06); a shared device's principal
+holds the grants and policy that concern it. Only admins' signatures are accepted on
+membership changes. Open question: how a new member's devices first obtain the membership
+document when no admin device is reachable (likely: the inviting device hands it over
+during acceptance).
 
 ## 8. Open questions
 

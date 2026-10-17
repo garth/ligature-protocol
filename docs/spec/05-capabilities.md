@@ -4,15 +4,29 @@
 
 ## 1. Intent
 
-A device advertises typed capabilities. Peers discover them, request access, and receive
-explicit grants. See [ADR 0008](../adr/0008-capability-model.md).
+A device advertises the typed capabilities it offers *right now*. Peers discover them,
+request access, and receive explicit grants. Capabilities are live: announced when a
+session starts, updated while it lasts, withdrawn when it ends, and never persisted by
+peers. See [ADR 0008](../adr/0008-capability-model.md) and
+[ADR 0016](../adr/0016-no-required-shared-state.md).
 
 ## 2. Capability descriptors
 
-A capability descriptor names a capability type (an NSID), the principal that offers it,
-its scope (`user` or `device`, chapter 10), and type-specific parameters. Descriptors are
-published in the device record and announced over the transport. See
+A capability descriptor names a capability type (an NSID), its scope (`user` or `device`,
+chapter 10), and type-specific parameters. The principal that offers it is the sender of
+the manifest it arrives in. See
 [`org.ligatureprotocol.capability`](../../lexicons/org/ligatureprotocol/capability.json).
+
+## 2a. Manifests and the live registry
+
+After a session is authenticated (chapter 04) each side sends a **manifest**: the full list
+of descriptors it currently offers. While the session lasts it sends updates as
+capabilities appear (a display is plugged in) or disappear (a phone goes to the background
+and loses clipboard access). When the session ends, every capability from that peer is
+withdrawn. A device's view of the network is therefore the union of the manifests of the
+peers it is connected to, and a hub's directory is nothing more than that. Open question:
+whether a device may announce a capability on behalf of a peer it is connected to, so that
+two devices with no direct path can still see each other through a hub.
 
 ## 3. Initial capability families
 
@@ -31,6 +45,7 @@ Defaults follow identity boundaries (ADR 0015): a person's own devices may use t
 person's user-scoped capabilities without a prompt; anything across identities needs an
 explicit grant, approved by the person whose capability it is or, for a device-scoped
 capability, by the person present on the device or the device's policy (chapter 10).
+Standing grants are stored by the device that issued them and nowhere else (chapter 06).
 Open question: whether a person may opt their own devices out of the implicit default.
 
 ## 5. Invocation

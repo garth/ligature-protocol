@@ -1,11 +1,11 @@
 {
   "lexicon": 1,
   "id": "org.ligatureprotocol.capability",
-  "description": "DRAFT. Capability descriptors: typed functions a device offers to its peers. The namespace org.ligatureprotocol is a placeholder; the domain is not yet registered.",
+  "description": "DRAFT. Capability descriptors and the live manifest a device sends when a session starts. Nothing here is persisted by peers; a manifest is valid only for the session it arrived in. The namespace org.ligatureprotocol is a placeholder; the domain is not yet registered.",
   "defs": {
     "descriptor": {
       "type": "object",
-      "description": "One capability offered by one device. Embedded in org.ligatureprotocol.device and announced over the transport.",
+      "description": "One capability a device offers right now. Sent in a manifest and in manifest updates; the offering principal is the sender.",
       "required": [
         "type",
         "scope"
@@ -55,6 +55,28 @@
         "displays",
         "sensors"
       ]
+    },
+    "manifest": {
+      "type": "object",
+      "description": "The full list of capabilities a device currently offers, sent after session authentication. A later manifest from the same peer replaces this one; when the session ends every capability in it is withdrawn.",
+      "required": [
+        "capabilities",
+        "issuedAt"
+      ],
+      "properties": {
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "ref",
+            "ref": "#descriptor"
+          },
+          "maxLength": 256
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "datetime"
+        }
+      }
     }
   }
 }

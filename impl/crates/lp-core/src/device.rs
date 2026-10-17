@@ -1,5 +1,9 @@
 //! Device identifiers and records. Spec chapter 02 and the
 //! `org.ligatureprotocol.device` Lexicon.
+//!
+//! A [`DeviceRecord`] is a signed fact carried by the device and gossiped to
+//! peers (spec chapter 06). It does not list capabilities; those are live
+//! (see [`crate::capability::Manifest`]).
 
 /// Stable opaque identifier for a device, derived from its signing key.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -36,8 +40,9 @@ pub enum Platform {
 
 /// In-memory view of an `org.ligatureprotocol.device` record.
 ///
-/// Key material is deliberately absent from this scaffold; it will be added
-/// once the cross-signing design in `lp-identity` is implemented.
+/// Key material and the cross-signature are deliberately absent from this
+/// scaffold; they will be added once the cross-signing design in
+/// `lp-identity` is implemented.
 #[derive(Debug, Clone)]
 pub struct DeviceRecord {
     /// The device's identifier.
@@ -48,6 +53,4 @@ pub struct DeviceRecord {
     pub display_name: String,
     /// Platform family.
     pub platform: Platform,
-    /// Capabilities the device currently advertises.
-    pub capabilities: Vec<crate::capability::Descriptor>,
 }

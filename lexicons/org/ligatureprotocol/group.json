@@ -5,7 +5,7 @@
   "defs": {
     "main": {
       "type": "record",
-      "description": "Record describing a group: its members, admins, shared devices and policy. Lives in the group's Space.",
+      "description": "Signed document describing a group: its members, admins, shared devices and policy. Signed by an admin's device key and gossiped among members' devices; there is no group repository.",
       "key": "tid",
       "record": {
         "type": "object",

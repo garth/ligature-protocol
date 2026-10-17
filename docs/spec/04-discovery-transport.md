@@ -8,7 +8,7 @@ Devices connect to each other directly over application-level QUIC (RFC 9000),
 authenticating with their LP device keys. Locally they find each other with mDNS/DNS-SD
 and BLE and need no server at all. When apart they use a small set of *helpers* for
 discovery, hole-punch coordination and relaying. Helpers are replaceable and untrusted.
-Real-time traffic never routes through a PDS. See
+No traffic of any kind routes through a PDS. See
 [ADR 0011](../adr/0011-quic-application-transport.md),
 [ADR 0012](../adr/0012-decentralised-untrusted-helpers.md) and
 [ADR 0013](../adr/0013-wireguard-optional-integration.md).
@@ -78,8 +78,9 @@ Two options, both allowed and both usable together:
   reachable addresses and relays, signed by its device key and keyed by that key's public
   part, to a DHT such as BitTorrent Mainline via pkarr, as iroh does. Anyone can look it
   up; only the key holder can publish a valid record.
-- **Records in the user's own data.** Reachable addresses and relays listed in the DID
-  document or in Space records (chapter 06).
+- **The DID document.** Reachable relays, and optionally stable addresses, listed as
+  service entries in the user's DID document (chapter 01). This is the only off-device
+  record LP relies on.
 
 Open question: record lifetime, refresh cadence, and what a device does when the two
 sources disagree.
@@ -96,7 +97,7 @@ whether the roles can be split.
 When hole punching fails (common on mobile and CGNAT networks) traffic is relayed. The
 relay forwards QUIC packets or MLS ciphertext and can read neither. Anyone can run a relay.
 The default personal relay is the user's always-on home hub, the same box that hosts their
-PDS or Matter controller. Clients can list several relays; a project-run relay may exist as
+Matter controller or media server. Clients can list several relays; a project-run relay may exist as
 a swappable convenience default. Open question: relay selection and failover order, and
 whether relays should be rate-limited per device key.
 
@@ -105,8 +106,8 @@ whether relays should be rate-limited per device key.
 | Situation | Discovery | Path | Helpers used |
 | --- | --- | --- | --- |
 | At home, same LAN | mDNS/DNS-SD, BLE | Direct QUIC | None |
-| Away, user has a home hub | DHT record and/or Space record | Direct QUIC via hole punch, else relay through the hub | Hub as coordinator and relay |
-| Away, no home hub | DHT record and/or Space record | Direct QUIC via hole punch, else relay | Any relay listed in the user's records |
+| Away, user has a home hub | DHT record and/or DID document | Direct QUIC via hole punch, else relay through the hub | Hub as coordinator and relay |
+| Away, no home hub | DHT record and/or DID document | Direct QUIC via hole punch, else relay | Any relay listed in the user's records |
 | Convenience default | DHT record | Direct QUIC via hole punch, else relay | Project-run relay, replaceable at any time |
 
 In every row the helper sees only addresses and ciphertext.

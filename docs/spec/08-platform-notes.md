@@ -34,6 +34,13 @@ and contacts via a Linux device acting as an accessory) and on EU Digital Market
 interoperability APIs where they exist. Open question: which features are realistic with
 no app installed versus with a companion app.
 
+## 3a. Local store protection
+
+Each device's local store (chapter 06) holds keys and trust state. On Linux it should live
+under the account's data directory and use the secret service or a TPM-backed key where
+available; on Android, the Keystore; on iOS, the Keychain. Open question: the minimum
+protection an implementation must provide to call itself conformant.
+
 ## 4a. Networks and IPv6
 
 Where both devices have global IPv6 addresses, a direct QUIC connection usually succeeds

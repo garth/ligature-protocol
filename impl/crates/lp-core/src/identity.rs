@@ -13,7 +13,7 @@ pub struct Handle(pub String);
 
 /// Identifier of a group of identities such as a household. Spec chapter 10.
 ///
-/// Whether this is a DID of its own or a record key in an admin's Space is an
-/// open question; the newtype keeps callers independent of the answer.
+/// Whether this is a DID of its own or derived from the founding admin's key is
+/// an open question; the newtype keeps callers independent of the answer.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct GroupId(pub String);

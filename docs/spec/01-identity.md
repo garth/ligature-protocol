@@ -13,7 +13,7 @@ device trust is derived. See [ADR 0002](../adr/0002-atproto-did-identity.md).
 A DNS handle (for example `alice.example.org`) maps to the DID via the standard atproto
 handle resolution (DNS TXT record or `/.well-known/atproto-did`). Handles are for humans;
 all protocol logic uses the DID. Open question: whether LP needs its own handle verification
-step or can rely entirely on the PDS.
+step beyond the standard resolution.
 
 ## 3. DID resolution
 
@@ -31,10 +31,11 @@ rotation key lives.
 ## 5. Identity-to-device binding
 
 The identity signs each device's public keys; chapter 02 defines the cross-signing
-structure. This chapter only requires that the DID document (or a record in the user's
-Space) publish the user's signing key used for that purpose.
+structure. This chapter only requires that the DID document publish the user's master
+cross-signing key, since there is no other shared place to find it (chapter 06).
 
 ## 6. Open questions
 
-- Should LP require a PDS at all for the single-device bootstrap case?
-- How are identity changes (handle change, PDS migration) propagated to devices?
+- Can a `did:plc` be created and maintained without any PDS, using only the PLC directory?
+- How are identity changes (handle change, key rotation) propagated to devices: by gossip,
+  by re-resolving the DID, or both?

@@ -2,6 +2,11 @@
 
 **Status:** Proposed
 **Date:** 2026-10-17
+**Note (2026-10-17):** [ADR 0016](0016-no-required-shared-state.md) removed stored payloads
+and offline delivery, two of the three reasons for MLS given below. MLS now rests on relay
+fan-out and group-wide post-compromise security. The proof of concept is to be built on QUIC
+with cross-signed raw public keys alone; MLS is adopted afterwards if the evidence supports
+it.
 
 ## Context
 

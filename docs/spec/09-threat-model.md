@@ -17,7 +17,7 @@ information.
 
 - A passive network observer on the LAN or the internet.
 - An active network attacker able to inject or modify traffic.
-- A malicious or compromised PDS operator.
+- A malicious or compromised DID directory (PLC) or `did:web` host.
 - A malicious or compromised helper: relay, hole-punch coordinator or discovery service.
 - An attacker able to write to the DHT used for discovery (DHT poisoning) or to spoof
   discovery records.
@@ -30,10 +30,12 @@ information.
 
 ## 4. Security goals
 
-Confidentiality and integrity of peer traffic against network attackers, the PDS and every
-helper. Authenticity of device membership. Recovery that cannot be completed by fewer than
-the threshold of guardians, nor without the time delay. Open question: forward secrecy and
-post-compromise security targets beyond what MLS provides by default.
+Confidentiality and integrity of peer traffic against network attackers and every helper.
+No off-device party learns the user's device set, grants or household, since none is
+stored anywhere but on the devices. Authenticity of device membership. Recovery that
+cannot be completed by fewer than the threshold of guardians, nor without the time delay.
+Open question: forward secrecy and post-compromise security targets beyond what MLS
+provides by default.
 
 ### 4.0 Groups and shared devices
 
@@ -76,8 +78,9 @@ accept traffic, to resist abuse without becoming identity-aware.
 ## 5. Privacy goals
 
 Local discovery advertisements should not reveal the user's identity to bystanders. The
-PDS should learn as little as possible beyond the existence of records. Open question: what
-metadata the PDS necessarily learns and whether that is acceptable.
+DID directory learns only what any DID document reveals: keys and listed relays. Open
+question: whether listing relays in the DID document leaks enough (home IP, household size)
+to prefer DHT records for that too.
 
 ## 6. Out of scope
 

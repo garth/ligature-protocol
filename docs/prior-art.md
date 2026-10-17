@@ -41,8 +41,13 @@ favour of MLS groups.
 
 ## Shared state and schemas
 
-**AT Protocol Spaces**: Permissioned data in a PDS, currently alpha. LP's shared state store
-(ADR 0006).
+**AT Protocol Spaces**: Permissioned data in a PDS, currently alpha. Considered as LP's
+shared state store (ADR 0006) and dropped when it became clear no shared state was needed
+(ADR 0016).
+
+**Matrix device lists and Secure Scuttlebutt feeds**: Both distribute per-device signed
+facts (device keys, revocations, posts) by replication rather than through a shared
+database. LP's gossip of signed facts (spec chapter 06) follows the same shape.
 
 **AT Protocol Lexicons**: Schema system used for all LP records (ADR 0007).
 

@@ -56,6 +56,18 @@ pub struct Descriptor {
     pub label: Option<String>,
 }
 
+/// The full list of capabilities a peer currently offers. Spec chapter 05
+/// section 2a.
+///
+/// Sent after session authentication and replaced by later manifests from the
+/// same peer. When the session ends every capability in it is withdrawn.
+/// Never persisted.
+#[derive(Debug, Clone, Default)]
+pub struct Manifest {
+    /// Capabilities offered right now.
+    pub capabilities: Vec<Descriptor>,
+}
+
 /// How a grant came about. Spec chapter 10 section 5.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GrantBasis {

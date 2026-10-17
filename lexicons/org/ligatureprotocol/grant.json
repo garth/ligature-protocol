@@ -1,11 +1,11 @@
 {
   "lexicon": 1,
   "id": "org.ligatureprotocol.grant",
-  "description": "DRAFT. A grant authorising one device to use a capability offered by another. The namespace org.ligatureprotocol is a placeholder; the domain is not yet registered.",
+  "description": "DRAFT. A grant authorising one device to use a capability offered by another. Stored by the device that issued it; not shared. The namespace org.ligatureprotocol is a placeholder; the domain is not yet registered.",
   "defs": {
     "main": {
       "type": "record",
-      "description": "Record of an explicit capability grant.",
+      "description": "Record of an explicit capability grant, held by the grantor.",
       "key": "tid",
       "record": {
         "type": "object",

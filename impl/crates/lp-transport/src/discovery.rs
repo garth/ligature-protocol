@@ -5,7 +5,7 @@
 //!
 //! - Signed address records keyed by the device public key, published to a DHT
 //!   (BitTorrent Mainline via pkarr, as iroh does).
-//! - Addresses and relays listed in the user's DID document or Space records.
+//! - Relays, and optionally addresses, listed in the user's DID document.
 //!
 //! Records are signed by the device key; the connection itself re-authenticates
 //! the peer, so a spoofed or poisoned record can at worst cause a failed dial.

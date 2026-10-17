@@ -3,7 +3,7 @@
 Terms used across the Ligature Protocol specification and codebase.
 
 **AT Protocol (atproto)**: The open protocol behind Bluesky. LP reuses its identity (DIDs,
-handles), schema (Lexicons) and permissioned storage (Spaces) components.
+handles) and schema (Lexicons) components. LP does not use a PDS or Spaces.
 
 **Capability**: A typed function a device offers to peers, such as clipboard access or
 media control. Identified by an NSID.
@@ -28,6 +28,9 @@ account on it: display, speakers, sensors, physical input.
 
 **DID**: Decentralized Identifier. LP supports `did:plc` and `did:web`.
 
+**Gossip**: The exchange, at the start of every session, of signed facts (revocations,
+device bindings, group membership) that one device holds and the other lacks.
+
 **Grant**: A record authorising one device to use a capability of another, with scope and
 expiry.
 
@@ -51,8 +54,15 @@ exchanging those addresses.
 
 **Lexicon**: atproto's schema language. LP schemas live under `org.ligatureprotocol.*`.
 
+**Local store**: The small persistent store each device keeps: its keys, trusted device
+records, revocations, issued grants, group memberships and MLS state. The only state LP
+has; there is no shared database.
+
 **Ligature**: Typographically, a glyph that joins two or more letters into one. The
 protocol joins devices the same way.
+
+**Manifest**: The list of capabilities a device currently offers, sent when a session
+starts and updated while it lasts. Withdrawn entirely when the session ends.
 
 **MLS**: Messaging Layer Security, RFC 9420. A group key agreement protocol providing
 end-to-end encryption with efficient membership changes.
@@ -66,8 +76,8 @@ public key, published to the BitTorrent Mainline DHT. One of LP's discovery opti
 **Present**: Having an active, unlocked session on a device. The present person approves
 cross-identity requests for that device's device-scoped capabilities.
 
-**PDS**: Personal Data Server. The atproto server that hosts a user's repository and, in
-LP, their Space.
+**PDS**: Personal Data Server, the atproto server that hosts a user's repository. Not used
+by LP; a user needs a DID, not a PDS.
 
 **QUIC**: The UDP-based transport protocol of RFC 9000, with TLS 1.3 built in, stream
 multiplexing and connection migration. LP's device-to-device transport.
@@ -81,7 +91,11 @@ It sees only addresses and ciphertext. The default personal relay is the user's 
 **Rotation key**: In `did:plc`, a key authorised to update the DID document. LP treats it
 as the recovery root.
 
-**Space**: atproto's permissioned data store (alpha), used by LP for shared device state.
+**Signed fact**: A record signed by a device key or a cross-signing key that any device
+can verify without a server. The unit of gossip.
+
+**Space**: atproto's permissioned data store (alpha). Considered for shared state and
+dropped (ADR 0016).
 
 **Threshold share**: One piece of a secret split with Shamir's Secret Sharing; a threshold
 number of shares reconstructs the secret.

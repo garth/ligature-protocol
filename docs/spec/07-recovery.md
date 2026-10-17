@@ -13,7 +13,10 @@ devices, without a central operator. See
 The recovery secret (ultimately a rotation key or a key that controls one) is split with
 Shamir's Secret Sharing among guardians. A threshold of guardians can reconstruct it. See
 [`org.ligatureprotocol.guardian`](../../lexicons/org/ligatureprotocol/guardian.json).
-Open question: default threshold and share count.
+Shares live with the guardians; the guardian list lives in the user's devices and, since
+it must survive losing every device, should also be written to the DID document or kept
+on paper (chapter 06). Open question: default threshold and share count, and which of
+those two homes for the guardian list is mandatory.
 
 ## 3. In-person verification
 

@@ -1,6 +1,6 @@
 # 0006. Store shared state as typed records in an atproto Space
 
-**Status:** Proposed
+**Status:** Superseded by [ADR 0016](0016-no-required-shared-state.md)
 **Date:** 2026-10-17
 
 ## Context
@@ -16,6 +16,11 @@ Shared state is stored as typed Lexicon records in an atproto Space on a self-ho
 Secrets are stored only as MLS-encrypted payloads; the PDS never holds plaintext secrets.
 
 ## Consequences
+
+*Superseded on 2026-10-17.* On review, none of this state needed to be shared and
+capabilities should not be persisted at all. ADR 0016 replaces the Space with local
+per-device stores, gossiped signed facts and live capability manifests. Original
+consequences follow.
 
 The same identity and hosting serve both identity and state. The PDS becomes an
 availability dependency for bootstrap and reconciliation, but not for real-time traffic.

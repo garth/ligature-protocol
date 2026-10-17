@@ -1,15 +1,19 @@
 {
   "lexicon": 1,
   "id": "org.ligatureprotocol.guardian",
-  "description": "DRAFT. A guardian holding a threshold share of the user's recovery secret. The namespace org.ligatureprotocol is a placeholder; the domain is not yet registered.",
+  "description": "DRAFT. A guardian holding a threshold share of the user's recovery secret. Held in the user's devices' local stores and, because it must survive losing every device, optionally in the DID document. The namespace org.ligatureprotocol is a placeholder; the domain is not yet registered.",
   "defs": {
     "main": {
       "type": "record",
-      "description": "Record of one guardian in the user's recovery set. The share itself is never stored here in plaintext.",
+      "description": "Record of one guardian in the user's recovery set. The share itself lives with the guardian; it is never stored here in plaintext.",
       "key": "tid",
       "record": {
         "type": "object",
-        "required": ["guardianDid", "shareIndex", "createdAt"],
+        "required": [
+          "guardianDid",
+          "shareIndex",
+          "createdAt"
+        ],
         "properties": {
           "guardianDid": {
             "type": "string",
@@ -28,7 +32,7 @@
           },
           "encryptedShare": {
             "type": "bytes",
-            "description": "The share encrypted to the guardian (MLS-encrypted payload); opaque to the PDS.",
+            "description": "The share encrypted to the guardian; opaque to anyone else.",
             "maxLength": 4096
           },
           "lastLivenessAt": {
@@ -51,10 +55,20 @@
     "policy": {
       "type": "object",
       "description": "Recovery policy for the device set.",
-      "required": ["threshold", "shareCount", "delaySeconds"],
+      "required": [
+        "threshold",
+        "shareCount",
+        "delaySeconds"
+      ],
       "properties": {
-        "threshold": { "type": "integer", "minimum": 1 },
-        "shareCount": { "type": "integer", "minimum": 1 },
+        "threshold": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "shareCount": {
+          "type": "integer",
+          "minimum": 1
+        },
         "delaySeconds": {
           "type": "integer",
           "description": "Mandatory delay before recovery completes, during which existing devices may veto.",

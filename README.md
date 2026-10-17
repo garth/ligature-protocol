@@ -12,8 +12,11 @@ Apple-Continuity-like ecosystem for Linux users, built on existing open standard
 
 - **Local-first.** Devices talk to each other directly. Everything works on a LAN with no
   internet connection.
-- **Self-hostable, no required central server.** The only hosted component is an
-  AT Protocol Personal Data Server (PDS), and you can run your own.
+- **No server, no database.** The only off-device state is your AT Protocol DID document.
+  Devices keep a small local store of signed facts and gossip them to each other. There is
+  no PDS, no Space and no sync service in the protocol.
+- **Capabilities are live.** A device announces what it can do when it connects and the
+  offer disappears when it leaves. Nothing about capabilities is ever stored.
 - **End-to-end encrypted.** All device-to-device traffic is protected by an MLS group
   (RFC 9420). Secrets at rest are stored only as MLS-encrypted payloads.
 - **Build on open standards.** AT Protocol for identity and shared state, MLS for group
@@ -61,9 +64,9 @@ flowchart TB
         USE["Notifications, clipboard, files,<br/>remote input, media, telephony,<br/>displays, sensors"]
     end
 
-    subgraph State["Shared state (atproto Space on a PDS)"]
-        REG["Device registry, settings,<br/>household permissions as Lexicon records"]
-        SEC["Secrets: MLS-encrypted payloads only"]
+    subgraph State["Local state, per device"]
+        STORE["Local store: own keys, trusted devices,<br/>revocations, issued grants, group membership"]
+        GOSSIP["Gossip of signed facts<br/>at the start of every session"]
     end
 
     DID --> XS --> MLS --> QUIC --> ADV --> GRANT --> USE
@@ -71,17 +74,18 @@ flowchart TB
     DISC -. "addresses only" .-> QUIC
     PUNCH -. "addresses only" .-> QUIC
     RELAY -. "ciphertext only" .-> QUIC
-    XS -. "publishes" .-> REG
-    MLS -. "encrypts" .-> SEC
-    REG -. "bootstraps" .-> MLS
+    XS -. "verified against" .-> STORE
+    STORE <-. "exchanged over" .-> GOSSIP
+    GOSSIP -. "rides on" .-> QUIC
 ```
 
-Real-time traffic never routes through the PDS. The PDS holds the device registry and
-other shared state so that devices can find and verify each other; the data itself flows
-directly between devices over QUIC, or through a relay that sees only ciphertext when a
-direct path is impossible. MLS is the end-to-end layer; QUIC/TLS underneath it is defence
-in depth. WireGuard is not part of the protocol; an optional integration can generate
-Headscale/WireGuard configurations for users who want a full home-network overlay.
+Nothing routes through a server. A device proves it belongs to you by presenting its key
+cross-signed by your identity; revocations and other signed facts travel between your
+devices when they meet. Data flows directly between devices over QUIC, or through a relay
+that sees only ciphertext when a direct path is impossible. MLS is the planned end-to-end
+layer, pending the proof of concept; QUIC/TLS with device keys is underneath it. WireGuard
+is not part of the protocol; an optional integration can generate Headscale/WireGuard
+configurations for users who want a full home-network overlay.
 
 ## Repository layout
 
@@ -90,7 +94,7 @@ Headscale/WireGuard configurations for users who want a full home-network overla
 | `docs/spec/` | The protocol specification (draft) |
 | `docs/adr/` | Architecture decision records |
 | `docs/glossary.md`, `docs/prior-art.md` | Terminology and related work |
-| `lexicons/` | Draft AT Protocol Lexicons (`org.ligatureprotocol.*`, placeholder namespace) |
+| `lexicons/` | Draft AT Protocol Lexicons for LP's records and messages (`org.ligatureprotocol.*`, placeholder namespace) |
 | `impl/` | Rust reference implementation (cargo workspace) |
 
 ## Reference implementation

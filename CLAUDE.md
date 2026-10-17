@@ -89,3 +89,41 @@ validity.
 - The `org.ligatureprotocol` namespace must be replaced or the domain registered before any
   public release.
 - Security reports go through GitHub Security Advisories, not issues (`SECURITY.md`).
+
+## Working tickets
+
+The project's work is tracked in its Alba Ticket workspace (`nordstack.albaticket.com`,
+project `LP`), reached through the `alba` MCP server as the member who connected it
+(`whoami`). It is a local-scope server
+(`claude mcp add --transport http alba https://nordstack.albaticket.com/mcp`); if its tools
+are missing, reconnect it with `/mcp`. How a ticket is worked:
+
+- **Every change to the repository has a ticket, and no more tickets than the work needs.**
+  A request that changes code, spec, ADRs or Lexicons gets a ticket first (`create_ticket`
+  in `LP`, labelled `claude` when Claude raised it), whose description says where the
+  change goes and how it is checked; work already done gets its ticket and is resolved
+  straight after the commit. Be conservative about raising one: when a recent ticket's work
+  is tried out and found to need a change, reopen that ticket (Reopen, then In Progress,
+  with a comment saying what was found) and commit under its key, rather than raising a new
+  one. A new ticket is for a change to work committed more than a few days ago, or one that
+  reaches parts of the project the original ticket did not.
+- **Take it before touching it.** Assign the ticket (`assign_ticket`) and move it to
+  In Progress (`transition_ticket`) before reading or editing anything: the board is read
+  as the state of the work. Pausing one to take another moves it back to Open with a
+  comment saying why.
+- **Every commit names its ticket**, the key first in the message:
+  `LP-7 Revise transport chapter around QUIC`, on whichever branch is checked out. A ticket
+  is usually one commit, and takes more when the work needs them, such as a correction
+  after review; two tickets' changes are never in one commit, so stage them separately.
+- **`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`
+  and `cargo test --workspace` pass in `impl/`, and markdownlint passes on the docs**,
+  before the commit.
+- **Resolve with a comment** (`transition_ticket` to Resolved, Done) that says what was
+  done, what was checked and what was not. It does not name the commit: the GitHub
+  integration links commits that mention the key to the ticket. A ticket that turns out not
+  to be LP's problem is Closed as Declined with the finding.
+- **Never push without being asked**, every time; earlier approval does not carry over.
+- **Tidy up when done.** Whatever the work made for itself goes once its commits are on the
+  branch they were for: worktrees and their local branches, scratch files and processes
+  left running. Check first that nothing on it is lost (`git cherry` shows no commit
+  missing, the worktree has nothing uncommitted).

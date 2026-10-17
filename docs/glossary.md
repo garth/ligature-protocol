@@ -40,9 +40,13 @@ people; access to group-owned devices follows the group policy.
 and held by every admin. It signs the membership document and is the owner of group-owned
 devices.
 
-**Group-owned device**: A device with no user accounts (a lamp, a hub) whose owner set is
-the group key and which every member may use under the group policy after one pairing by
-an admin.
+**Group authority**: What a group device may do when nobody is signed in: its own
+device-scoped capabilities for members under policy, other group devices' capabilities
+under policy, and nothing of any member's user-scoped capabilities.
+
+**Group device**: A device registered to the group rather than to a person (a lamp, a hub,
+a family tablet, a television). Its owner set is the group key; every member may use its
+device-scoped capabilities under the group policy after one pairing by an admin.
 
 **Headscale**: An open-source implementation of the Tailscale coordination server. LP's
 optional WireGuard integration generates configurations compatible with it.
@@ -92,6 +96,10 @@ can be completed from any trusted device without screen or camera hardware.
 **pkarr**: Public-Key Addressable Resource Records: signed DNS-style records keyed by a
 public key, published to the BitTorrent Mainline DHT. One of LP's discovery options.
 
+**Person session**: A member signed in to a group device: a binding that is never an
+introducer, gets implicit access only to the low sensitivity tier of their own
+capabilities, and auto-locks.
+
 **Present**: Having an active, unlocked session on a device. The present person approves
 cross-person requests for that device's device-scoped capabilities.
 
@@ -120,8 +128,14 @@ device), `principal` (a device I use) or `person` (someone I know).
 **Schema**: A JSON Schema 2020-12 document under `schemas/` defining one LP record or
 message type.
 
+**Sensitivity tier**: Low or elevated, per capability family. Governs what a person session
+on a group device may do without per-use confirmation on another of the person's devices.
+
 **Share**: The ad-hoc, AirDrop-like push of text, links or files to a chosen device,
 accepted per item by the receiving person. A user-scoped capability.
+
+**Registration**: Whether a device belongs to a person (*personal*) or to the group
+(*group*), chosen by the introducer at pairing.
 
 **Self-signing key**: The key, signed by the master key, that introducers hold to sign
 bindings and principals. In the simplest configuration it is the master key itself.

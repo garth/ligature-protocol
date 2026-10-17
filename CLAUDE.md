@@ -67,12 +67,21 @@ The authoritative record is `docs/adr/`. Summary, in layer order:
     shared device has one principal plus zero or more bindings. Groups (households) have
     a group key held by admins; the membership document is signed by it, versioned, and
     lists members by master key and group-owned devices (a lamp) by principal key, so one
-    pairing by an admin makes a device available to every member under group policy.
+    pairing by an admin makes a device available to every member under group policy. A
+    device is registered personal or group at pairing; a tablet or TV is group. A request
+    carries the authority of the authenticated person behind it: a group device with
+    nobody signed in has group authority only and can never reach a member's user-scoped
+    capabilities; data reaches it by push. A person session on a group device is a binding
+    that is never an introducer, gets implicit access only to low-sensitivity families
+    (clipboard, notification display, media, displays, share receipt), needs per-use
+    confirmation elsewhere for elevated ones (files, telephony, remote input, sensors,
+    notification actions), and auto-locks. (ADR 0023)
     Same-person use of user-scoped capabilities is implicit; anything across people needs
     approval by the capability's owner or, for device-scoped, by the person present on the
     device, else device policy. `share` is the AirDrop-like family: user-scoped, visible
     only to known persons and group members, accepted per item. Manifests are filtered by
-    audience. Cross-person traffic is an ordinary pairwise session. (ADR 0015, 0021, 0022)
+    audience. Cross-person traffic is an ordinary pairwise session. (ADR 0015, 0021, 0022,
+    0023)
 
 Changing any of these means a new ADR that supersedes the old one, not an edit.
 

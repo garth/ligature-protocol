@@ -38,6 +38,17 @@ pub enum Platform {
     Other,
 }
 
+/// Whether a device belongs to a person or to the group. Spec chapter 02
+/// section 6.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Registration {
+    /// Owned by one or more people; the owner set is master keys.
+    Personal,
+    /// Owned by the group; the owner set is the group key and the device is
+    /// listed in the membership document. A tablet, television, hub or lamp.
+    Group,
+}
+
 /// In-memory view of an `org.ligatureprotocol.device` record.
 ///
 /// Key material, owner set and role signatures are deliberately absent from

@@ -23,6 +23,8 @@ information.
   group key from a compromised admin device.
 - A stranger nearby offering unsolicited shares, if the optional open sharing mode is
   enabled.
+- Anyone physically present at a group device (a television, a family tablet) with no
+  authentication: a child, a visitor, a burglar.
 - A malicious or compromised helper: relay, hole-punch coordinator or discovery service.
 - An attacker able to write to the DHT used for discovery (DHT poisoning) or to spoof
   discovery records.
@@ -62,6 +64,14 @@ item by the receiving person and only from known persons and group members by de
 the worst a member can do is annoy; open mode, if adopted, would let a stranger reach a
 prompt and must be time-boxed and off by default. Open question: whether a group-owned
 device should rate-limit requests per member to resist a compromised member device.
+
+A group device with nobody signed in acts with the group's authority only, so a person at
+the television cannot reach any member's clipboard, notifications, files or telephony, and
+cannot pair devices into anyone's set; data reaches the device only by push from a member.
+A person session on a group device is confirmation-gated for elevated capabilities and
+auto-locks, so a forgotten login exposes the low tier for a short time at most. Open
+question: whether the low tier (clipboard in particular) is already too much for a
+forgotten session on a shared screen, and should require a secure unlock.
 
 ### 4.1 Helpers
 

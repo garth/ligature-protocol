@@ -125,6 +125,14 @@
       ],
       "description": "The device itself, or one person's account on it. A personal device is one binding plus its principal (spec chapter 10)."
     },
+    "registration": {
+      "type": "string",
+      "enum": [
+        "personal",
+        "group"
+      ],
+      "description": "For a principal: whether the device belongs to a person (owner set is master keys) or to the group (owner set is the group key; listed in the membership document). Chosen at pairing (spec chapter 02 section 6)."
+    },
     "key": {
       "$ref": "#/$defs/publicKey",
       "description": "The principal key or binding key."
@@ -149,7 +157,7 @@
     "introducer": {
       "type": "boolean",
       "default": false,
-      "description": "For a binding: whether it holds the self-signing key and may perform the ceremony for others. Chosen at pairing time according to the user's requirements."
+      "description": "For a binding: whether it holds the self-signing key and may perform the ceremony for others. Chosen at pairing time according to the user's requirements. Always false for a binding on a group device."
     },
     "signatures": {
       "type": "array",

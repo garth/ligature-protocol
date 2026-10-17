@@ -8,8 +8,9 @@ Some devices have several user accounts, some devices belong to the whole househ
 some people live together. This chapter defines how a device serves more than one person,
 how people form a group, how a group owns devices, and how permission works across the
 boundary between people. See [ADR 0015](../adr/0015-shared-devices-and-groups.md),
-[ADR 0021](../adr/0021-group-key-and-group-owned-devices.md) and
-[ADR 0022](../adr/0022-ad-hoc-sharing-between-people.md). Four motivating cases:
+[ADR 0021](../adr/0021-group-key-and-group-owned-devices.md),
+[ADR 0022](../adr/0022-ad-hoc-sharing-between-people.md) and
+[ADR 0023](../adr/0023-group-devices-sessions-and-authority.md). Five motivating cases:
 
 - *Automatic:* copy on my phone, paste into my account on the shared laptop. No prompt.
 - *By permission:* stream a song to the shared laptop's speakers while another family
@@ -17,6 +18,8 @@ boundary between people. See [ADR 0015](../adr/0015-shared-devices-and-groups.md
 - *Group-owned:* a lamp with no accounts that every family member can switch, after one
   pairing by one admin.
 - *Ad hoc:* send a photo from my phone to my partner's phone. They accept, it arrives.
+- *Unauthenticated:* a child picks up the family tablet. They can switch the lamp and play
+  the family playlist, and cannot read anyone's clipboard or messages.
 
 ## 2. Principals on a device
 
@@ -42,8 +45,10 @@ Every capability descriptor carries a scope (see
 | `device` | The device principal | Display, speakers and media playback, sensors, physical keyboard and mouse, power, a lamp's switch | The person present on the device; otherwise the device's policy |
 
 Some families appear in both scopes (media control of a user's own player is `user`;
-playback through the device's speakers is `device`). Open question: whether scope is fixed
-per capability type or chosen per descriptor by the offering device.
+playback through the device's speakers is `device`). Each family also has a **sensitivity
+tier**, low or elevated (chapter 05 section 3b), which governs what a person session on a
+group device may do implicitly (section 5.2). Open question: whether scope is fixed per
+capability type or chosen per descriptor by the offering device.
 
 ## 4. Groups
 
@@ -62,25 +67,57 @@ member's standing grants are revoked. Open questions: whether a person can be in
 groups; what a child account restricts; whether admins' devices should push a new document
 to group-owned devices rather than wait for gossip.
 
-## 5. Group-owned devices
+## 5. Group devices
 
-A device with no accounts (a lamp, a thermostat, a speaker, a hub) is paired once by an
-admin through its pairing page or screen (chapter 02 section 5). The admin signs its
-principal with the `principal` role and adds it to the membership document; its owner set
-is the group key. From then on:
+A **group device** is registered to the group, never to an individual: a lamp, a
+thermostat, a speaker, a hub, a family tablet, a television. An admin pairs it once
+(chapter 02) choosing *group* at pairing; the admin signs its principal with the
+`principal` role and adds it to the membership document; its owner set is the group key.
+All members may use its device-scoped capabilities under the group policy. From then on:
 
 | Who | Trusts what | Because |
 | --- | --- | --- |
-| Any member's device | The lamp's principal key | The membership document lists it |
-| The lamp | A binding whose chain reaches a listed member's master key | The membership document lists that person |
-| The lamp | An admin's binding, for configuration | The admin's master key has the `admin` role in the document |
+| Any member's device | The group device's principal key | The membership document lists it |
+| The group device | A binding whose chain reaches a listed member's master key | The membership document lists that person |
+| The group device | An admin's binding, for configuration | The admin's master key has the `admin` role in the document |
+| A member's device | The group device, for device-scoped requests only, as unauthenticated | Section 5.1 |
 
-There is never a present person on a device with no accounts, so group policy decides
-every request: the default for a group-owned device allows members the capabilities the
-admins have listed for it and denies the rest. Adding a family member makes every
-group-owned device available to them with no further pairing. Open question: whether a
-group-owned device may also have bindings (a family tablet both owned by the group and
-holding accounts), and how the two owner models combine.
+When nobody is signed in, group policy decides every request to the device: the default
+for a group device allows members the capabilities the admins have listed for it and
+denies the rest. Adding a family member makes every group device available to them with no
+further pairing.
+
+### 5.1 Authority of a request
+
+A request carries the authority of the person authenticated behind it. A group device with
+nobody signed in has the **group's authority only**, which never includes any member's
+user-scoped capabilities: it cannot read a member's clipboard, notifications or files,
+cannot receive a share addressed to a person, and cannot use a member's telephony. It may
+use other group devices' device-scoped capabilities under policy, and it may ask a member's
+device for a device-scoped capability (cast to Alice's laptop) only through the ordinary
+approval of section 6, where the prompt says the request comes from an unauthenticated
+group device.
+
+Data reaches a group device by **push**: a member sends photos to the television, casts
+their phone to the tablet or sends a playlist to the speaker from their own device, using
+the group device's device-scoped capability. The person's device is the actor.
+
+### 5.2 Person sessions on a group device
+
+A member may sign in to a group device, which is a binding paired as usual (chapter 02).
+Such a binding is **never an introducer**. While the session is present and unlocked the
+device acts with that person's authority, with reduced defaults:
+
+| Tier | Families | On a group device, same person |
+| --- | --- | --- |
+| Low | Clipboard, notification display, media control, displays, share receipt | Implicit, as on any of the person's devices |
+| Elevated | Files, telephony and SMS, remote input into a personal device, sensors of a personal device, notification actions | Per-use confirmation on another of the person's own devices |
+
+The session auto-locks after a short idle period; on lock the device reverts to the group's
+authority and any elevated-tier sessions end. Open questions: the default idle period;
+whether the tiers should be configurable by the person as well as by the capability's
+schema; and whether a person session on a group device should be allowed at all on
+devices with no secure unlock (a television with a remote).
 
 ## 6. Grants across people
 
@@ -92,7 +129,8 @@ Within one person, their devices may use their user-scoped capabilities without 
 2. If the capability is user-scoped, the owning person is asked on any of their devices.
 3. If the capability is device-scoped and someone is **present** on the device (an active,
    unlocked session), that person is asked on that device. If nobody is present, or the
-   device has no accounts, the device's policy decides.
+   device has no accounts, the device's policy decides. The prompt states whether the
+   requester is a person or an unauthenticated group device (section 5.1).
 4. The approver may answer once, or remember the answer as a standing grant with scope and
    expiry (see [`org.ligatureprotocol.grant`](../../schemas/grant.schema.json)).
 
@@ -133,5 +171,7 @@ how a new member's devices first obtain the document when no admin device is rea
   binds their account separately?
 - Guest access: time-boxed group membership with the `guest` role, or grants only?
 - Audit: should approvals and uses of device-scoped capabilities be logged for the owners?
-- Recovery of a group whose admins have all rebuilt: re-pair every group-owned device, or
-  allow a member to claim the group with a new group key?
+- Recovery of a group whose admins have all rebuilt: re-pair every group device, or allow
+  a member to claim the group with a new group key?
+- Whether a group device should show who is signed in, if anyone, on its own screen at all
+  times.

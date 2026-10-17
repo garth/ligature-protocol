@@ -111,6 +111,7 @@
       "description": "Platform family.",
       "examples": [
         "linux",
+        "macos",
         "android",
         "ios",
         "hub",

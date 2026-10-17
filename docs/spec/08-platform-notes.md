@@ -19,6 +19,32 @@ relies on the OS's account isolation to keep one account's keys and clipboard fr
 Open question: the minimum set of compositors and portals to support (Hyprland is the first
 target), and how the system service drives audio and display without a session of its own.
 
+## 2b. macOS
+
+A macOS machine is a full peer. The binding daemon runs as a per-user launchd agent and
+the principal daemon as a launchd daemon, mirroring the Linux split; presence comes from
+the console-user and session state that the system exposes to daemons. Bonjour is the
+native mDNS/DNS-SD implementation and CoreBluetooth the BLE stack, so discovery needs no
+extra components. What a third-party daemon may offer is bounded by platform permissions:
+
+- **Clipboard**: NSPasteboard has no change notification, so the watcher polls the change
+  count; reading the pasteboard from a background process is permitted.
+- **Notifications**: a daemon may post notifications, but may not read other
+  applications' notifications, so macOS can display forwarded notifications and cannot
+  forward its own.
+- **Remote input and displays**: injecting input needs the Accessibility permission and
+  capturing or mirroring the screen needs Screen Recording; both are granted per
+  application by the user under Transparency, Consent and Control.
+- **Keys**: the Keychain stores the local store's keys; the Secure Enclave holds only
+  P-256 keys, so an Ed25519 key is software-held and may be wrapped by one
+  ([ADR 0027](../adr/0027-ed25519.md)).
+- **Telephony and SMS**: not available to third parties; a macOS device offers none.
+- **Distribution**: outside the App Store, with notarisation, since a sandboxed App Store
+  build could not run the principal daemon.
+
+Open question: whether the binding and principal daemons can share a signed application
+bundle so the user grants permissions once.
+
 ## 3. Android
 
 Background execution, battery optimisation and the clipboard restrictions introduced in

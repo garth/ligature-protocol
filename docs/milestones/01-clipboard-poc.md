@@ -13,7 +13,7 @@ Revoke one and show it can no longer connect. Restart both and show the pairing 
 
 Groups and group devices (chapter 10), relays, hole punching and the DHT (chapter 04
 section 5), the `share` family, non-text clipboard
-content, BLE, headless pairing pages, Android or iOS, the system-level principal daemon as
+content, BLE, headless pairing pages, macOS, Android or iOS, the system-level principal daemon as
 a separate process (section 5, phase F), and the optional WireGuard integration.
 
 ## 3. Decisions to pin before coding
@@ -159,7 +159,8 @@ flowchart LR
 
 ## 7. After this milestone
 
-Milestone 2 candidates, in no order: offline or passphrase-derived master keys and the
-introducer choice at pairing; the `share` family between two people (requires the `person` role and
-the second master key); the headless pairing page; a group with one group device; relays
-and the DHT for the away-from-home case.
+Milestone 2 candidates, in no order: the macOS daemons under launchd as the second desktop
+platform; offline or passphrase-derived master keys and the introducer choice at pairing;
+the `share` family between two people (requires the `person` role and the second master
+key); the headless pairing page; a group with one group device; relays and the DHT for the
+away-from-home case.

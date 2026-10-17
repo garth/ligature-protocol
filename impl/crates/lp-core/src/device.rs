@@ -28,6 +28,8 @@ pub enum DeviceKind {
 pub enum Platform {
     /// A Linux desktop or laptop.
     Linux,
+    /// A macOS desktop or laptop.
+    MacOs,
     /// An Android phone or tablet.
     Android,
     /// An iPhone or iPad, reached through BLE accessory profiles.

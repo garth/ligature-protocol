@@ -4,11 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this project is
 
-Ligature Protocol (LP) is an open protocol that binds one person's devices (Linux desktops,
-Android, tablets, hubs, iPhones where possible) into a single trusted group so any device
-can discover and use the others' capabilities: an open, Apple-Continuity-like ecosystem for
-Linux users. Principles: local-first, self-hostable with no required central server,
-end-to-end encrypted, built on existing open standards, interoperate rather than replace.
+Ligature Protocol (LP) is an open protocol that binds one person's devices (Linux and
+macOS desktops, Android, tablets, hubs, iPhones where possible; ADR 0033) into a single
+trusted group so any device can discover and use the others' capabilities: an open, Apple-
+Continuity-like ecosystem for Linux users. Principles: local-first, self-hostable with no
+required central server, end-to-end encrypted, built on existing open standards,
+interoperate rather than replace.
 
 Status is pre-alpha. The spec is a draft, the Rust workspace is a scaffold with no protocol
 logic, and the `org.ligatureprotocol` type names use a placeholder domain.

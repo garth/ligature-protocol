@@ -4,9 +4,9 @@
 > reference implementation is a scaffold, and the `org.ligatureprotocol` type names use a
 > placeholder domain.
 
-Ligature Protocol binds a person's devices (Linux desktops, Android phones, tablets,
-home hubs, and iPhones where the platform allows) into one trusted group, so any device
-can discover and use the capabilities of the others. Think of it as an open,
+Ligature Protocol binds a person's devices (Linux and macOS desktops and laptops, Android
+phones and tablets, home hubs, and iPhones where the platform allows) into one trusted
+group, so any device can discover and use the capabilities of the others. Think of it as an open,
 Apple-Continuity-like ecosystem for Linux users, built on existing open standards.
 
 ## Principles

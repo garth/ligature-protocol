@@ -1,6 +1,6 @@
 [package]
 name = "lp-crypto"
-description = "Ligature Protocol encryption: MLS group wrapper"
+description = "Ligature Protocol cryptography: signing keys and raw-public-key TLS material"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

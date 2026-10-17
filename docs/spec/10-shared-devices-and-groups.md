@@ -15,11 +15,13 @@ permission works across the boundary between identities. See
 
 ## 2. Principals on a device
 
-A **device principal** is the device itself: one device key, one system-level daemon, and
-ownership of the device-scoped capabilities (section 3). A **user-device binding** is one
-person's account on that device: its own key, cross-signed by that person's identity
-(chapter 02), a member of that person's MLS device group (chapter 03), and owner of that
-person's user-scoped capabilities on the device. A personal phone has one binding and its
+A **device principal** is the device itself: one device key, one system-level daemon, an
+owner set, and ownership of the device-scoped capabilities (section 3). A **user-device
+binding** is one person's account on that device: its own key, signed by that person's
+self-signing key with the `binding` role (chapter 02), and owner of that person's
+user-scoped capabilities on the device. Pairing a binding on a shared device also signs the
+principal with the `principal` role for that person, in the same ceremony. A personal
+phone has one binding and its
 owner is the device's owner; a family laptop has one device principal and one binding per
 account. Open question: whether the device principal needs its own key at all, or can be
 represented by the set of bindings plus an owner record.
@@ -27,7 +29,7 @@ represented by the set of bindings plus an owner record.
 ## 3. Capability scope
 
 Every capability descriptor carries a scope (see
-[`org.ligatureprotocol.capability`](../../lexicons/org/ligatureprotocol/capability.json)):
+[`org.ligatureprotocol.capability`](../../schemas/capability.schema.json)):
 
 | Scope | Belongs to | Examples | Who approves cross-identity use |
 | --- | --- | --- | --- |
@@ -40,18 +42,19 @@ per capability type or chosen per descriptor by the offering device.
 
 ## 4. Groups
 
-A **group** is a set of identities (a household, a small team) with admins, a membership
-record, a list of shared devices it owns and a policy (see
-[`org.ligatureprotocol.group`](../../lexicons/org/ligatureprotocol/group.json)). A person
-joins by invitation from an admin and acceptance on one of their own devices; their
-user-signing key (chapter 02) signs the acceptance. Leaving or removal updates the record
-and tears down every cross-identity MLS group the member was in (section 6). The
-membership document is a signed fact held by every member's devices and gossiped like any
-other (chapter 06). Open questions: whether a group has a DID of its own, or is identified
-by its founding admin plus a key; whether a person can be in several groups; what a child
-account looks like.
+A **group** is a set of people (a household, a small team), each identified by their
+master key, with admins, a membership document, a list of shared devices it owns and a
+policy (see [`org.ligatureprotocol.group`](../../schemas/group.schema.json)). Members must
+already know each other (the `person` role, chapter 02). A person joins by invitation from
+an admin and acceptance on one of their own devices; their user-signing key (chapter 01)
+signs the acceptance. Leaving or removal updates the document and revokes the member's
+standing grants (section 6). The membership document is a signed fact held by every
+member's devices and gossiped like any other (chapter 06). Open questions: whether a
+household needs a membership document at all, or whether pairwise `person` signatures plus
+each shared device's owner set are enough; whether a person can be in several groups; what
+a child account looks like.
 
-## 5. Grants across identities
+## 5. Grants across people
 
 Within one identity, a person's devices may use that person's user-scoped capabilities
 without a prompt (chapter 05). Across identities nothing is implicit:
@@ -63,19 +66,18 @@ without a prompt (chapter 05). Across identities nothing is implicit:
    device's policy decides; the default policy denies unless the device's owners have
    allowed the capability for group members.
 4. The approver may answer once, or remember the answer as a standing grant with scope and
-   expiry (see [`org.ligatureprotocol.grant`](../../lexicons/org/ligatureprotocol/grant.json)).
+   expiry (see [`org.ligatureprotocol.grant`](../../schemas/grant.schema.json)).
 
 Requests from outside the group are refused before any prompt. Open questions: how
 presence is defined with several seats or a locked screen; whether a device owner can
 pre-approve on behalf of a present user; and timeouts for unanswered prompts.
 
-## 6. Encryption across identities
+## 6. Encryption across people
 
-A person's MLS device group never admits another person's devices. A cross-identity grant
-creates, or reuses, a narrower MLS group whose members are the requesting device(s) and the
-granting principal. That group is rotated when the grant changes and destroyed when it is
-revoked or the member leaves the group. Open question: whether to key these groups per
-grant, per identity pair, or per (identity, shared device).
+Nothing changes at the encryption layer: a cross-person capability runs over a pairwise
+QUIC session between the requesting device and the granting principal or binding
+(chapter 03), so the data is readable by exactly those two. Revoking the grant or removing
+the member simply stops future sessions from being authorised.
 
 ## 7. State
 

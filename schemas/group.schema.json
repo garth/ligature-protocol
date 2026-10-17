@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ligatureprotocol.org/schemas/group.schema.json",
+  "title": "org.ligatureprotocol.group",
+  "description": "DRAFT. A signed document describing a group of people (for example a household): members by master key, admins, shared devices and policy. Signed by an admin's binding key and gossiped among members' devices; there is no group repository (spec chapter 10). The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "$defs": {
+    "publicKey": {
+      "type": "string",
+      "description": "A public key as a multibase string with a multicodec prefix (an Ed25519 key renders as z6Mk\u2026).",
+      "pattern": "^z[1-9A-HJ-NP-Za-km-z]+$"
+    },
+    "bytes": {
+      "type": "string",
+      "description": "Bytes as base64url without padding.",
+      "pattern": "^[A-Za-z0-9_-]*$"
+    },
+    "typeName": {
+      "type": "string",
+      "description": "A reverse-DNS type name such as org.ligatureprotocol.capability.clipboard.",
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+    },
+    "member": {
+      "type": "object",
+      "required": [
+        "person",
+        "role",
+        "acceptedAt"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "person": {
+          "$ref": "#/$defs/publicKey",
+          "description": "The member's master key. Members must already be known persons to the admins."
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "admin",
+            "member",
+            "child",
+            "guest"
+          ]
+        },
+        "acceptance": {
+          "$ref": "#/$defs/bytes",
+          "description": "Signature by the member's user-signing key over their acceptance (spec chapter 01)."
+        },
+        "acceptedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "For guests: when the membership ends."
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "description": "What members may do with the group's shared devices when nobody is present. Anything not listed is denied.",
+      "additionalProperties": false,
+      "properties": {
+        "unattendedAllow": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/typeName"
+          },
+          "description": "Capability types any member may use on a shared device when no one is present."
+        },
+        "promptTimeoutSeconds": {
+          "type": "integer",
+          "minimum": 5,
+          "description": "How long a present person has to answer before a request is treated as denied."
+        }
+      }
+    }
+  },
+  "type": "object",
+  "required": [
+    "displayName",
+    "members",
+    "createdAt"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "displayName": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "members": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/member"
+      }
+    },
+    "sharedDevices": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "string",
+        "maxLength": 128
+      },
+      "description": "deviceIds of principals owned by the group."
+    },
+    "policy": {
+      "$ref": "#/$defs/policy"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

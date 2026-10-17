@@ -1,19 +1,20 @@
-//! User identity identifiers. Spec chapter 01.
+//! Identity identifiers. Spec chapter 01.
 
-/// A user's AT Protocol DID, such as `did:plc:...` or `did:web:...`.
-///
-/// This is the root of trust for a device set. Resolution and verification
-/// live in `lp-identity`; this type is only the identifier.
+/// A person's master public key, as a multibase string with a multicodec
+/// prefix. This is the root of trust for everything the person owns or knows.
+/// Key handling lives in `lp-identity` and `lp-crypto`; this type is only the
+/// identifier.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Did(pub String);
+pub struct PersonKey(pub String);
 
-/// A DNS handle that resolves to a [`Did`], such as `alice.example.org`.
+/// A DNS name at which a person has optionally published their master key,
+/// such as `alice.example.org`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Handle(pub String);
+pub struct PublishedName(pub String);
 
-/// Identifier of a group of identities such as a household. Spec chapter 10.
+/// Identifier of a group of people such as a household. Spec chapter 10.
 ///
-/// Whether this is a DID of its own or derived from the founding admin's key is
-/// an open question; the newtype keeps callers independent of the answer.
+/// Whether this is a key of its own or derived from the founding admin's key
+/// is an open question; the newtype keeps callers independent of the answer.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct GroupId(pub String);

@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ligatureprotocol.org/schemas/grant.schema.json",
+  "title": "org.ligatureprotocol.grant",
+  "description": "DRAFT. A grant authorising one device to use a capability offered by another. Held by the device that issued it; not shared (spec chapters 05 and 10). The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "$defs": {
+    "publicKey": {
+      "type": "string",
+      "description": "A public key as a multibase string with a multicodec prefix (an Ed25519 key renders as z6Mk\u2026).",
+      "pattern": "^z[1-9A-HJ-NP-Za-km-z]+$"
+    },
+    "typeName": {
+      "type": "string",
+      "description": "A reverse-DNS type name such as org.ligatureprotocol.capability.clipboard.",
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+    }
+  },
+  "type": "object",
+  "required": [
+    "grantor",
+    "grantee",
+    "capability",
+    "createdAt"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "grantor": {
+      "type": "string",
+      "maxLength": 128,
+      "description": "deviceId of the principal or binding offering the capability."
+    },
+    "grantee": {
+      "type": "string",
+      "maxLength": 128,
+      "description": "deviceId of the device permitted to use it."
+    },
+    "granteePerson": {
+      "$ref": "#/$defs/publicKey",
+      "description": "Master key of the grantee's owner when it differs from the grantor's."
+    },
+    "capability": {
+      "$ref": "#/$defs/typeName"
+    },
+    "scope": {
+      "description": "Capability-specific restriction on what the grantee may do; schema defined by the capability type."
+    },
+    "basis": {
+      "type": "string",
+      "enum": [
+        "implicit",
+        "approval",
+        "policy"
+      ],
+      "description": "implicit: same person, user-scoped, no prompt; approval: a person approved it; policy: device policy allowed it while nobody was present."
+    },
+    "approvedBy": {
+      "$ref": "#/$defs/publicKey",
+      "description": "Master key of the person who approved a cross-person grant. Absent for implicit and policy grants."
+    },
+    "standing": {
+      "type": "boolean",
+      "default": false,
+      "description": "True when the approver chose to remember the answer."
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "revokedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

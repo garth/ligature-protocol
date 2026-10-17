@@ -1,13 +1,12 @@
-//! The capability model: descriptors, requests and grants. Spec chapter 05 and
-//! the `org.ligatureprotocol.capability` / `org.ligatureprotocol.grant`
-//! Lexicons.
+//! The capability model: descriptors, manifests and grants. Spec chapter 05
+//! and the `capability` and `grant` schemas under `schemas/`.
 
-/// An atproto NSID naming a capability type, such as
+/// A reverse-DNS type name for a capability, such as
 /// `org.ligatureprotocol.capability.clipboard`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CapabilityType(pub String);
 
-/// The initial capability families. Each will receive its own Lexicon and
+/// The initial capability families. Each will receive its own schema and
 /// spec section.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]

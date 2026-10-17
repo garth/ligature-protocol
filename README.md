@@ -1,7 +1,8 @@
 # Ligature Protocol (LP)
 
 > **Status: pre-alpha.** Nothing here is stable. The specification is a draft, the
-> reference implementation is a scaffold, and the Lexicon namespace is a placeholder.
+> reference implementation is a scaffold, and the `org.ligatureprotocol` type names use a
+> placeholder domain.
 
 Ligature Protocol binds a person's devices (Linux desktops, Android phones, tablets,
 home hubs, and iPhones where the platform allows) into one trusted group, so any device
@@ -12,16 +13,20 @@ Apple-Continuity-like ecosystem for Linux users, built on existing open standard
 
 - **Local-first.** Devices talk to each other directly. Everything works on a LAN with no
   internet connection.
-- **No server, no database.** The only off-device state is your AT Protocol DID document.
-  Devices keep a small local store of signed facts and gossip them to each other. There is
-  no PDS, no Space and no sync service in the protocol.
+- **No server, no database, nothing to recover.** Devices keep a small local store of
+  signed facts and gossip them to each other. Lose every device and you rebuild by
+  re-pairing; nothing else is lost.
 - **Capabilities are live.** A device announces what it can do when it connects and the
   offer disappears when it leaves. Nothing about capabilities is ever stored.
-- **End-to-end encrypted.** All device-to-device traffic is protected by an MLS group
-  (RFC 9420). Secrets at rest are stored only as MLS-encrypted payloads.
-- **Build on open standards.** AT Protocol for identity and shared state, MLS for group
-  encryption, QUIC with raw-public-key TLS for transport, mDNS/DNS-SD and BLE for
-  discovery.
+- **No account.** You are a signing key, created on your first device. Pairing is a
+  proximity ceremony: scan a code, compare a short code, done. One ceremony makes a device
+  known to all your devices. Publishing your key at a DNS name is optional.
+- **End-to-end encrypted, with least exposure.** Every pair of devices talks over its own
+  QUIC/TLS 1.3 session authenticated by device keys. No hub, relay or other device of yours
+  can decrypt data it does not need.
+- **Build on open standards.** QUIC with raw-public-key TLS for transport and encryption,
+  mDNS/DNS-SD and BLE for discovery, Matrix-style cross-signing for device trust, JSON
+  Schema for records and messages.
 - **Helpers are replaceable and untrusted.** Remote connectivity may use discovery,
   hole-punching and relay services. Any helper may be operated by anyone, is listed in the
   user's own records, and is never trusted with plaintext or identity.
@@ -36,15 +41,15 @@ Apple-Continuity-like ecosystem for Linux users, built on existing open standard
 ```mermaid
 flowchart TB
     subgraph Identity["Identity layer"]
-        DID["AT Protocol DID<br/>(did:plc / did:web) + DNS handle"]
+        KEY["Master signing key<br/>(optionally published at a DNS name)"]
     end
 
     subgraph Trust["Device trust layer"]
-        XS["Per-device keys,<br/>cross-signed by the user identity"]
+        XS["Proximity ceremony signs a key with a role:<br/>binding (mine) · principal (device I use) · person (known)"]
     end
 
     subgraph Crypto["Encryption layer"]
-        MLS["MLS group (RFC 9420)<br/>one group per user's device set"]
+        SESSION["Pairwise QUIC/TLS 1.3 session,<br/>raw public keys, least exposure"]
     end
 
     subgraph Transport["Transport layer: QUIC (RFC 9000)"]
@@ -69,7 +74,7 @@ flowchart TB
         GOSSIP["Gossip of signed facts<br/>at the start of every session"]
     end
 
-    DID --> XS --> MLS --> QUIC --> ADV --> GRANT --> USE
+    KEY --> XS --> SESSION --> QUIC --> ADV --> GRANT --> USE
     LAN -. "finds peers" .-> QUIC
     DISC -. "addresses only" .-> QUIC
     PUNCH -. "addresses only" .-> QUIC
@@ -80,10 +85,11 @@ flowchart TB
 ```
 
 Nothing routes through a server. A device proves it belongs to you by presenting its key
-cross-signed by your identity; revocations and other signed facts travel between your
+signed by your self-signing key; revocations and other signed facts travel between your
 devices when they meet. Data flows directly between devices over QUIC, or through a relay
-that sees only ciphertext when a direct path is impossible. MLS is the planned end-to-end
-layer, pending the proof of concept; QUIC/TLS with device keys is underneath it. WireGuard
+that sees only ciphertext when a direct path is impossible. The QUIC/TLS session between
+two devices is the end-to-end encryption; there is no group key, so nothing can be read by
+a device that was not meant to read it. WireGuard
 is not part of the protocol; an optional integration can generate Headscale/WireGuard
 configurations for users who want a full home-network overlay.
 
@@ -94,7 +100,7 @@ configurations for users who want a full home-network overlay.
 | `docs/spec/` | The protocol specification (draft) |
 | `docs/adr/` | Architecture decision records |
 | `docs/glossary.md`, `docs/prior-art.md` | Terminology and related work |
-| `lexicons/` | Draft AT Protocol Lexicons for LP's records and messages (`org.ligatureprotocol.*`, placeholder namespace) |
+| `schemas/` | Draft JSON Schemas for LP's records and messages (`org.ligatureprotocol.*` type names, placeholder domain) |
 | `impl/` | Rust reference implementation (cargo workspace) |
 
 ## Reference implementation
@@ -102,8 +108,9 @@ configurations for users who want a full home-network overlay.
 The `impl/` workspace contains:
 
 - `lp-core`: shared types and the capability model
-- `lp-identity`: DID resolution and device key cross-signing
-- `lp-crypto`: MLS wrapper (planned on OpenMLS)
+- `lp-identity`: master key, pairing ceremony, cross-signing roles, local trust store,
+  optional key publication
+- `lp-crypto`: signing and session key material for raw-public-key TLS
 - `lp-transport`: QUIC connections, local discovery (mDNS/BLE), remote discovery and
   relay clients
 - `ligatured`: Linux user daemon (D-Bus, systemd user unit)

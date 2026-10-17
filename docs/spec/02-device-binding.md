@@ -4,49 +4,81 @@
 
 ## 1. Intent
 
-Every device holds its own long-term signing key and a separate key for MLS. Devices are
-trusted because the user identity has cross-signed them, following the Matrix
-cross-signing model. See [ADR 0003](../adr/0003-device-cross-signing.md).
+Devices join a person's device set through one **proximity ceremony**: an existing
+device that can introduce verifies a key physically in front of it and signs that key with
+a role. One ceremony makes the newcomer available to every device the person owns. See
+[ADR 0017](../adr/0017-master-key-identity-and-proximity-ceremony.md) and
+[ADR 0003](../adr/0003-device-cross-signing.md).
 
-## 2. Key hierarchy
+## 2. Keys on a device
 
-The user identity holds a master signing key. It signs a self-signing key (which signs the
-user's own devices) and a user-signing key, which signs the group memberships the user
-accepts and the other identities they trust (chapter 10). Open question: whether the
-user-signing key is needed in milestone 1, where there are no groups yet.
+- **Device principal key.** One per physical device, held by the system-level daemon. It
+  owns the device-scoped capabilities (chapter 10).
+- **Binding key.** One per account per device, held by that account's daemon. It owns the
+  account holder's user-scoped capabilities on that device. A personal phone has one
+  binding; a family laptop has one per account.
+- **Self-signing key**, if this device is an introducer (chapter 01).
 
-## 3. Adding a device
+## 3. Roles
 
-A new device is added by approval from an existing trusted device. The new device shows a
-QR code or a short code; the existing device scans or enters it, verifies the new device's
-key, and publishes a signature. Open question: the exact out-of-band channel for the
-bootstrap when the devices are not co-located (likely: not supported in v1).
+A signature made in the ceremony carries exactly one role:
 
-## 3a. Shared devices
+| Role | Signed key | Meaning for all my devices |
+| --- | --- | --- |
+| `binding` | A binding key | This is my account on that device: member of my device set, trusted for my user-scoped capabilities |
+| `principal` | A device principal key | This is a device I use: I may request its device-scoped capabilities |
+| `person` | Another master key | This is someone I know: their bindings are recognisably theirs and may ask me for grants |
 
-A device with several user accounts has one **device principal** (its own key, owned by a
-system-level daemon) and one **user-device binding** per account, each bound to that
-account holder's identity by the flow in section 3. Device-scoped capabilities belong to
-the principal; user-scoped ones to the binding. See chapter 10. Open question: whether the
-device principal is paired to a group (chapter 10) or to its first owner.
+A binding signature also records whether the new binding is an **introducer**, which the
+user chooses at pairing time according to their requirements. Open question: whether a
+`principal` signature should record owner rights separately from use rights (section 6).
 
-## 4. Device records
+## 4. The ceremony
 
-Each trusted device is described by a signed record (keys, display name, platform, kind)
-that the device itself carries and that peers gossip to each other (chapter 06). It does
-not list capabilities; those are live (chapter 05). See
-[`org.ligatureprotocol.device`](../../lexicons/org/ligatureprotocol/device.json).
+1. The newcomer displays its key fingerprint and a one-time code, or serves a page that
+   does (section 5).
+2. An introducer of mine scans or reads it, shows the same short code on both sides, and
+   the user confirms they match by voice or by eye.
+3. The introducer signs the newcomer's key with the chosen role and sends the signature,
+   the self-signing key if the newcomer is to be an introducer, and current gossip
+   (chapter 06).
+4. Both sides store what they received. Every other device learns of it by gossip.
 
-## 5. Revocation
+BLE, NFC or UWB ranging may be used to tighten the proximity check where hardware allows
+but are never required. Open question: the exact code length and the binding of the code
+to the TLS session so that a relayed impostor cannot complete the ceremony.
 
-Any trusted device can revoke another. Revocation is a signed fact gossiped to every peer
-(chapter 06) and, where MLS is in use, a removal from the group (chapter 03). A revoked
-device cannot announce its own revocation, so peers that were offline learn of it from the
-next trusted device they meet. Open question: whether revocation should require more than
-one device when the device set is large, to limit damage from a single compromised device.
+## 5. Headless devices
 
-## 6. Open questions
+A device without a screen or camera (a hub, a NAS, a speaker) never relies on hardware
+for pairing. It serves a basic web page on the local network, reachable by a URL it
+prints at first boot, announces over mDNS, or exposes on a well-known port. The page shows
+the fingerprint and code of step 1, and the ceremony proceeds from any trusted device
+viewing it. Open question: whether that page should be served only until the first
+binding or principal signature arrives, and what replaces it afterwards for adding further
+owners.
 
-- How long may a device go without meeting any trusted peer before its trust store is
-  treated as stale (chapter 06 section 5)?
-- How are devices with no camera and no keyboard (hubs) paired?
+## 6. Shared devices
+
+A shared device has a principal and one binding per account. The first person to pair a
+binding on an unowned principal becomes its **owner**; owners may add other owners.
+Pairing a binding on a shared device signs the binding as `binding` and the principal as
+`principal` in one ceremony, since the account's daemon can attest the principal key over
+local IPC. Owners set the device's policy for unattended requests (chapter 10). Open
+question: whether a person can hold a `principal` signature for a device on which they
+have no account (a guest using the speakers), or whether that is always a grant.
+
+## 7. Revocation
+
+Any introducer may revoke a binding, a principal or a known person by signing a
+revocation, gossiped to every peer (chapter 06). A revoked device cannot announce its own
+revocation, so peers that were offline learn of it from the next trusted device they meet.
+Open question: whether revocation of a binding by a non-introducer should be allowed, and
+whether a quorum should be required when the device set is large.
+
+## 8. Open questions
+
+- How long a device may go without meeting any trusted peer before treating its trust
+  store as stale (chapter 06 section 5).
+- Whether a device may hold bindings for two people at once on an operating system with
+  no account separation.

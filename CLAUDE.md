@@ -11,54 +11,64 @@ Linux users. Principles: local-first, self-hostable with no required central ser
 end-to-end encrypted, built on existing open standards, interoperate rather than replace.
 
 Status is pre-alpha. The spec is a draft, the Rust workspace is a scaffold with no protocol
-logic, and the Lexicon namespace is a placeholder.
+logic, and the `org.ligatureprotocol` type names use a placeholder domain.
 
 ## Architecture decisions
 
 The authoritative record is `docs/adr/`. Summary, in layer order:
 
-1. **Identity**: AT Protocol DIDs (`did:plc`, `did:web`) with DNS handles; `did:plc`
-   rotation keys are the recovery root. (ADR 0002)
-2. **Device trust**: per-device keys cross-signed by the user identity, Matrix
-   cross-signing model; QR/short-code approval from an existing device; revocation. (ADR 0003)
-3. **Encryption**: one MLS (RFC 9420) group per user's device set is planned (OpenMLS), but
-   since ADR 0016 its justification is only relay fan-out and group PCS. The proof of
-   concept is built on QUIC with cross-signed raw public keys alone; MLS is adopted after
-   with evidence. (ADR 0004, annotated)
+1. **Identity**: a person is a master signing key (multibase, multicodec-prefixed),
+   created on their first device. Publishing it at a DNS name (TXT or well-known HTTPS
+   path) is optional, for a name and remote invitations. Key configuration (split
+   master/self-signing/user-signing vs one key; which devices are introducers) follows the
+   user's requirements. Nothing AT Protocol-specific remains. (ADR 0017; ADR 0002
+   superseded)
+2. **Device trust**: one proximity ceremony (QR + spoken code baseline; BLE/NFC/UWB
+   optional, never required). An introducer signs the verified key with a role: `binding`
+   (my account on a device), `principal` (a device I use), `person` (someone I know). One
+   ceremony makes the newcomer known to all my devices; pairwise-only is rejected.
+   Headless devices serve a pairing web page on the LAN. Revocation is a gossiped signed
+   fact. (ADR 0003, 0017)
+3. **Encryption**: the pairwise QUIC/TLS 1.3 session with raw public keys is the
+   end-to-end layer. Least exposure: no device can decrypt what it does not need, so no
+   group key; MLS is only a candidate for a future capability-scoped multicast key.
+   Nothing is sent before mutual authentication. (ADR 0019; ADR 0004 superseded)
 4. **Transport**: application-level QUIC (RFC 9000), one connection per device pair, one
    stream per capability, device keys as TLS raw public keys (RFC 7250), connection
-   migration. MLS stays end-to-end on top; QUIC/TLS is defence in depth. mDNS/DNS-SD + BLE
+   migration. The session is the end-to-end layer (decision 3). mDNS/DNS-SD + BLE
    locally. Remotely, three replaceable untrusted helper roles: discovery (signed records
-   in a DHT via pkarr, or relays listed in the DID document), hole-punch coordination, relay
+   in a DHT via pkarr, gossiped relays, optional published key), hole-punch coordination, relay
    (default: the user's home hub). Rule: any helper may be operated by anyone, is listed in
    the user's own records, and is never trusted with plaintext or identity. Real-time
    traffic never goes through a PDS. WireGuard/Headscale is an optional non-core
    integration only. (ADR 0011, 0012, 0013; ADR 0005 superseded)
-5. **State**: no shared state, no PDS, no Space. Each device keeps a local store (own
-   keys, trusted device records with cross-signatures, revocations, issued grants, group
-   memberships, MLS state) and gossips signed facts to peers at the start of every
-   session, revocations first. Capabilities are live: a manifest on connect, updates
-   during the session, withdrawn on disconnect, never persisted. Only off-device state is
-   the DID document. (ADR 0016; ADR 0006 superseded)
-6. **Schemas**: atproto Lexicons under `org.ligatureprotocol.*` define LP's records and
-   messages; they do not imply a repository. Placeholder namespace until the domain is
-   registered. (ADR 0007)
+5. **State**: no shared state, no server. Each device keeps a local store (own keys,
+   device records with role signatures, known persons, revocations and abandonments,
+   issued grants, group memberships, relays) and gossips signed facts to peers after
+   authentication at the start of every session, revocations first. Capabilities are
+   live: a manifest on connect, updates during the session, withdrawn on disconnect,
+   never persisted. No required off-device state at all. (ADR 0016; ADR 0006 superseded)
+6. **Schemas**: JSON Schema 2020-12 under `schemas/`, one file per type; reverse-DNS type
+   names `org.ligatureprotocol.*` (placeholder domain). Keys are multibase strings,
+   timestamps RFC 3339, bytes base64url. Wire encoding still open. (ADR 0020; ADR 0007
+   superseded)
 7. **Capabilities**: devices advertise typed capabilities (notifications, clipboard, files,
    remote input, media control, telephony/SMS, displays, sensors); peers discover, request,
    and receive explicit grants. (ADR 0008)
-8. **Recovery**: Shamir shares held by guardians, in-person verification (QR + spoken code,
-   UWB), mandatory delay with veto from existing devices, guardian liveness checks, share
-   refresh. (ADR 0009)
+8. **Loss and compromise**: nothing to recover; rebuild with a new master key, re-pair
+   the devices you hold, re-verify with household members, gossip an abandonment of the
+   old key. Social recovery (ADR 0009) is documented as an optional extension only.
+   (ADR 0018; ADR 0009 superseded)
 9. **Interop**: bridge to KDE Connect, LocalSend, Matter/Thread, CalDAV/CardDAV, Syncthing;
    iPhone via BLE accessory profiles (ANCS/AMS, HFP/MAP/PBAP) and EU DMA APIs. (ADR 0010)
 10. **Shared devices and groups**: capabilities are `user`-scoped (clipboard,
-    notifications, files; owned by a user-device binding in that person's MLS group) or
+    notifications, files; owned by a user-device binding in that person's device set) or
     `device`-scoped (display, speakers, sensors, input; owned by a device principal). A
     shared device has one principal plus one binding per account. Groups (households) are
     first-class with admins, members, shared devices and policy. Same-identity use of
     user-scoped capabilities is implicit; anything across identities needs approval by the
     capability's owner or, for device-scoped, by the person present on the device, else
-    device policy. Cross-identity traffic uses narrower per-grant MLS groups. (ADR 0015)
+    device policy. Cross-person traffic is an ordinary pairwise session. (ADR 0015)
 
 Changing any of these means a new ADR that supersedes the old one, not an edit.
 
@@ -73,16 +83,17 @@ not restructure `impl/` until that ADR is confirmed.
   Each section has an intent paragraph and inline open questions. No wire formats yet.
 - `docs/adr/`: Nygard-format ADRs (Context / Decision / Consequences), status "Proposed".
 - `docs/glossary.md`, `docs/prior-art.md`.
-- `lexicons/org/ligatureprotocol/*.json`: Lexicon v1 drafts (device, capability, grant,
-  guardian, group). Spec chapters link to these by relative path.
+- `schemas/*.schema.json`: JSON Schema 2020-12 drafts (device, capability, grant, group).
+  Spec chapters link to these by relative path.
 - `impl/`: Rust cargo workspace, edition 2024. Crates: `lp-core` (shared types, capability
-  model), `lp-identity` (DID resolution, cross-signing), `lp-crypto` (MLS wrapper),
+  model), `lp-identity` (master key, ceremony, roles, trust store, optional publication),
+  `lp-crypto` (signing, raw-public-key TLS material),
   `lp-transport` (QUIC connections, local discovery, remote discovery and relay clients),
   `ligatured` (Linux user daemon, D-Bus, systemd unit in `crates/ligatured/systemd/`),
   `lpctl` (CLI). `integrations/wireguard-integration` is a non-core placeholder.
   Dependency direction: the three layer crates depend only on `lp-core`; binaries depend on
   the layer crates; integrations depend on `lp-core` and never the other way round.
-- `.github/workflows/ci.yml`: fmt, clippy, test, markdownlint, Lexicon JSON parse.
+- `.github/workflows/ci.yml`: fmt, clippy, test, markdownlint, JSON Schema compile (ajv).
 
 ## Commands
 
@@ -104,18 +115,24 @@ CI treats clippy warnings as errors and the workspace lints set `missing_docs = 
 so every public item needs a doc comment. `unsafe_code` is forbidden workspace-wide.
 
 Markdown lint uses `.markdownlint-cli2.jsonc` (100-column lines, license files ignored).
-Lexicon files must parse as JSON; CI checks only well-formedness, not Lexicon schema
-validity.
+Every schema must compile under draft 2020-12 with formats enabled, as CI does:
+
+```sh
+npm install --no-save ajv-cli@5.0.0 ajv-formats@3.0.1
+npx ajv compile --spec=draft2020 -c ajv-formats -s schemas/<name>.schema.json
+```
 
 ## Conventions
 
 - Code: Apache-2.0 (`LICENSE`). Spec text under `docs/`: CC-BY-4.0 (`LICENSE-SPEC`).
-- Spec chapters and Lexicons are marked draft; keep the markers until the relevant ADR is
+- Spec chapters and schemas are marked draft; keep the markers until the relevant ADR is
   accepted. Do not add wire formats or state machines to the spec without an accepted ADR.
-- New capability families each need a Lexicon under `lexicons/` and a section in
+- New capability families each need a schema under `schemas/` and a section in
   `docs/spec/05-capabilities.md`.
-- The `org.ligatureprotocol` namespace must be replaced or the domain registered before any
-  public release.
+- The `org.ligatureprotocol` type names and the `ligatureprotocol.org` schema `$id`s are
+  placeholders; register the domain or rename before any public release.
+- Nothing AT Protocol-specific is used. Do not reintroduce DIDs, Lexicons, NSIDs, PDS or
+  Spaces; the history is in ADRs 0002, 0006, 0007 and their successors.
 - Security reports go through GitHub Security Advisories, not issues (`SECURITY.md`).
 
 ## Working tickets
@@ -127,7 +144,7 @@ project `LP`), reached through the `alba` MCP server as the member who connected
 are missing, reconnect it with `/mcp`. How a ticket is worked:
 
 - **Every change to the repository has a ticket, and no more tickets than the work needs.**
-  A request that changes code, spec, ADRs or Lexicons gets a ticket first (`create_ticket`
+  A request that changes code, spec, ADRs or schemas gets a ticket first (`create_ticket`
   in `LP`, labelled `claude` when Claude raised it), whose description says where the
   change goes and how it is checked; work already done gets its ticket and is resolved
   straight after the commit. Be conservative about raising one: when a recent ticket's work

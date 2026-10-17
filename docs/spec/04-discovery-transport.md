@@ -29,15 +29,16 @@ There is one QUIC connection per device pair and one stream per capability (clip
 files, remote input, notifications, media control, and so on), so a large file transfer
 never stalls an interactive stream. Open question: whether some capabilities need several
 streams (for example one per file in flight) and how stream identifiers map to capability
-NSIDs.
+type names.
 
 ### 3.2 Authentication
 
 Peers authenticate with their LP device keys using TLS raw public keys (RFC 7250). There
-are no certificate authorities. A connection is accepted only if the presented key belongs
-to a device in the user's device set (chapter 02) or to a device holding a grant (chapter
-05). Open question: whether to pin the exact key or accept any key reachable through the
-cross-signing chain.
+are no certificate authorities. A connection proceeds past authentication only if the
+presented key is a binding of mine, a principal I use, or a binding of a known person
+(chapter 02); otherwise the only thing offered is the pairing ceremony. Open question:
+whether to pin the exact key or accept any key whose signature chain to a known master key
+verifies, learning the device on the spot.
 
 ### 3.3 Connection migration
 
@@ -45,10 +46,10 @@ QUIC connection migration keeps a session alive when a device changes network (W
 mobile data, roaming between access points). Open question: how migration interacts with
 relay paths and with the per-epoch local identifiers in section 4.1.
 
-### 3.4 Relationship to MLS
+### 3.4 End to end
 
-QUIC/TLS protects the hop; MLS (chapter 03) protects the content end to end. A relay or
-any other intermediary terminates nothing above QUIC and sees only MLS ciphertext.
+The QUIC/TLS session is the end-to-end layer (chapter 03). A relay forwards packets and
+terminates nothing, so it sees only ciphertext whether the path is direct or relayed.
 
 ## 4. Local path
 
@@ -78,9 +79,10 @@ Two options, both allowed and both usable together:
   reachable addresses and relays, signed by its device key and keyed by that key's public
   part, to a DHT such as BitTorrent Mainline via pkarr, as iroh does. Anyone can look it
   up; only the key holder can publish a valid record.
-- **The DID document.** Reachable relays, and optionally stable addresses, listed as
-  service entries in the user's DID document (chapter 01). This is the only off-device
-  record LP relies on.
+- **Gossip.** Relays a device uses are signed facts gossiped like any other (chapter 06),
+  so my devices learn each other's relays when they meet.
+- **Optional publication.** A person who has published their key at a DNS name (chapter
+  01) may list relays there, which lets devices that have never met find a path.
 
 Open question: record lifetime, refresh cadence, and what a device does when the two
 sources disagree.
@@ -95,7 +97,7 @@ whether the roles can be split.
 ### 5.3 Relay
 
 When hole punching fails (common on mobile and CGNAT networks) traffic is relayed. The
-relay forwards QUIC packets or MLS ciphertext and can read neither. Anyone can run a relay.
+relay forwards QUIC packets it cannot decrypt. Anyone can run a relay.
 The default personal relay is the user's always-on home hub, the same box that hosts their
 Matter controller or media server. Clients can list several relays; a project-run relay may exist as
 a swappable convenience default. Open question: relay selection and failover order, and
@@ -106,11 +108,12 @@ whether relays should be rate-limited per device key.
 | Situation | Discovery | Path | Helpers used |
 | --- | --- | --- | --- |
 | At home, same LAN | mDNS/DNS-SD, BLE | Direct QUIC | None |
-| Away, user has a home hub | DHT record and/or DID document | Direct QUIC via hole punch, else relay through the hub | Hub as coordinator and relay |
-| Away, no home hub | DHT record and/or DID document | Direct QUIC via hole punch, else relay | Any relay listed in the user's records |
+| Away, user has a home hub | DHT record, gossiped relays | Direct QUIC via hole punch, else relay through the hub | Hub as coordinator and relay |
+| Away, no home hub | DHT record, gossiped relays, optional published key | Direct QUIC via hole punch, else relay | Any relay listed in the user's records |
 | Convenience default | DHT record | Direct QUIC via hole punch, else relay | Project-run relay, replaceable at any time |
 
-In every row the helper sees only addresses and ciphertext.
+In every row the helper sees only addresses and ciphertext. A pairing with a headless
+device at home uses the device's own web page (chapter 02 section 5) over the LAN.
 
 ## 7. Optional: WireGuard / Headscale integration
 

@@ -1,8 +1,9 @@
 //! `ligatured`: the Ligature Protocol Linux user daemon.
 //!
-//! Runs as a systemd user service, owns the device's keys and MLS state,
-//! performs discovery, and exposes a D-Bus interface for desktop integrations
-//! and for `lpctl`. See `systemd/ligatured.service` next to this crate.
+//! Runs as a systemd user service for one account's binding (a system-level
+//! instance owns the device principal), holds that account's keys and trust
+//! store, performs discovery, and exposes a D-Bus interface for desktop
+//! integrations and for `lpctl`. See `systemd/ligatured.service` next to this crate.
 //!
 //! **Status:** scaffold. Starts and exits.
 

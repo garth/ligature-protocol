@@ -1,5 +1,5 @@
-//! Device identifiers and records. Spec chapter 02 and the
-//! `org.ligatureprotocol.device` Lexicon.
+//! Device identifiers and records. Spec chapter 02 and the `device` schema
+//! under `schemas/`.
 //!
 //! A [`DeviceRecord`] is a signed fact carried by the device and gossiped to
 //! peers (spec chapter 06). It does not list capabilities; those are live
@@ -40,9 +40,9 @@ pub enum Platform {
 
 /// In-memory view of an `org.ligatureprotocol.device` record.
 ///
-/// Key material and the cross-signature are deliberately absent from this
-/// scaffold; they will be added once the cross-signing design in
-/// `lp-identity` is implemented.
+/// Key material, owner set and role signatures are deliberately absent from
+/// this scaffold; they will be added once the ceremony and role signatures in
+/// `lp-identity` are implemented.
 #[derive(Debug, Clone)]
 pub struct DeviceRecord {
     /// The device's identifier.

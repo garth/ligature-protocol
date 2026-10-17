@@ -1,6 +1,6 @@
 # 0004. One MLS group per device set for end-to-end encryption
 
-**Status:** Proposed
+**Status:** Superseded by [ADR 0019](0019-pairwise-least-exposure-encryption.md)
 **Date:** 2026-10-17
 **Note (2026-10-17):** [ADR 0016](0016-no-required-shared-state.md) removed stored payloads
 and offline delivery, two of the three reasons for MLS given below. MLS now rests on relay
@@ -24,6 +24,12 @@ MLS credentials bind to the device keys from ADR 0003. The reference implementat
 use OpenMLS.
 
 ## Consequences
+
+*Superseded on 2026-10-17.* Pairwise QUIC/TLS sessions are the end-to-end layer; a group key
+would expose data to devices that do not need it. MLS remains a candidate for a later,
+capability-scoped multicast key if one is ever shown to be needed.
+
+Original consequences follow.
 
 Adding or revoking a device is an MLS commit. Secrets at rest can be stored as MLS
 application messages. LP must solve delivery of MLS handshake messages to offline devices

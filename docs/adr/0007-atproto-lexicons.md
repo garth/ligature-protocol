@@ -1,6 +1,6 @@
 # 0007. Define schemas as AT Protocol Lexicons under org.ligatureprotocol.*
 
-**Status:** Proposed
+**Status:** Superseded by [ADR 0020](0020-json-schema-and-reverse-dns-names.md)
 **Date:** 2026-10-17
 
 ## Context
@@ -16,6 +16,12 @@ under the namespace `org.ligatureprotocol.*`. The domain is not yet registered; 
 namespace is a placeholder until it is.
 
 ## Consequences
+
+*Superseded on 2026-10-17.* With AT Protocol no longer used anywhere in LP, nothing specific
+to it is kept. Schemas are JSON Schema; type names keep the reverse-DNS convention, which is
+generic.
+
+Original consequences follow.
 
 LP gets code generation and validation from the atproto ecosystem. The placeholder
 namespace must be replaced or the domain registered before any public release, since NSIDs

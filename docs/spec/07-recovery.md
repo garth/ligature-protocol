@@ -1,42 +1,44 @@
-# 07. Recovery
+# 07. Loss, Compromise and Rebuild
 
 **Status:** Draft.
 
 ## 1. Intent
 
-A person must be able to regain control of their identity and device set after losing all
-devices, without a central operator. See
-[ADR 0009](../adr/0009-social-recovery.md).
+The protocol keeps no state that must survive the loss of every device, so there is
+nothing to recover. A person who loses their devices, or whose key may have leaked,
+rebuilds. See [ADR 0018](../adr/0018-rebuild-instead-of-recovery.md).
 
-## 2. Guardians and threshold shares
+## 2. Rebuilding
 
-The recovery secret (ultimately a rotation key or a key that controls one) is split with
-Shamir's Secret Sharing among guardians. A threshold of guardians can reconstruct it. See
-[`org.ligatureprotocol.guardian`](../../lexicons/org/ligatureprotocol/guardian.json).
-Shares live with the guardians; the guardian list lives in the user's devices and, since
-it must survive losing every device, should also be written to the DID document or kept
-on paper (chapter 06). Open question: default threshold and share count, and which of
-those two homes for the guardian list is mandatory.
+1. A new device generates a new master key (chapter 01) and becomes the first introducer.
+2. Each device the person still holds is re-paired by the ceremony of chapter 02.
+3. Household members re-verify the new master key in person with the `person` role;
+   shared-device owner sets are updated by any remaining owner, or re-established on the
+   principal's pairing page.
+4. Standing grants are re-approved as they are next needed.
 
-## 3. In-person verification
+The cost is the effort of re-introducing devices and people, which the design accepts in
+exchange for having no shared state.
 
-Guardians release a share only after verifying the requester in person: a QR code plus a
-spoken code, and UWB ranging where hardware allows. Open question: whether a remote
-fallback (video call) is ever acceptable.
+## 3. Abandoning a key
 
-## 4. Time delay and veto
+Any introducer of the new key may gossip a signed statement that a named old master key is
+abandoned. Devices that receive it stop recognising the old key's bindings. Devices that
+never receive it simply treat those bindings as an unknown person's. Open question: whether
+the abandonment statement should be signed by the old key as well when it is still
+available (loss without compromise), to defeat a forged abandonment by a third party.
 
-Recovery completes only after a mandatory delay during which any existing trusted device
-can veto. Open question: delay length and whether the delay can be shortened when the
-user proves possession of a still-trusted device.
+## 4. Optional extensions
 
-## 5. Guardian liveness and share refresh
+- A person who has published their key (chapter 01) publishes the new one in the same
+  place, so contacts who are not in the room learn of the rebuild.
+- The social recovery design of [ADR 0009](../adr/0009-social-recovery.md) (guardians,
+  threshold shares, delay with veto) remains documented for users who want to preserve a
+  key across the loss of all devices. It is not part of the core protocol.
 
-Devices periodically check that guardians are reachable and proactively refresh shares so
-that stale or lost shares do not silently reduce the effective threshold. Open question:
-refresh cadence and how to handle a guardian who leaves.
+## 5. Open questions
 
-## 6. Open questions
-
-- How are guardians themselves identified: LP identities, or any contact method?
-- What does recovery look like for `did:web` identities?
+- Whether implementations should offer an encrypted export of the local store (chapter 06
+  section 6) as a middle path between rebuild and social recovery.
+- How a shared device whose only owner has rebuilt gets a new owner without a factory
+  reset.

@@ -6,20 +6,20 @@
 
 Ligature Protocol has no shared database. Each device keeps a small local store of signed
 facts, and devices exchange the facts the other lacks whenever they meet. Capabilities are
-never stored; they are announced live (chapter 05). The only required off-device state is
-the DID document (chapter 01). See
+never stored; they are announced live (chapter 05). No off-device state is required at all. See
 [ADR 0016](../adr/0016-no-required-shared-state.md).
 
 ## 2. What each device stores
 
-- Its own device key(s) and, for the identity's first device, the cross-signing keys.
-- The identity's public cross-signing keys, so any device's binding can be verified.
-- Trusted device records it has learned: key, display name, platform, kind, with their
-  cross-signatures (chapter 02, [`org.ligatureprotocol.device`](../../lexicons/org/ligatureprotocol/device.json)).
-- Revocations it has learned.
+- Its own binding and principal keys and, if it is an introducer, the self-signing key
+  (chapters 01 and 02).
+- The owner's master public key and the public keys of known persons.
+- Device records it has learned, each with its role signature: bindings, principals and
+  known persons (chapter 02, [`org.ligatureprotocol.device`](../../schemas/device.schema.json)).
+- Revocations and key-abandonment statements it has learned (chapter 07).
 - Grants it has issued (chapter 05) and, optionally, grants it has received.
 - Group memberships it is party to (chapter 10).
-- MLS state, where MLS is in use (chapter 03).
+- Relays it uses (chapter 04).
 
 Nothing here is a cache of a remote truth; the local store *is* the truth as far as that
 device knows. Open question: whether received grants should be stored or always re-sent by
@@ -31,14 +31,16 @@ Every fact that travels between devices is signed and self-verifying:
 
 | Fact | Signed by | Verified against |
 | --- | --- | --- |
-| Device binding | The identity's self-signing key | The identity's master key, from the DID document or a previously trusted copy |
-| Revocation | Any trusted device key, or the self-signing key | The trust store |
-| Group membership acceptance | The member's user-signing key | The member's master key |
-| Group membership document | A group admin's device key | The group's admin list |
+| Device binding or principal | My self-signing key, with a role | My master key |
+| Known person | My user-signing key, role `person` | My master key |
+| Revocation or key abandonment | An introducer's self-signing key | The relevant master key |
+| Group membership acceptance | The member's user-signing key | The member's master key, already known |
+| Group membership document | A group admin's binding key | The group's admin list |
 | Standing grant | The granting device's key | The trust store |
+| Relay list | The device's own key | The trust store |
 
-A device accepts a fact only if the signature verifies against a key it already trusts or
-can trace to the DID document. Open question: whether facts carry a sequence number per
+A device accepts a fact only if the signature verifies against a key it already trusts;
+there is no external directory to consult. Open question: whether facts carry a sequence number per
 signer so that an older fact can never replace a newer one.
 
 ## 4. Gossip
@@ -57,12 +59,14 @@ other device carrying the revocation. Mitigations, all of which implementations 
 apply:
 
 - Gossip revocations first, before any capability traffic.
-- Where MLS is in use, a removed device cannot follow the group past the removal epoch.
 - A device that has seen no trusted peer for a configurable period treats its trust store
   as stale and requires a fresh binding check before honouring sensitive capabilities.
+- Every session is freshly authenticated, so a revoked device gains nothing from sessions
+  it held before.
 
-Open question: the default staleness period, and whether a revocation should also be
-published to the DID document for devices that come back online far from any peer.
+Open question: the default staleness period, and whether a person who has published their
+key should also publish revocations there for devices that come back online far from any
+peer.
 
 ## 6. Backup
 
@@ -73,7 +77,7 @@ worth specifying so implementations can restore each other's exports.
 
 ## 7. Open questions
 
-- Should the guardian list (chapter 07) be the one fact that is also written to the DID
-  document, since it must survive the loss of every device?
 - How a device that has lost its local store but still holds its key re-learns the trust
   set: from any peer, by gossip, after the peer re-verifies it.
+- Whether gossip should be filtered by audience: a known person's devices need my
+  revocations and abandonments but not my bindings' display names.

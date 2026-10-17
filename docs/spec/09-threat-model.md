@@ -9,7 +9,7 @@ not. It should be read alongside every other chapter; design choices elsewhere c
 
 ## 2. Assets
 
-The user's identity (DID control), the device set membership, the content of
+The user's master key, the device set membership, the content of
 device-to-device traffic, secrets at rest, and the user's presence and location
 information.
 
@@ -17,12 +17,13 @@ information.
 
 - A passive network observer on the LAN or the internet.
 - An active network attacker able to inject or modify traffic.
-- A malicious or compromised DID directory (PLC) or `did:web` host.
+- A stranger on the local network during pairing, including on a headless device's pairing
+  page.
+- An attacker who has obtained a self-signing key from a compromised introducer.
 - A malicious or compromised helper: relay, hole-punch coordinator or discovery service.
 - An attacker able to write to the DHT used for discovery (DHT poisoning) or to spoof
   discovery records.
 - A compromised device within the set.
-- A malicious guardian, or a coalition of guardians below threshold.
 - A physical attacker with brief access to an unlocked device.
 - A curious or malicious member of the user's group, including a departed member whose
   access was not fully revoked.
@@ -32,26 +33,27 @@ information.
 
 Confidentiality and integrity of peer traffic against network attackers and every helper.
 No off-device party learns the user's device set, grants or household, since none is
-stored anywhere but on the devices. Authenticity of device membership. Recovery that
-cannot be completed by fewer than the threshold of guardians, nor without the time delay.
-Open question: forward secrecy and post-compromise security targets beyond what MLS
-provides by default.
+stored anywhere but on the devices. **Least exposure**: no device can decrypt data it was
+not the intended recipient of, including hubs and other devices of the same person.
+Authenticity of device membership. Forward secrecy per session from TLS 1.3;
+post-compromise security from the next session. Open question: whether a leaked
+self-signing key should have any remedy short of rebuild (chapter 07).
 
 ### 4.0 Groups and shared devices
 
 A group member must not be able to read another member's user-scoped traffic or use
 another member's capabilities without a grant. On a shared device, one account's daemon
-must not be able to read another account's clipboard or MLS state; LP relies on the
+must not be able to read another account's clipboard or keys; LP relies on the
 operating system's account isolation for this and says so (chapter 08). A departed member
-is removed from the group record and from every cross-identity MLS group. Open question:
+is removed from the group record and their standing grants are revoked. Open question:
 whether a device-scoped capability invoked by a group member should be visible to the
 present user even after approval (an indicator), to limit silent use.
 
 ### 4.1 Helpers
 
 Relays, coordinators and discovery services follow the design rule in chapter 04: they are
-never trusted with plaintext or identity. A malicious relay sees MLS ciphertext and QUIC
-headers; it can drop, delay or replay packets, all of which the transport and MLS detect,
+never trusted with plaintext or identity. A malicious relay sees QUIC packets it cannot
+decrypt; it can drop, delay or replay them, all of which QUIC detects,
 and it can observe who talks to whom by address and timing. A malicious coordinator can
 report wrong addresses, causing a failed hole punch. The worst case for any helper is
 denial of service, and clients route around a failing helper to another listed in the
@@ -77,15 +79,15 @@ accept traffic, to resist abuse without becoming identity-aware.
 
 ## 5. Privacy goals
 
-Local discovery advertisements should not reveal the user's identity to bystanders. The
-DID directory learns only what any DID document reveals: keys and listed relays. Open
-question: whether listing relays in the DID document leaks enough (home IP, household size)
-to prefer DHT records for that too.
+Local discovery advertisements should not reveal the user's identity to bystanders, and
+nothing is sent before mutual authentication (chapter 03). A person who publishes their
+key reveals what they publish. Open question: whether a device's bare public key, seen by
+anyone who connects, is itself an identifier worth hiding behind a per-epoch value.
 
 ## 6. Out of scope
 
-A fully compromised operating system on a device, a coalition of guardians at or above
-threshold acting together with an attacker, denial of service by a network operator, and
+A fully compromised operating system on a device, denial of service by a network operator,
+and
 denial of service by every helper a user has listed at once. Traffic analysis by a helper
 (who talks to whom, when, how much) is acknowledged but not defended against in this
 version.

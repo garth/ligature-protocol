@@ -52,11 +52,13 @@ implementations.
 
 ## 5. Home hubs and headless devices
 
-Hubs have no screen or camera, so pairing and recovery flows need an alternative to QR
-codes. A hub is also the default personal relay and hole-punch coordinator (chapter 04), so
+Hubs have no screen or camera and never rely on hardware for pairing: they serve a basic
+web page on the LAN that shows the ceremony's fingerprint and code (chapter 02 section 5).
+A hub is also the default personal relay and hole-punch coordinator (chapter 04), so
 it should be always on and reachable from the internet, which on an IPv4-only home
-connection means a port forward or a global IPv6 address. Open question: whether a trusted
-device can pair a hub on its behalf.
+connection means a port forward or a global IPv6 address. Open question: how the pairing page is
+protected from a stranger on the same LAN before the first owner claims the device
+(likely: it only displays, and the signing happens on the trusted device).
 
 ## 6. Open questions
 

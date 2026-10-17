@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ligatureprotocol.org/schemas/capability.schema.json",
+  "title": "org.ligatureprotocol.capability",
+  "description": "A manifest: the full list of capabilities a device currently offers. A later manifest from the same peer replaces this one; when the session ends every capability in it is withdrawn.",
+  "$defs": {
+    "typeName": {
+      "type": "string",
+      "description": "A reverse-DNS type name such as org.ligatureprotocol.capability.clipboard.",
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+    },
+    "scope": {
+      "type": "string",
+      "enum": [
+        "user",
+        "device"
+      ],
+      "description": "Whether the capability belongs to a person's session on the device (user) or to the device itself (device). Spec chapter 10."
+    },
+    "family": {
+      "type": "string",
+      "enum": [
+        "notifications",
+        "clipboard",
+        "files",
+        "remoteInput",
+        "mediaControl",
+        "telephony",
+        "displays",
+        "sensors"
+      ],
+      "description": "The initial capability families. Each will receive its own schema."
+    },
+    "descriptor": {
+      "type": "object",
+      "description": "One capability a device offers right now. The offering principal or binding is the sender of the manifest.",
+      "required": [
+        "type",
+        "scope"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/typeName"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1,
+          "description": "Version of the type's operation set this device implements."
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Optional human-readable label, such as the name of a display."
+        },
+        "params": {
+          "description": "Type-specific parameters; the schema is defined by the capability type's own schema."
+        }
+      }
+    }
+  },
+  "type": "object",
+  "required": [
+    "capabilities",
+    "issuedAt"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "capabilities": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/descriptor"
+      }
+    },
+    "issuedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

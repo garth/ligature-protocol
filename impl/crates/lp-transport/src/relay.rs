@@ -1,8 +1,8 @@
 //! Relay client. Spec chapter 04 section 5.3.
 //!
 //! When a direct QUIC path cannot be established (mobile and CGNAT networks),
-//! traffic is forwarded through a relay. The relay sees QUIC packets or MLS
-//! ciphertext and can read neither. Anyone can run one; the default personal
+//! traffic is forwarded through a relay. The relay sees QUIC packets it cannot
+//! decrypt. Anyone can run one; the default personal
 //! relay is the user's home hub; clients hold a list and route around failures.
 //!
 //! This module is the *client* side. A relay *server* is a separate program

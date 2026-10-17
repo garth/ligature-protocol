@@ -12,10 +12,11 @@ peers. See [ADR 0008](../adr/0008-capability-model.md) and
 
 ## 2. Capability descriptors
 
-A capability descriptor names a capability type (an NSID), its scope (`user` or `device`,
+A capability descriptor names a capability type (a reverse-DNS name such as
+`org.ligatureprotocol.capability.clipboard`), its scope (`user` or `device`,
 chapter 10), and type-specific parameters. The principal that offers it is the sender of
 the manifest it arrives in. See
-[`org.ligatureprotocol.capability`](../../lexicons/org/ligatureprotocol/capability.json).
+[`org.ligatureprotocol.capability`](../../schemas/capability.schema.json).
 
 ## 2a. Manifests and the live registry
 
@@ -32,14 +33,14 @@ two devices with no direct path can still see each other through a hub.
 
 The first families are: notifications, clipboard, files, remote input, media control,
 telephony/SMS, displays, sensors. Each will become its own spec section with its own
-Lexicon. Open question: which two or three families the proof of concept should cover
+schema. Open question: which two or three families the proof of concept should cover
 (clipboard is the current target).
 
 ## 4. Requests and grants
 
 A device requests a capability from a peer; the peer (or the user, through the peer)
 grants or denies. Grants are typed records with scope and expiry. See
-[`org.ligatureprotocol.grant`](../../lexicons/org/ligatureprotocol/grant.json).
+[`org.ligatureprotocol.grant`](../../schemas/grant.schema.json).
 
 Defaults follow identity boundaries (ADR 0015): a person's own devices may use that
 person's user-scoped capabilities without a prompt; anything across identities needs an
@@ -50,8 +51,9 @@ Open question: whether a person may opt their own devices out of the implicit de
 
 ## 5. Invocation
 
-Once granted, a capability is invoked over MLS-protected application messages. Each
-capability family defines its own operations. No wire format is defined in this draft.
+Once granted, a capability is invoked over its own stream in the pairwise QUIC session
+(chapter 04), which is also the end-to-end encryption (chapter 03). Each capability family
+defines its own operations. No wire format is defined in this draft.
 
 ## 6. Bridging
 
@@ -62,5 +64,7 @@ A bridge is just a device that advertises a capability on behalf of something el
 ## 7. Open questions
 
 - Versioning and negotiation of capability types.
+- Schemas are JSON Schema 2020-12 ([ADR 0020](../adr/0020-json-schema-and-reverse-dns-names.md));
+  the wire encoding is still open.
 - Capability discovery across group identities: what a member can see of another
   member's devices before asking.

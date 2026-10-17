@@ -12,7 +12,7 @@ issue for a suspected vulnerability.
 
 Include what you can of:
 
-- the affected component (spec chapter, Lexicon, or crate),
+- the affected component (spec chapter, schema, or crate),
 - a description of the issue and its impact,
 - steps to reproduce or a proof of concept.
 
@@ -21,6 +21,6 @@ there is no formal disclosure timeline yet; we will agree one with you case by c
 
 ## Scope
 
-In scope: the specification in `docs/spec/`, the Lexicons in `lexicons/`, and the
+In scope: the specification in `docs/spec/`, the schemas in `schemas/`, and the
 reference implementation in `impl/`. Specification-level weaknesses (for example in the
 device-binding or recovery flows) are especially welcome at this stage.

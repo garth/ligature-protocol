@@ -41,15 +41,18 @@ jobs:
             *.md
             docs/**/*.md
 
-  lexicons:
-    name: Lexicon JSON well-formed
+  schemas:
+    name: JSON Schema compile
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Parse every Lexicon file
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Compile every schema under draft 2020-12
         run: |
           set -e
-          for f in $(find lexicons -name '*.json'); do
-            python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$f"
-            echo "ok $f"
+          npm install --no-save ajv-cli@5.0.0 ajv-formats@3.0.1
+          for f in schemas/*.schema.json; do
+            npx ajv compile --spec=draft2020 -c ajv-formats -s "$f"
           done

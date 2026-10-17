@@ -1,6 +1,6 @@
 # 0009. Social recovery with threshold shares, in-person verification, delay and veto
 
-**Status:** Proposed
+**Status:** Superseded by [ADR 0018](0018-rebuild-instead-of-recovery.md)
 **Date:** 2026-10-17
 
 ## Context
@@ -19,6 +19,12 @@ completes only after a mandatory time delay during which any existing device can
 Devices run guardian liveness checks and proactively refresh shares.
 
 ## Consequences
+
+*Superseded on 2026-10-17.* With no shared state and no required DID there is nothing to
+recover; a person rebuilds by re-pairing. This design remains documented as a possible
+opt-in extension.
+
+Original consequences follow.
 
 No single party can recover the identity alone. Users must recruit and maintain guardians,
 which is a real usability cost. Liveness and refresh add background traffic and protocol

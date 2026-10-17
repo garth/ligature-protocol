@@ -9,7 +9,7 @@ design review, prior-art research, and threat-model critique rather than code.
   inline so they can be discussed in issues.
 - Architecture decisions: `docs/adr/`. Propose a change to an existing decision by opening
   a new ADR that supersedes it, not by editing the old one.
-- Lexicons: `lexicons/`. Schemas follow AT Protocol Lexicon v1 and are marked draft.
+- Schemas: `schemas/`. JSON Schema 2020-12, one file per type, marked draft.
 - Reference implementation: `impl/`. A Rust cargo workspace.
 
 ## Development
@@ -22,14 +22,14 @@ cargo test --workspace
 ```
 
 CI runs the same three commands plus a Markdown lint over `docs/` and the top-level
-Markdown files. Please run them before opening a pull request.
+Markdown files, and compiles every schema with ajv. Please run them before opening a pull request.
 
 ## Proposing a protocol change
 
 1. Open an issue describing the problem and the constraint it comes from.
 2. If the change touches an architectural decision, draft an ADR in `docs/adr/` with status
    "Proposed" using the format in `0001-record-architecture-decisions.md`.
-3. Update the relevant spec chapter and any affected Lexicon.
+3. Update the relevant spec chapter and any affected schema.
 4. Open a pull request. Spec changes and code changes can land separately.
 
 ## Licensing of contributions

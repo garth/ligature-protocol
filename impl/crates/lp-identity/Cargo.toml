@@ -1,6 +1,6 @@
 [package]
 name = "lp-identity"
-description = "Ligature Protocol identity: DID resolution and device cross-signing"
+description = "Ligature Protocol identity: master keys, pairing ceremony, role signatures, trust store"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

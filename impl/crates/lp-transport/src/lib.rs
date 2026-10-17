@@ -8,9 +8,9 @@
 //! relaying.
 //!
 //! Design rule: any helper may be operated by anyone, is listed in the user's
-//! own records, and is never trusted with plaintext or identity. MLS
-//! (`lp-crypto`) is the end-to-end layer above this crate; QUIC/TLS here is
-//! defence in depth.
+//! own records, and is never trusted with plaintext or identity. The QUIC/TLS
+//! session is itself the end-to-end encryption layer (ADR 0019); relays
+//! forward packets and terminate nothing.
 //!
 //! WireGuard is not part of this crate or of the protocol; see the non-core
 //! `wireguard-integration` crate.

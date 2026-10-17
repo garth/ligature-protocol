@@ -4,38 +4,54 @@
 
 ## 1. Intent
 
-A person is identified by an AT Protocol DID. LP supports `did:plc` and `did:web`. The
-DID document's verification methods and service endpoints are the anchor from which all
-device trust is derived. See [ADR 0002](../adr/0002-atproto-did-identity.md).
+A person is identified by a **master signing key**. It is created on their first device,
+it signs the keys that sign their devices, and other people pin it after verifying it in
+person. There is no account, no server and no name required. See
+[ADR 0017](../adr/0017-master-key-identity-and-proximity-ceremony.md).
 
-## 2. Handles
+## 2. The master key
 
-A DNS handle (for example `alice.example.org`) maps to the DID via the standard atproto
-handle resolution (DNS TXT record or `/.well-known/atproto-did`). Handles are for humans;
-all protocol logic uses the DID. Open question: whether LP needs its own handle verification
-step beyond the standard resolution.
+The master public key is the person as far as the protocol is concerned. Its textual form
+is a multibase string with a multicodec prefix, so the algorithm is self-describing (an
+Ed25519 key renders as `z6Mk…`). Signatures over device bindings, device principals and
+known persons (chapter 02) must chain to it. Open question: whether to mandate Ed25519
+alone or allow a second algorithm from the start.
 
-## 3. DID resolution
+## 3. Key configuration
 
-Devices resolve DIDs using the standard PLC directory or `did:web` HTTPS resolution, with a
-local cache. Open question: cache lifetime and what a device does when resolution fails
-while offline (likely: trust the last-known document and surface a warning).
+The protocol requires only that signatures chain to the master key. How the private keys
+are arranged is the user's choice, made to their own requirements:
 
-## 4. Rotation keys and recovery
+- **Default.** A self-signing key, signed by the master key, is held by every device the
+  user marks as an *introducer*; a user-signing key, likewise signed, is used to record
+  known persons. The master private key is kept offline or derived from a passphrase.
+- **Simplest.** One key serves as master, self-signing and user-signing key and lives on
+  every introducer. Appropriate when rebuilding (chapter 07) is cheap, which it is.
+- **Strictest.** Introducers are limited to one or two devices; everything else can be
+  paired but cannot pair others.
 
-`did:plc` rotation keys allow the DID document to be updated or recovered. LP treats
-rotation keys as the ultimate recovery root; chapter 07 describes how guardians and
-Shamir shares protect them. Open question: for `did:web`, where the equivalent of a
-rotation key lives.
+Open question: whether the default should be the simplest configuration for first-run
+usability, with the split keys offered as an upgrade.
 
-## 5. Identity-to-device binding
+## 4. Optional publication
 
-The identity signs each device's public keys; chapter 02 defines the cross-signing
-structure. This chapter only requires that the DID document publish the user's master
-cross-signing key, since there is no other shared place to find it (chapter 06).
+A person may publish their master key at a DNS name, as a TXT record or at a well-known
+HTTPS path. This adds a human-readable name (`alice.example.org`) and a way to invite
+someone who is not in the room. Nothing else in this specification depends on it. Open
+question: the exact record and path formats, and whether a published key should also list
+the person's relays (chapter 04).
+
+## 5. Referring to other people
+
+Another person is known by their master key once it has been verified in the ceremony of
+chapter 02 and signed with the *person* role. Their bindings are then recognisably theirs
+on every one of my devices, which is what a grant request needs (chapter 10). Open
+question: whether a known person's key should carry a display name signed by me, by them,
+or both.
 
 ## 6. Open questions
 
-- Can a `did:plc` be created and maintained without any PDS, using only the PLC directory?
-- How are identity changes (handle change, key rotation) propagated to devices: by gossip,
-  by re-resolving the DID, or both?
+- Should a master key carry an expiry to encourage periodic rebuilds, or is that hostile
+  to users?
+- Whether two people who have both published their keys can skip the in-person step when
+  inviting each other remotely, and what that costs in the threat model.

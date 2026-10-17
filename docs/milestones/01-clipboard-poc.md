@@ -24,7 +24,9 @@ optional WireGuard integration.
 
 ## 3. Decisions
 
-All five are decided; each has its ADR.
+All five are decided; each has its ADR. Implementation choices that are not protocol are
+recorded in [01-implementation-decisions.md](01-implementation-decisions.md) as they are
+made.
 
 1. **Signature algorithm.** Ed25519 only ([ADR 0027](../adr/0027-ed25519.md)), rendered as
    multibase/multicodec `z6Mk…`.
@@ -90,10 +92,11 @@ flowchart LR
   sign the deterministic CBOR encoding of a key-and-role fact with `binding` or
   `principal`; verify the chain to a master key. Unit tests become the first conformance
   vectors.
-- A4. Local store on disk: own keys, device records with signatures, revocations. CBOR
-  files, the same encoding as the wire, under `$XDG_DATA_HOME/ligature/` on Linux and
-  `~/Library/Application Support/ligature/` on macOS, behind one path-resolution function.
-  Load, save, round-trip tests.
+- A4. Local store on disk: a SQLite database of signed facts plus a separate 0600 key file,
+  under `$XDG_DATA_HOME/ligature/` on Linux and `~/Library/Application Support/ligature/`
+  on macOS, behind one path-resolution function (see
+  [implementation decisions](01-implementation-decisions.md), LP-25). Load, save,
+  round-trip and quarantine tests.
 - A5. Revocation fact: create, verify, apply to the store (`revoked` flag retained).
 
 ### Phase B: transport

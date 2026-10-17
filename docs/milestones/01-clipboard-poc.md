@@ -33,17 +33,15 @@ Each is a short ADR; none should take long.
    ([ADR 0025](../adr/0025-cbor-wire-encoding.md)). Byte fields are CBOR byte strings,
    timestamps and keys stay text, signed facts use core deterministic encoding. `lpctl`
    may print messages as diagnostic notation for debugging.
-3. **QUIC stack.** Must support TLS 1.3 raw public keys (RFC 7250) on both sides. In Rust,
-   quinn over rustls is the candidate; rustls has raw-public-key support. Whatever is
-   chosen for the reference implementation under ADR 0014 must clear this bar, which is a
-   real constraint on TypeScript, where no mainstream QUIC stack offers RPK today.
+3. **QUIC stack.** Must support TLS 1.3 raw public keys (RFC 7250) on both sides. quinn
+   over rustls is the candidate; rustls has raw-public-key support. Confirm client and
+   server authentication both work before building on it (task B1).
 4. **Binding the ceremony code to the session.** The short code shown on both sides is
    derived from the TLS exporter of the pairing connection (RFC 9266 style channel binding),
    so a relayed impostor cannot complete the ceremony. This resolves the open question in
    chapter 02 section 4 for the proof of concept.
-5. **Implementation language for this milestone.** The recommendation is to build it in
-   the existing Rust workspace regardless of the outcome of ADR 0014, because of item 3,
-   and to treat a TypeScript reference as milestone 2 once conformance vectors exist.
+5. **Implementation language.** Decided: Rust, the existing workspace under `impl/`
+   ([ADR 0026](../adr/0026-rust-reference-implementation.md)).
 
 ## 5. Exit criteria
 
@@ -157,5 +155,4 @@ dependencies allow.
 Milestone 2 candidates, in no order: the split key configuration and the introducer
 choice at pairing; the `share` family between two people (requires the `person` role and
 the second master key); the headless pairing page; a group with one group device; relays
-and the DHT for the away-from-home case; the TypeScript reference against the vectors
-from G2, per ADR 0014.
+and the DHT for the away-from-home case; the split key configuration's stricter variant.

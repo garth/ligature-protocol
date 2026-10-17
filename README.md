@@ -122,9 +122,6 @@ The `impl/` workspace contains:
 - `integrations/wireguard-integration`: non-core; generates Headscale/WireGuard peer
   configs from the device list
 
-The implementation language is under review; see
-[ADR 0014](docs/adr/0014-reference-implementation-language.md).
-
 ```sh
 cd impl
 cargo build

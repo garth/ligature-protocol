@@ -84,9 +84,8 @@ The authoritative record is `docs/adr/`. Summary, in layer order:
 
 Changing any of these means a new ADR that supersedes the old one, not an edit.
 
-**Under review** (ADR 0014, Proposed): reference implementation in TypeScript plus
-language-neutral conformance test vectors, with a Rust production core (UniFFI) later. Do
-not restructure `impl/` until that ADR is confirmed.
+The reference implementation is Rust and is also the production implementation
+(ADR 0026, Accepted). Conformance is defined by the spec and the CBOR test vectors.
 
 ## Repository layout
 

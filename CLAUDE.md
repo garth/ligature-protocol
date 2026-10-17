@@ -94,6 +94,8 @@ not restructure `impl/` until that ADR is confirmed.
   Each section has an intent paragraph and inline open questions. No wire formats yet.
 - `docs/adr/`: Nygard-format ADRs (Context / Decision / Consequences), status "Proposed".
 - `docs/glossary.md`, `docs/prior-art.md`.
+- `docs/milestones/`: one plan per milestone with scope, non-goals, decisions to pin, exit
+  criteria and a task breakdown; `01-clipboard-poc.md` is the current one.
 - `schemas/*.schema.json`: JSON Schema 2020-12 drafts (device, capability, grant, group).
   Spec chapters link to these by relative path.
 - `impl/`: Rust cargo workspace, edition 2024. Crates: `lp-core` (shared types, capability

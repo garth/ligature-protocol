@@ -1,5 +1,5 @@
-//! Identity layer: master keys, the pairing ceremony, role signatures, the
-//! local trust store, and optional key publication.
+//! Identity layer: master keys and person facts, the pairing ceremony, role
+//! signatures, and the local trust store.
 //!
 //! Implements spec chapters 01, 02 and 06 (ADRs 0003, 0016 and 0017). A person
 //! is a master signing key created on their first device. An introducer signs
@@ -11,5 +11,4 @@
 
 pub mod cross_signing;
 pub mod pairing;
-pub mod publication;
 pub mod trust_store;

@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ligatureprotocol.org/schemas/person.schema.json",
+  "title": "org.ligatureprotocol.person",
+  "description": "DRAFT. A person fact: the master key, the self-chosen display name, and the self-signing and user-signing public keys with the master key's signatures over them, signed by the self-signing key. Handed over in the pairing ceremony that establishes the person role and gossiped like any other fact (spec chapters 01 and 06). The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "$defs": {
+    "publicKey": {
+      "type": "string",
+      "description": "A public key as a multibase string with a multicodec prefix (an Ed25519 key renders as z6Mk\u2026).",
+      "pattern": "^z[1-9A-HJ-NP-Za-km-z]+$"
+    },
+    "bytes": {
+      "type": "string",
+      "description": "Bytes as base64url without padding; a CBOR byte string on the wire.",
+      "pattern": "^[A-Za-z0-9_-]*$"
+    },
+    "subordinateKey": {
+      "type": "object",
+      "description": "A key signed by the master key.",
+      "required": [
+        "key",
+        "masterSignature"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/publicKey"
+        },
+        "masterSignature": {
+          "$ref": "#/$defs/bytes",
+          "description": "The master key's signature over this key and its purpose."
+        }
+      }
+    }
+  },
+  "type": "object",
+  "required": [
+    "masterKey",
+    "displayName",
+    "selfSigningKey",
+    "userSigningKey",
+    "version",
+    "signature",
+    "updatedAt"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "masterKey": {
+      "$ref": "#/$defs/publicKey",
+      "description": "The person."
+    },
+    "displayName": {
+      "type": "string",
+      "maxLength": 64,
+      "description": "Self-chosen. What a prompt shows instead of the key."
+    },
+    "selfSigningKey": {
+      "$ref": "#/$defs/subordinateKey",
+      "description": "Held by introducers; signs bindings and principals."
+    },
+    "userSigningKey": {
+      "$ref": "#/$defs/subordinateKey",
+      "description": "Signs known persons and group acceptances."
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Increases with every change; a device keeps the highest version it has verified."
+    },
+    "signature": {
+      "$ref": "#/$defs/bytes",
+      "description": "Signature by the self-signing key over the deterministic CBOR encoding of this fact without this field."
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

@@ -12,7 +12,7 @@ Revoke one and show it can no longer connect. Restart both and show the pairing 
 ## 2. Non-goals for this milestone
 
 Groups and group devices (chapter 10), relays, hole punching and the DHT (chapter 04
-section 5), key publication (chapter 01 section 4), the `share` family, non-text clipboard
+section 5), the `share` family, non-text clipboard
 content, BLE, headless pairing pages, Android or iOS, the system-level principal daemon as
 a separate process (section 5, phase F), and the optional WireGuard integration.
 
@@ -60,9 +60,11 @@ dependencies allow.
 - A2. The three-key structure (chapter 01 section 3): master key signs a self-signing key
   and a user-signing key; the master private key lives on the first device for this
   milestone, with offline or passphrase-derived storage as a later task.
-- A3. Role signature format and verification (`lp-identity::cross_signing`): sign the
-  deterministic CBOR encoding of a key-and-role fact with `binding` or `principal`, verify
-  the chain to a master key. Unit tests become the first conformance vectors.
+- A3. Person fact and role signatures (`lp-identity::cross_signing`): build and verify the
+  person fact (master key, display name, subordinate keys with the master's signatures);
+  sign the deterministic CBOR encoding of a key-and-role fact with `binding` or
+  `principal`; verify the chain to a master key. Unit tests become the first conformance
+  vectors.
 - A4. Local store on disk under `$XDG_DATA_HOME/ligature/`: own keys, device records with
   signatures, revocations. CBOR files, the same encoding as the wire. Load, save,
   round-trip tests.

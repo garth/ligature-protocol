@@ -18,12 +18,12 @@ logic, and the `org.ligatureprotocol` type names use a placeholder domain.
 The authoritative record is `docs/adr/`. Summary, in layer order:
 
 1. **Identity**: a person is an Ed25519 master signing key (ADR 0027; multibase,
-   multicodec-prefixed, `z6Mk…`), created on their first device. Publishing it at a DNS
-   name (TXT or well-known HTTPS path) is optional, for a name and relay listing only; it
-   never establishes trust. Knowing a person or joining a group requires the in-person
-   ceremony; there is no remote joining (ADR 0030). Every person has master, self-signing
-   and user-signing keys (ADR 0031); where the master private key lives and which devices
-   are introducers follow the user's requirements. (ADR 0017)
+   multicodec-prefixed, `z6Mk…`), created on their first device. A person's display name
+   is self-asserted in a signed person fact that also carries the subordinate keys (ADR
+   0032); there is no key publication. Knowing a person or joining a group requires the
+   in-person ceremony; there is no remote joining (ADR 0030). Every person has master,
+   self-signing and user-signing keys (ADR 0031); where the master private key lives and
+   which devices are introducers follow the user's requirements. (ADR 0017)
 2. **Device trust**: one proximity ceremony (QR + a six-digit short authentication string
    derived from the TLS exporter, ADR 0029; BLE/NFC/UWB optional, never required). An
    introducer signs the verified key with a role: `binding` (my account on a device),
@@ -36,13 +36,13 @@ The authoritative record is `docs/adr/`. Summary, in layer order:
 4. **Transport**: application-level QUIC (RFC 9000), one connection per device pair, one
    stream per capability, device keys as TLS raw public keys (RFC 7250), connection
    migration; quinn over rustls, mutual RPK, rustls default suites, no 0-RTT (ADR 0028).
-   The session is the end-to-end layer (decision 3). mDNS/DNS-SD + BLE
-   locally. Remotely, three replaceable untrusted helper roles: discovery (signed records
-   in a DHT via pkarr, gossiped relays, optional published key), hole-punch coordination, relay
-   (default: the user's home hub). Rule: any helper may be operated by anyone, is listed in
-   the user's own records, and is never trusted with plaintext or identity. Real-time
-   traffic never goes through a server LP depends on. WireGuard/Headscale is an optional
-   non-core integration. (ADR 0011, 0012, 0013)
+   The session is the end-to-end layer (decision 3). mDNS/DNS-SD + BLE locally. Remotely,
+   three replaceable untrusted helper roles: discovery (signed records in a DHT via pkarr,
+   gossiped relays), hole-punch coordination, relay (default: the user's home hub). Rule:
+   any helper may be operated by anyone, is listed in the user's own records, and is never
+   trusted with plaintext or identity. Real-time traffic never goes through a server LP
+   depends on. WireGuard/Headscale is an optional non-core integration. (ADR 0011, 0012,
+   0013)
 5. **State**: no shared state, no server. Each device keeps a local store (own keys,
    device records with role signatures, known persons, revocations and abandonments,
    issued grants, group memberships, relays) and gossips signed facts to peers after
@@ -96,7 +96,8 @@ The reference implementation is Rust and is also the production implementation
 - `docs/glossary.md`, `docs/prior-art.md`.
 - `docs/milestones/`: one plan per milestone with scope, non-goals, decisions to pin, exit
   criteria and a task breakdown; `01-clipboard-poc.md` is the current one.
-- `schemas/*.schema.json`: JSON Schema 2020-12 drafts (device, capability, grant, group).
+- `schemas/*.schema.json`: JSON Schema 2020-12 drafts (person, device, capability, grant,
+  group).
   Spec chapters link to these by relative path.
 - `impl/`: Rust cargo workspace, edition 2024. Crates: `lp-core` (shared types, capability
   model), `lp-identity` (master key, ceremony, roles, trust store, optional publication),

@@ -32,6 +32,7 @@ Every fact that travels between devices is signed and self-verifying:
 
 | Fact | Signed by | Verified against |
 | --- | --- | --- |
+| Person fact (master key, display name, self-signing and user-signing keys) | The person's self-signing key, with the master key's signatures over the two subordinate keys | The master key itself; learned in the ceremony |
 | Device binding or principal | My self-signing key, with a role | My master key |
 | Known person | My user-signing key, role `person` | My master key |
 | Revocation or key abandonment | An introducer's self-signing key | The relevant master key |
@@ -68,9 +69,7 @@ apply:
 - Every session is freshly authenticated, so a revoked device gains nothing from sessions
   it held before.
 
-Open question: the default staleness period, and whether a person who has published their
-key should also publish revocations there for devices that come back online far from any
-peer.
+Open question: the default staleness period.
 
 ## 6. Backup
 

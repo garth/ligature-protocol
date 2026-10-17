@@ -20,7 +20,7 @@ Apple-Continuity-like ecosystem for Linux users, built on existing open standard
   offer disappears when it leaves. Nothing about capabilities is ever stored.
 - **No account.** You are a signing key, created on your first device. Pairing is a
   proximity ceremony: scan a code, compare a short code, done. One ceremony makes a device
-  known to all your devices. Publishing your key at a DNS name is optional.
+  known to all your devices.
 - **End-to-end encrypted, with least exposure.** Every pair of devices talks over its own
   QUIC/TLS 1.3 session authenticated by device keys. No hub, relay or other device of yours
   can decrypt data it does not need.
@@ -45,7 +45,7 @@ Apple-Continuity-like ecosystem for Linux users, built on existing open standard
 ```mermaid
 flowchart TB
     subgraph Identity["Identity layer"]
-        KEY["Master signing key<br/>(optionally published at a DNS name)"]
+        KEY["Master signing key, self-signing and<br/>user-signing keys, self-chosen name"]
     end
 
     subgraph Trust["Device trust layer"]

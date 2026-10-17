@@ -81,8 +81,6 @@ Two options, both allowed and both usable together:
   up; only the key holder can publish a valid record.
 - **Gossip.** Relays a device uses are signed facts gossiped like any other (chapter 06),
   so my devices learn each other's relays when they meet.
-- **Optional publication.** A person who has published their key at a DNS name (chapter
-  01) may list relays there, which lets devices that have never met find a path.
 
 Open question: record lifetime, refresh cadence, and what a device does when the two
 sources disagree.
@@ -109,7 +107,7 @@ whether relays should be rate-limited per device key.
 | --- | --- | --- | --- |
 | At home, same LAN | mDNS/DNS-SD, BLE | Direct QUIC | None |
 | Away, user has a home hub | DHT record, gossiped relays | Direct QUIC via hole punch, else relay through the hub | Hub as coordinator and relay |
-| Away, no home hub | DHT record, gossiped relays, optional published key | Direct QUIC via hole punch, else relay | Any relay listed in the user's records |
+| Away, no home hub | DHT record, gossiped relays | Direct QUIC via hole punch, else relay | Any relay listed in the user's records |
 | Convenience default | DHT record | Direct QUIC via hole punch, else relay | Project-run relay, replaceable at any time |
 
 In every row the helper sees only addresses and ciphertext. A pairing with a headless

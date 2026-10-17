@@ -33,23 +33,19 @@ key lives (on the first device, or offline or derived from a passphrase) and whi
 are introducers. A strict setup limits introducers to one or two devices; everything else
 can be paired but cannot pair others.
 
-## 4. Optional publication
-
-A person may publish their master key at a DNS name, as a TXT record or at a well-known
-HTTPS path. This adds a human-readable name (`alice.example.org`) and a place to list the
-person's relays (chapter 04). It never establishes trust: knowing a person always requires
-the in-person ceremony of chapter 02
-([ADR 0030](../adr/0030-in-person-verification-mandatory.md)). Nothing else in this
-specification depends on it. Open question: the exact record and path formats.
-
-## 5. Referring to other people
+## 4. Referring to other people
 
 Another person is known by their master key once it has been verified in person in the
 ceremony of chapter 02 and signed with the *person* role. There is no remote path to this;
 the in-person step is a security feature
-([ADR 0030](../adr/0030-in-person-verification-mandatory.md)). Their bindings are then recognisably theirs
-on every one of my devices, which is what a grant request needs (chapter 10). Open
-question: whether a known person's key should carry a display name signed by me, by them,
-or both.
+([ADR 0030](../adr/0030-in-person-verification-mandatory.md)).
 
-## 6. Open questions
+Each person has a **person fact** (see
+[`org.ligatureprotocol.person`](../../schemas/person.schema.json)): their master key, their
+self-chosen display name, and their self-signing and user-signing public keys with the
+master key's signatures over them, the whole signed by the self-signing key. It is handed
+over in the ceremony and gossiped like any other fact (chapter 06); it is what a verifier
+uses to check a binding's signature back to the master key, and what a prompt shows instead
+of the key ([ADR 0032](../adr/0032-no-publication-self-asserted-names.md)). Whether an
+implementation lets a user relabel a known person locally is a user-interface matter that
+no other device sees.

@@ -106,15 +106,16 @@ public key, published to the BitTorrent Mainline DHT. One of LP's discovery opti
 with that person's full authority while the device reports it present. How the device
 authenticates or locks it is device security, outside the protocol.
 
+**Person fact**: The signed record of a person: master key, self-chosen display name, and
+the self-signing and user-signing public keys with the master key's signatures over them.
+Handed over in the ceremony and gossiped; what a verifier checks chains against and what a
+prompt shows.
+
 **Present**: Having an active, unlocked session on a device. The present person approves
 cross-person requests for that device's device-scoped capabilities.
 
 **Principal**: See *device principal*. Also the role a signature carries when it marks a
 device as one I use.
-
-**Publication**: The optional act of putting a master key at a DNS name (TXT record or
-well-known HTTPS path) to gain a human-readable name and a place to list relays. It never
-establishes trust.
 
 **QUIC**: The UDP-based transport protocol of RFC 9000, with TLS 1.3 built in, stream
 multiplexing and connection migration. LP's device-to-device transport and its end-to-end

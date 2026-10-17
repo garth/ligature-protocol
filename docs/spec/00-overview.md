@@ -33,8 +33,8 @@ MAY) follow RFC 2119 and RFC 8174 once this document leaves draft status.
 
 LP is organised as five layers plus a shared-state store:
 
-1. **Identity** (chapter 01): a person is a master signing key; publishing it at a DNS
-   name is optional.
+1. **Identity** (chapter 01): a person is a master signing key, with a self-signing key, a
+   user-signing key and a self-chosen display name carried in a signed person fact.
 2. **Device trust** (chapter 02): one proximity ceremony signs a device's key with a role
    (binding, principal, person); one ceremony makes it available to all my devices.
 3. **Encryption** (chapter 03): the pairwise QUIC/TLS session is the end-to-end layer; no

@@ -7,10 +7,16 @@
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PersonKey(pub String);
 
-/// A DNS name at which a person has optionally published their master key,
-/// such as `alice.example.org`.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct PublishedName(pub String);
+/// In-memory view of an `org.ligatureprotocol.person` fact: the master key,
+/// the self-chosen display name, and (once implemented) the subordinate keys
+/// with the master key's signatures over them. Spec chapter 01 section 4.
+#[derive(Debug, Clone)]
+pub struct PersonRecord {
+    /// The person.
+    pub key: PersonKey,
+    /// Self-chosen; what a prompt shows instead of the key.
+    pub display_name: String,
+}
 
 /// A group's public key, as a multibase string with a multicodec prefix. The
 /// group's identity: it signs the membership document and owns group-owned

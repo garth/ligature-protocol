@@ -101,3 +101,25 @@ it is added.
 
 **Pinning.** The crates are in the workspace now so `Cargo.lock` carries them before B1 and
 B3 start. Nothing in the scaffold uses them yet.
+
+## LP-29: crates for platform integration and tooling
+
+| Need | Crate | Why |
+| --- | --- | --- |
+| Wayland clipboard (E3) | `wl-clipboard-rs` 0.9 | Pure Rust Wayland client speaking `wlr-data-control` and `ext-data-control`, so a daemon with no focused window can watch and set the clipboard. Covers Hyprland, Sway, river, Niri and KDE; GNOME stays behind the trait. `arboard` was passed over: its Wayland path needs a focused window |
+| macOS pasteboard (E4) | `objc2` 0.6, `objc2-foundation` 0.3, `objc2-app-kit` 0.3 | Type-safe generated bindings to `NSPasteboard`. The watcher polls `changeCount` (chapter 08), which `arboard` does not expose |
+| CLI (C1) | `clap` 4.6 with `derive` | MSRV 1.85 matches ours |
+| QR in the terminal (C1) | `qrcode` 0.14, no default features | Renders to Unicode block characters with no image dependency; its SVG output serves the pairing page later |
+| Logging | `tracing` 0.1 in every crate, `tracing-subscriber` 0.3 with `env-filter` in the binaries | Structured, async-aware, the quinn and rustls stacks already emit through it |
+| Control socket (F2) | tokio `UnixListener` and `ciborium` | Already in the workspace |
+
+**Log sinks.** Both binaries write to stderr, level from `RUST_LOG` with `info` as the
+default. systemd captures that into the journal and launchd into the file its plist names,
+so `tracing-journald` and `oslog` are not milestone 1 crates; either can be added without
+touching the library crates. Where launchd's log file lives is settled under LP-32.
+
+**Placement.** Every crate is a workspace dependency so a version is set once. The clipboard
+crates are target-gated in `ligatured` (`cfg(target_os = "linux")` and
+`cfg(target_os = "macos")`), so neither platform compiles the other's bindings and CI
+exercises both. Library crates (`lp-core`, `lp-identity`, `lp-crypto`, `lp-transport`)
+never depend on a clipboard, terminal or UI crate.

@@ -1,15 +1,33 @@
-//! `ligatured`: the Ligature Protocol Linux user daemon.
+//! `ligatured`: the Ligature Protocol user daemon.
 //!
-//! Runs as a systemd user service for one account's binding (a system-level
-//! instance owns the device principal), holds that account's keys and trust
-//! store, performs discovery, and exposes a D-Bus interface for desktop
-//! integrations and for `lpctl`. See `systemd/ligatured.service` next to this crate.
+//! Runs as a user service for one account's binding (a system-level instance owns
+//! the device principal), holds that account's keys and trust store, performs
+//! discovery, and exposes a control socket for `lpctl` and desktop integrations.
+//! See `systemd/ligatured.service` next to this crate.
 //!
-//! **Status:** scaffold. Starts and exits.
+//! Logging goes to stderr through `tracing`; systemd and launchd capture it. The
+//! level is set with `RUST_LOG` and defaults to `info`.
+//!
+//! **Status:** scaffold. Starts, logs a line and exits.
+
+use clap::Parser;
+use tracing_subscriber::EnvFilter;
+
+/// Command-line options of the daemon.
+#[derive(Debug, Parser)]
+#[command(version, about = "Ligature Protocol user daemon")]
+struct Options {}
 
 fn main() {
-    println!(
-        "ligatured {} (scaffold; no protocol logic yet)",
-        env!("CARGO_PKG_VERSION")
+    let _options = Options::parse();
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
+        .with_writer(std::io::stderr)
+        .init();
+    tracing::info!(
+        version = env!("CARGO_PKG_VERSION"),
+        "ligatured starting (scaffold; no protocol logic yet)"
     );
 }

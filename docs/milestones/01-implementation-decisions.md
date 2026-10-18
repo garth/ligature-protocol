@@ -70,3 +70,34 @@ updates are deliberate commits of their own. `cargo-deny` runs in CI (`impl/deny
 licences allowed are MIT, Apache-2.0, BSD-2/3, ISC, Zlib, Unicode-3.0 and CC0; advisories
 and yanked crates fail the build; wildcard versions and unknown sources are refused;
 multiple versions of one crate warn. MSRV stays 1.85.
+
+## LP-28: crates for networking and discovery
+
+| Need | Crate | Why |
+| --- | --- | --- |
+| QUIC | `quinn` 0.11 | Decided in ADR 0028; MIT or Apache-2.0; MSRV 1.85. Features `runtime-tokio`, `rustls-ring` and `log` only: no `platform-verifier`, since peers are verified as raw public keys, never against a certificate store |
+| TLS 1.3 | `rustls` 0.23 | The line quinn 0.11 builds against (0.24 is a prerelease). Features `ring`, `std`, `logging`; no `tls12`, no `aws_lc_rs` |
+| Crypto provider | `ring` through rustls | Builds without cmake or a C toolchain beyond cc on both platforms. It covers TLS 1.3 with Ed25519 and the rustls default suites. `aws-lc-rs` would only matter for FIPS or post-quantum, neither of which is a goal |
+| mDNS/DNS-SD | `mdns-sd` 0.21 | Pure Rust, advertise and browse, Apache-2.0 or MIT, maintained, no Avahi or Bonjour dependency. Runs its own thread and talks over channels, so it fits behind the discovery trait regardless of runtime |
+
+**Raw public keys.** rustls 0.23 supports RFC 7250 through `CertificateType::RawPublicKey`
+and custom verifiers (`ServerCertVerifier`, `ClientCertVerifier`) that receive the
+`SubjectPublicKeyInfo` bytes. Task B1 (LP-41) is the gate that proves the surface works for
+both roles on both platforms, with the exporter and migration; this decision does not
+pre-empt it.
+
+**macOS.** The same `mdns-sd` stack runs on both platforms. `mdns-sd` binds port 5353 with
+address reuse and coexists with mDNSResponder in common use, but B3 (LP-43) must show it on
+a real Mac. If it fails, `astro-dnssd` (bindings to the system DNS-SD API: Bonjour on macOS,
+Avahi's compatibility layer on Linux) is the macOS implementation behind the same trait.
+`zeroconf` was passed over for an unknown licence on crates.io, `libmdns` because it only
+advertises.
+
+**UDP port.** The QUIC endpoint binds port 0 and the operating system assigns one; the
+daemon advertises the assigned port in the DNS-SD SRV record. Two daemons on one machine
+therefore never collide (G2) and nothing is configured. A fixed `--port` for strict
+firewalls is not a milestone 1 need; the flag is reserved and documented under LP-32 when
+it is added.
+
+**Pinning.** The crates are in the workspace now so `Cargo.lock` carries them before B1 and
+B3 start. Nothing in the scaffold uses them yet.

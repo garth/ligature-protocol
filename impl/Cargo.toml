@@ -35,6 +35,12 @@ ciborium = "0.2"
 tokio = { version = "1.53", features = ["rt-multi-thread", "net", "sync", "time", "macros", "fs", "io-util"] }
 rusqlite = { version = "0.40", features = ["bundled"] }
 
+# Networking and discovery (LP-28). ring is the rustls provider on both platforms;
+# no platform verifier, since peers are verified as raw public keys.
+quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring", "log"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "logging"] }
+mdns-sd = "0.21"
+
 [workspace.lints.rust]
 missing_docs = "warn"
 unsafe_code = "forbid"

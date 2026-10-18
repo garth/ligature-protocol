@@ -110,7 +110,7 @@ flowchart LR
 - B2. Recognition check on connect: the peer key is a binding of mine (chain verifies
   against my master key) or the connection proceeds no further than the pairing offer.
 - B3. mDNS/DNS-SD advertise and browse (`_ligature._udp`) with one Rust implementation on
-  both platforms, with a random per-boot identifier in the TXT record as the placeholder
+  both platforms (`mdns-sd`, LP-28), with a random per-boot identifier in the TXT record as the placeholder
   for the per-epoch identifier of chapter 04 section 4.1. Confirm it coexists with Bonjour
   on macOS.
 - B4. Connection manager: one connection per peer, reconnect on loss, stream open per
@@ -187,7 +187,7 @@ flowchart LR
 - Pasteboard polling on macOS adds latency and a little CPU; the interval needs choosing
   against the one-second exit criterion.
 - Two mDNS stacks on one Mac (ours and Bonjour) may interfere; B3 confirms coexistence or
-  falls back to Bonjour through a platform-specific implementation behind the same trait.
+  falls back to Bonjour through `astro-dnssd` behind the same trait (LP-28).
 - The Wayland clipboard path differs by compositor; `wlr-data-control` covers Hyprland and
   other wlroots-style compositors but not GNOME. Out of scope here, behind the trait.
 - Cross-platform end-to-end runs cannot happen in hosted CI; G1 is a manual run and G2 is

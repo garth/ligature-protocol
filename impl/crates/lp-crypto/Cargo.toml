@@ -9,6 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 lp-core.workspace = true
+rustls.workspace = true
 ed25519-dalek.workspace = true
 rand_core.workspace = true
 sha2.workspace = true

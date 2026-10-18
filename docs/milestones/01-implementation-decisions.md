@@ -123,3 +123,42 @@ crates are target-gated in `ligatured` (`cfg(target_os = "linux")` and
 `cfg(target_os = "macos")`), so neither platform compiles the other's bindings and CI
 exercises both. Library crates (`lp-core`, `lp-identity`, `lp-crypto`, `lp-transport`)
 never depend on a clipboard, terminal or UI crate.
+
+## LP-30: control channel between lpctl and ligatured
+
+Not protocol: the channel exists between two processes on one machine and nothing on it
+crosses to another device.
+
+**Socket.** `runtime_dir()/control.sock`, where the runtime directory is
+`$XDG_RUNTIME_DIR/ligature/` on Linux and `$TMPDIR/ligature/` on macOS (the per-user
+temporary directory launchd agents receive, short enough for the 104-byte socket path
+limit), falling back to the data directory if the variable is unset. `--runtime-dir`
+overrides it (G2 runs two daemons). Directory 0700, socket 0600. On start the daemon
+removes a stale socket file once connecting to it fails. On accept it reads the peer
+credentials and drops a connection whose uid is not its own.
+
+**Framing.** A frame is a 4-byte big-endian length followed by exactly one CBOR map. A
+length above 1 MiB closes the connection before anything is decoded. Unknown fields are
+ignored. Nothing on this channel is signed, so the byte-exact rule of ADR 0035 does not
+arise. LP-31 decides framing on QUIC streams; one `Frame` codec in `lp-core` should serve
+both if it picks the same shape.
+
+**Messages.** [`schemas/control.schema.json`](../../schemas/control.schema.json), type
+names `org.ligatureprotocol.control.*`, marked implementation-only and linked from no spec
+chapter. Three shapes, each a map with `type` and `id`: a **request** from `lpctl` (`id`
+chosen by `lpctl`, unique on the connection), exactly one **response** per request (same
+`id`, `ok` with a result or `error` with a code and message), and zero or more **events**
+before the response (same `id`). One `lpctl` invocation is one connection; the daemon
+accepts many and answers each connection's requests in order.
+
+**Request set.** `status`, `devices`, `caps`, `revoke` (by key), and the ceremony:
+`pair.introduce` (with the scanned offer) and `pair.join` open the two sides and stay open
+while the ceremony runs. The daemon sends `pair.offer` (the text `lpctl` renders as a QR
+code) and `pair.code` (the six digits) as events; the user's confirmation is a second
+request on the same connection, `pair.confirm` or `pair.abort`, naming the open pairing's
+`id`; the final response closes the ceremony. Long-running operations therefore need no
+second channel.
+
+**Versioning.** None on the wire. `status` returns the daemon's version; `lpctl` and
+`ligatured` come from one workspace and are installed together, and an unknown request type
+answers with the error code `unknown-type`.

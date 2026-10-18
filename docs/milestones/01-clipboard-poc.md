@@ -129,7 +129,8 @@ flowchart LR
   introducer, and current gossip.
 - C3. Both sides store the result; the newcomer is now an introducer too (configurable
   later).
-- C4. `lpctl pair` (both roles) and `lpctl devices`.
+- C4. `lpctl pair` (both roles) and `lpctl devices`, over the control channel: the pairing
+  request stays open and the daemon streams the offer and the code as events (LP-30).
 - C5. Negative tests: wrong code, tampered fingerprint, connection replaced mid-ceremony.
 
 ### Phase D: gossip and manifests
@@ -161,9 +162,10 @@ flowchart LR
 - F1. `ligatured` holds both the binding and, for this milestone, the principal key (a
   personal device's principal and binding share a process; the separate system-level
   daemon is deferred). One binary, platform differences behind traits.
-- F2. Control channel: a Unix domain socket in the runtime directory carrying CBOR
-  messages, used by `lpctl` for status, pair, devices, revoke and caps. Identical on both
-  platforms.
+- F2. Control channel: a Unix domain socket in the runtime directory carrying
+  length-prefixed CBOR messages (`schemas/control.schema.json`,
+  [decisions](01-implementation-decisions.md), LP-30), used by `lpctl` for status, pair,
+  devices, revoke and caps. Identical on both platforms.
 - F3. Linux service: systemd user unit (`crates/ligatured/systemd/`).
 - F4. macOS service: launchd agent plist (`crates/ligatured/launchd/`), run from a local
   build without signing or notarisation.

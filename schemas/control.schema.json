@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ligatureprotocol.org/schemas/control.schema.json",
+  "title": "org.ligatureprotocol.control",
+  "description": "IMPLEMENTATION ONLY, not protocol (milestone 1 decision LP-30). Messages between lpctl and ligatured over a Unix domain socket on one machine. Each frame is a 4-byte big-endian length followed by one CBOR map, at most 1 MiB. A message is a request (lpctl to daemon), a response (daemon to lpctl, exactly one per request) or an event (daemon to lpctl, zero or more before the response), told apart by its type. Decoders ignore unknown fields. Nothing here is signed or leaves the machine. The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "$defs": {
+    "publicKey": {
+      "type": "string",
+      "description": "A public key as a multibase string with a multicodec prefix (an Ed25519 key renders as z6Mk…).",
+      "pattern": "^z[1-9A-HJ-NP-Za-km-z]+$"
+    },
+    "id": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Chosen by lpctl per request, unique on the connection. Responses and events carry the id of the request they belong to."
+    },
+    "requestType": {
+      "type": "string",
+      "enum": [
+        "org.ligatureprotocol.control.status",
+        "org.ligatureprotocol.control.devices",
+        "org.ligatureprotocol.control.caps",
+        "org.ligatureprotocol.control.revoke",
+        "org.ligatureprotocol.control.pair.introduce",
+        "org.ligatureprotocol.control.pair.join",
+        "org.ligatureprotocol.control.pair.confirm",
+        "org.ligatureprotocol.control.pair.abort"
+      ]
+    },
+    "eventType": {
+      "type": "string",
+      "enum": [
+        "org.ligatureprotocol.control.pair.offer",
+        "org.ligatureprotocol.control.pair.code"
+      ]
+    },
+    "request": {
+      "type": "object",
+      "required": [
+        "type",
+        "id"
+      ],
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/requestType"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "key": {
+          "$ref": "#/$defs/publicKey",
+          "description": "revoke: the binding, principal or master key to revoke."
+        },
+        "offer": {
+          "type": "string",
+          "description": "pair.introduce: the newcomer's offer as scanned or typed (the text behind its QR code)."
+        },
+        "introducer": {
+          "type": "boolean",
+          "description": "pair.introduce: whether the newcomer becomes an introducer. Defaults to the daemon's policy."
+        },
+        "pairing": {
+          "$ref": "#/$defs/id",
+          "description": "pair.confirm and pair.abort: the id of the open pair.introduce or pair.join request on this connection."
+        }
+      }
+    },
+    "response": {
+      "type": "object",
+      "required": [
+        "type",
+        "id"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.control.response"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "ok": {
+          "description": "The result when the request succeeded. Its shape depends on the request: status, devices and caps return objects described by the daemon's documentation; revoke and the pairing requests return an empty map.",
+          "type": "object"
+        },
+        "error": {
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "unknown-type",
+                "bad-request",
+                "not-found",
+                "aborted",
+                "mismatch",
+                "internal"
+              ]
+            },
+            "message": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "ok"
+          ]
+        },
+        {
+          "required": [
+            "error"
+          ]
+        }
+      ]
+    },
+    "event": {
+      "type": "object",
+      "required": [
+        "type",
+        "id"
+      ],
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/eventType"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "offer": {
+          "type": "string",
+          "description": "pair.offer: the text lpctl renders as a QR code and prints beneath it."
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[0-9]{6}$",
+          "description": "pair.code: the six-digit short authentication string the user compares."
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/request"
+    },
+    {
+      "$ref": "#/$defs/response"
+    },
+    {
+      "$ref": "#/$defs/event"
+    }
+  ]
+}

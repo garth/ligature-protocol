@@ -7,7 +7,8 @@
 
 use lp_core::envelope::{Envelope, FactId};
 use lp_core::facts::{
-    FactType, PersonFact, RevocationFact, RevocationKind, Role, RoleFact, SubordinateKey,
+    DeviceFact, FactType, PersonFact, RevocationFact, RevocationKind, Role, RoleFact,
+    SubordinateKey,
 };
 use lp_core::wire::{Bytes, Timestamp, TypeName};
 use lp_core::{Error, PublicKey};
@@ -215,6 +216,39 @@ pub fn verify_role(envelope: &Envelope, person: &PersonFact) -> Result<RoleFact,
                 Role::Binding | Role::Principal => "self-signing",
             }
         )));
+    }
+    Ok(fact)
+}
+
+/// Signs a device's own record with its own key. The fact's `key` must be
+/// the signing key's public half.
+///
+/// # Errors
+///
+/// Returns [`Error::Chain`] if the keys differ and [`Error::Decode`] if
+/// encoding fails.
+pub fn device_fact(key: &SigningKey, fact: &DeviceFact) -> Result<Envelope, Error> {
+    if fact.key != *key.public() {
+        return Err(Error::Chain(
+            "device record must be signed by its own key".to_owned(),
+        ));
+    }
+    sign(key, fact)
+}
+
+/// Verifies a device record: envelope signature and self-signed by the key it
+/// describes. Whether that key is trusted is a separate question.
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidSignature`], [`Error::Decode`] or [`Error::Chain`].
+pub fn verify_device(envelope: &Envelope) -> Result<DeviceFact, Error> {
+    verify_signature(envelope)?;
+    let fact: DeviceFact = decode(envelope)?;
+    if envelope.signer != fact.key {
+        return Err(Error::Chain(
+            "device record not signed by its own key".to_owned(),
+        ));
     }
     Ok(fact)
 }

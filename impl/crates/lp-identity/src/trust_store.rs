@@ -356,7 +356,7 @@ impl TrustStore {
 
 /// The subject key and timestamp a fact is indexed by, from its decoded payload.
 fn index_fields(envelope: &Envelope) -> Result<(PublicKey, Timestamp), Error> {
-    use lp_core::facts::{PersonFact, RevocationFact, RoleFact};
+    use lp_core::facts::{DeviceFact, PersonFact, RevocationFact, RoleFact};
     match envelope.fact_type.as_str() {
         PERSON_TYPE => {
             let f: PersonFact = facts::decode(envelope)?;
@@ -371,15 +371,7 @@ fn index_fields(envelope: &Envelope) -> Result<(PublicKey, Timestamp), Error> {
             Ok((f.subject, f.revoked_at))
         }
         DEVICE_TYPE => {
-            // Decoded loosely until the device record type lands (C3).
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Loose {
-                key: PublicKey,
-                created_at: Timestamp,
-            }
-            let f: Loose = ciborium::from_reader(envelope.payload.0.as_slice())
-                .map_err(|e| Error::Decode(format!("{DEVICE_TYPE}: {e}")))?;
+            let f: DeviceFact = facts::decode(envelope)?;
             Ok((f.key, f.created_at))
         }
         other => Err(Error::Decode(format!("unknown fact type {other}"))),

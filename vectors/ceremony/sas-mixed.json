@@ -1,0 +1,6 @@
+{
+  "format": "ligature-vector/1",
+  "description": "A fixed exporter output; only the first 20 bits matter. The code is the first 20 bits of the exporter output as six decimal digits (ADR 0029).",
+  "exporter": "123456789abcdef0112233445566778899aabbccddeeff000102030405060708",
+  "code": "074565"
+}

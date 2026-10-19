@@ -719,6 +719,7 @@ name = "lp-identity"
 version = "0.0.1"
 dependencies = [
  "ciborium",
+ "getrandom 0.4.3",
  "lp-core",
  "lp-crypto",
  "lp-vectors",

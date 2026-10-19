@@ -78,6 +78,55 @@ pub struct RoleFact {
     pub signed_at: Timestamp,
 }
 
+/// Principal or binding, as the device record states it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DeviceKind {
+    /// The device itself.
+    Principal,
+    /// One person's account on it.
+    Binding,
+}
+
+/// Personal or group registration of a principal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Registration {
+    /// Owned by one or more people.
+    Personal,
+    /// Owned by the group.
+    Group,
+}
+
+/// `org.ligatureprotocol.device`: a device's self-description, signed by the
+/// device's own key. Roles over the key are separate facts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceFact {
+    /// The principal or binding key: the identifier.
+    pub key: PublicKey,
+    /// Principal or binding.
+    pub kind: DeviceKind,
+    /// Host name by default; the user may override it.
+    pub display_name: String,
+    /// `linux`, `macos`, `android`, `ios`, `hub` or `other`.
+    pub platform: String,
+    /// For a principal: personal or group.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registration: Option<Registration>,
+    /// For a binding: the account holder's master key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub person: Option<PublicKey>,
+    /// For a binding: the principal key of the device it runs on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub principal: Option<PublicKey>,
+    /// For a binding: whether it holds the self-signing key.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub introducer: bool,
+    /// When the record was made.
+    pub created_at: Timestamp,
+}
+
 /// Whether a revocation drops a key from the set or abandons a master key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -126,6 +175,10 @@ impl FactType for RoleFact {
 
 impl FactType for RevocationFact {
     const TYPE: &'static str = REVOCATION_TYPE;
+}
+
+impl FactType for DeviceFact {
+    const TYPE: &'static str = DEVICE_TYPE;
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]

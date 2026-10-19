@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ligatureprotocol.org/schemas/pairing.schema.json",
+  "title": "org.ligatureprotocol.pair",
+  "description": "DRAFT. Messages of the proximity ceremony on the stream with purpose \"pairing\" (spec chapter 02 section 4, ADR 0029, ADR 0036). The introducer, having scanned the newcomer's offer, dials it and sends hello with the offer's one-time code; the newcomer answers ready with its self-signed device records; both derive the six-digit code from the TLS exporter (label EXPORTER-ligatureprotocol-pairing-sas, context SHA-256(newcomer key || introducer key), 32 bytes, first 20 bits as six decimal digits); each side sends confirmed when its user says the codes match; the introducer sends grant only after both confirmations; the newcomer verifies the person fact and both roles over its own keys and answers done. Either side may send abort. Decoders ignore unknown fields. The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "$defs": {
+    "envelope": {
+      "$ref": "envelope.schema.json"
+    },
+    "bytes": {
+      "type": "string",
+      "description": "Bytes as base64url without padding; a CBOR byte string on the wire.",
+      "pattern": "^[A-Za-z0-9_-]*$"
+    },
+    "hello": {
+      "type": "object",
+      "required": [
+        "type",
+        "code"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.pair.hello"
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$",
+          "description": "The one-time code from the offer: proves the introducer saw it."
+        }
+      }
+    },
+    "ready": {
+      "type": "object",
+      "required": [
+        "type",
+        "devices"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.pair.ready"
+        },
+        "devices": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/envelope"
+          },
+          "description": "The newcomer's self-signed device records: binding, then principal."
+        }
+      }
+    },
+    "confirmed": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.pair.confirmed"
+        }
+      }
+    },
+    "grant": {
+      "type": "object",
+      "required": [
+        "type",
+        "person",
+        "roles"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.pair.grant"
+        },
+        "person": {
+          "$ref": "#/$defs/envelope",
+          "description": "The introducer's person fact."
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/envelope"
+          },
+          "description": "Role facts over the newcomer's binding and principal keys."
+        },
+        "selfSigning": {
+          "$ref": "#/$defs/bytes",
+          "description": "The self-signing key's 32-byte seed, present only if the newcomer becomes an introducer."
+        },
+        "gossip": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/envelope"
+          },
+          "description": "Everything else the introducer holds."
+        }
+      }
+    },
+    "done": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.pair.done"
+        }
+      }
+    },
+    "abort": {
+      "type": "object",
+      "required": [
+        "type",
+        "reason"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.pair.abort"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/hello"
+    },
+    {
+      "$ref": "#/$defs/ready"
+    },
+    {
+      "$ref": "#/$defs/confirmed"
+    },
+    {
+      "$ref": "#/$defs/grant"
+    },
+    {
+      "$ref": "#/$defs/done"
+    },
+    {
+      "$ref": "#/$defs/abort"
+    }
+  ]
+}

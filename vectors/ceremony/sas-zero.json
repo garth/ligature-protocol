@@ -1,0 +1,6 @@
+{
+  "format": "ligature-vector/1",
+  "description": "All-zero exporter output gives 000000. The code is the first 20 bits of the exporter output as six decimal digits (ADR 0029).",
+  "exporter": "0000000000000000000000000000000000000000000000000000000000000000",
+  "code": "000000"
+}

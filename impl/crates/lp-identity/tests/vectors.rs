@@ -14,9 +14,10 @@ use lp_core::{Error, PublicKey};
 use lp_crypto::signing::{Signature, SigningKey};
 use lp_identity::cross_signing::{PersonKeys, Purpose, sign_subkey, verify_subkey};
 use lp_identity::facts;
+use lp_identity::pairing::short_code;
 use lp_vectors::{
-    EnvelopeHex, Expect, FORMAT, FactVector, Hex, KeyFile, SubkeyVector, load_dir, load_file,
-    may_write, vectors_dir, write_file,
+    CodeVector, EnvelopeHex, Expect, FORMAT, FactVector, Hex, KeyFile, SubkeyVector, load_dir,
+    load_file, may_write, vectors_dir, write_file,
 };
 
 struct Keys {
@@ -471,4 +472,65 @@ fn encode<T: serde::Serialize>(value: &T) -> Vec<u8> {
     let mut out = Vec::new();
     ciborium::into_writer(value, &mut out).unwrap();
     out
+}
+
+#[test]
+fn generate_ceremony_vectors_on_demand() {
+    if !may_write() {
+        return;
+    }
+    let dir = vectors_dir().join("ceremony");
+    let cases: [(&str, &str, [u8; 32]); 3] = [
+        (
+            "sas-zero.json",
+            "All-zero exporter output gives 000000.",
+            [0; 32],
+        ),
+        (
+            "sas-ones.json",
+            "All-ones exporter output: the first 20 bits are 0xfffff, 1048575 mod 1000000.",
+            [0xff; 32],
+        ),
+        (
+            "sas-mixed.json",
+            "A fixed exporter output; only the first 20 bits matter.",
+            [
+                0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+                0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x01, 0x02, 0x03, 0x04,
+                0x05, 0x06, 0x07, 0x08,
+            ],
+        ),
+    ];
+    for (name, description, exporter) in cases {
+        write_if_missing(&dir, name, || CodeVector {
+            format: FORMAT.to_owned(),
+            description: format!(
+                "{description} The code is the first 20 bits of the exporter output as six decimal digits (ADR 0029)."
+            ),
+            exporter: Hex(exporter.to_vec()),
+            code: short_code(&exporter).unwrap(),
+        });
+    }
+}
+
+#[test]
+fn every_ceremony_vector_behaves_as_expected() {
+    if may_write() {
+        return;
+    }
+    let vectors: Vec<(_, CodeVector)> =
+        load_dir(&vectors_dir().join("ceremony")).expect("ceremony/");
+    assert!(
+        !vectors.is_empty(),
+        "no ceremony vectors; run with LP_WRITE_VECTORS=1"
+    );
+    for (path, v) in vectors {
+        assert_eq!(v.format, FORMAT, "{}", path.display());
+        assert_eq!(
+            short_code(&v.exporter.0).unwrap(),
+            v.code,
+            "{}",
+            path.display()
+        );
+    }
 }

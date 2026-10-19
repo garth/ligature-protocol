@@ -6,7 +6,9 @@
 //! envelope, and the chain that says why the signer was entitled to sign.
 
 use lp_core::envelope::{Envelope, FactId};
-use lp_core::facts::{FactType, PersonFact, Role, RoleFact, SubordinateKey};
+use lp_core::facts::{
+    FactType, PersonFact, RevocationFact, RevocationKind, Role, RoleFact, SubordinateKey,
+};
 use lp_core::wire::{Bytes, Timestamp, TypeName};
 use lp_core::{Error, PublicKey};
 use lp_crypto::hash;
@@ -217,6 +219,54 @@ pub fn verify_role(envelope: &Envelope, person: &PersonFact) -> Result<RoleFact,
     Ok(fact)
 }
 
+/// Builds and signs a revocation or abandonment. Signed by the self-signing
+/// key, as chapter 06 requires.
+///
+/// # Errors
+///
+/// Returns [`Error::Decode`] if encoding fails.
+pub fn revocation_fact(
+    keys: &PersonKeys,
+    subject: PublicKey,
+    kind: RevocationKind,
+    revoked_at: Timestamp,
+) -> Result<Envelope, Error> {
+    let fact = RevocationFact {
+        subject,
+        kind,
+        person: *keys.person(),
+        revoked_at,
+    };
+    sign(&keys.self_signing, &fact)
+}
+
+/// Verifies a revocation against a verified person fact: envelope signature,
+/// the fact names that person, and the signer is the person's self-signing
+/// key.
+///
+/// # Errors
+///
+/// Returns the first failure: [`Error::InvalidSignature`], [`Error::Decode`]
+/// or [`Error::Chain`].
+pub fn verify_revocation(
+    envelope: &Envelope,
+    person: &PersonFact,
+) -> Result<RevocationFact, Error> {
+    verify_signature(envelope)?;
+    let fact: RevocationFact = decode(envelope)?;
+    if fact.person != person.master_key {
+        return Err(Error::Chain(
+            "revocation names a different person".to_owned(),
+        ));
+    }
+    if envelope.signer != person.self_signing_key.key {
+        return Err(Error::Chain(
+            "revocation must be signed by the person's self-signing key".to_owned(),
+        ));
+    }
+    Ok(fact)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -304,6 +354,29 @@ mod tests {
         let other_person = verify_person(&person_fact(&other, "Bob", 1, now()).unwrap()).unwrap();
         assert!(matches!(
             verify_role(&env, &other_person),
+            Err(Error::Chain(_))
+        ));
+    }
+
+    #[test]
+    fn revocations_verify_against_the_person() {
+        let keys = PersonKeys::generate().unwrap();
+        let person = verify_person(&person_fact(&keys, "Alice", 1, now()).unwrap()).unwrap();
+        let laptop = SigningKey::generate().unwrap();
+        let env =
+            revocation_fact(&keys, *laptop.public(), RevocationKind::Revocation, now()).unwrap();
+        let fact = verify_revocation(&env, &person).unwrap();
+        assert_eq!(fact.subject, *laptop.public());
+        assert_eq!(fact.kind, RevocationKind::Revocation);
+        let abandon =
+            revocation_fact(&keys, *keys.person(), RevocationKind::Abandonment, now()).unwrap();
+        assert_eq!(
+            verify_revocation(&abandon, &person).unwrap().kind,
+            RevocationKind::Abandonment
+        );
+        let by_user_key = sign(&keys.user_signing, &fact).unwrap();
+        assert!(matches!(
+            verify_revocation(&by_user_key, &person),
             Err(Error::Chain(_))
         ));
     }

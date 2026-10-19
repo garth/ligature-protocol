@@ -5,7 +5,10 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use lp_core::envelope::Envelope;
-use lp_core::facts::{PERSON_TYPE, PersonFact, REVOCATION_TYPE, ROLE_TYPE, Role, RoleFact};
+use lp_core::facts::{
+    PERSON_TYPE, PersonFact, REVOCATION_TYPE, ROLE_TYPE, RevocationFact, RevocationKind, Role,
+    RoleFact,
+};
 use lp_core::wire::{Bytes, Timestamp, TypeName};
 use lp_core::{Error, PublicKey};
 use lp_crypto::signing::{Signature, SigningKey};
@@ -279,6 +282,51 @@ fn generate_vectors_on_demand() {
             invalid("chain: signer is not Alice's self-signing key"),
         )
     });
+    write_if_missing(&facts_dir, "revocation-binding.json", || {
+        let env =
+            facts::revocation_fact(&alice, *laptop.public(), RevocationKind::Revocation, at())
+                .unwrap();
+        let fact: RevocationFact = facts::decode(&env).unwrap();
+        fact_vector(
+            "Alice revokes laptop-binding; signed by alice-self. The kind field is present and explicit.",
+            &["alice-master", "alice-self", "alice-user", "laptop-binding"],
+            &fact,
+            &env,
+            Some(&person_env),
+            Expect::Valid,
+        )
+    });
+    write_if_missing(&facts_dir, "revocation-abandonment.json", || {
+        let env =
+            facts::revocation_fact(&alice, *alice.person(), RevocationKind::Abandonment, at())
+                .unwrap();
+        let fact: RevocationFact = facts::decode(&env).unwrap();
+        fact_vector(
+            "Alice abandons her own master key after a rebuild; signed by alice-self.",
+            &ALICE,
+            &fact,
+            &env,
+            Some(&person_env),
+            Expect::Valid,
+        )
+    });
+    write_if_missing(&facts_dir, "revocation-by-user-signing-key.json", || {
+        let fact = RevocationFact {
+            subject: *laptop.public(),
+            kind: RevocationKind::Revocation,
+            person: *alice.person(),
+            revoked_at: at(),
+        };
+        let env = facts::sign(&alice.user_signing, &fact).unwrap();
+        fact_vector(
+            "A revocation signed by the user-signing key: revocations need the self-signing key.",
+            &["alice-master", "alice-self", "alice-user", "laptop-binding"],
+            &fact,
+            &env,
+            Some(&person_env),
+            invalid("chain: wrong subordinate key for a revocation"),
+        )
+    });
     write_if_missing(&facts_dir, "role-binding-by-user-signing-key.json", || {
         let env = facts::sign(&alice.user_signing, &binding).unwrap();
         fact_vector(
@@ -313,6 +361,12 @@ fn check_fact(v: &FactVector) -> Result<serde_json::Value, Error> {
                 .expect("role vectors carry the person fact");
             let person = facts::verify_person(&envelope(chain))?;
             let fact = facts::verify_role(&env, &person)?;
+            Ok(serde_json::to_value(fact).unwrap())
+        }
+        REVOCATION_TYPE if v.chain.is_some() => {
+            let chain = v.chain.as_ref().expect("checked");
+            let person = facts::verify_person(&envelope(chain))?;
+            let fact = facts::verify_revocation(&env, &person)?;
             Ok(serde_json::to_value(fact).unwrap())
         }
         // A relabelled envelope: verify the signature as any receiver would first.
@@ -392,10 +446,14 @@ fn every_fact_vector_behaves_as_expected() {
                     "{name}: reproduce signature"
                 );
                 // The reference also reproduces the bytes; other implementations need not.
-                let reencoded = if v.fact_type == PERSON_TYPE {
-                    encode(&serde_json::from_value::<PersonFact>(v.input.clone()).unwrap())
-                } else {
-                    encode(&serde_json::from_value::<RoleFact>(v.input.clone()).unwrap())
+                let reencoded = match v.fact_type.as_str() {
+                    PERSON_TYPE => {
+                        encode(&serde_json::from_value::<PersonFact>(v.input.clone()).unwrap())
+                    }
+                    REVOCATION_TYPE => {
+                        encode(&serde_json::from_value::<RevocationFact>(v.input.clone()).unwrap())
+                    }
+                    _ => encode(&serde_json::from_value::<RoleFact>(v.input.clone()).unwrap()),
                 };
                 assert_eq!(
                     reencoded, v.payload.0,

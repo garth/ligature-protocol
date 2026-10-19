@@ -7,6 +7,7 @@ members = [
     "crates/lp-transport",
     "crates/ligatured",
     "crates/lpctl",
+    "crates/lp-vectors",
     # Non-core integrations. The protocol never depends on these.
     "integrations/wireguard-integration",
 ]
@@ -23,15 +24,18 @@ lp-core = { path = "crates/lp-core" }
 lp-identity = { path = "crates/lp-identity" }
 lp-crypto = { path = "crates/lp-crypto" }
 lp-transport = { path = "crates/lp-transport" }
+lp-vectors = { path = "crates/lp-vectors" }
 
 # Crypto, encoding, runtime, store (LP-27). Versions are pinned by Cargo.lock;
 # bumps are deliberate commits of their own.
 ed25519-dalek = { version = "3.0", features = ["rand_core"] }
-rand_core = { version = "0.9", features = ["os_rng"] }
+getrandom = "0.4"
 sha2 = "0.11"
 multibase = "0.9"
 serde = { version = "1.0", features = ["derive"] }
 ciborium = "0.2"
+serde_json = "1.0"
+hex = "0.4"
 tokio = { version = "1.53", features = ["rt-multi-thread", "net", "sync", "time", "macros", "fs", "io-util"] }
 rusqlite = { version = "0.40", features = ["bundled"] }
 

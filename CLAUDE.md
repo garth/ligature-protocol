@@ -118,9 +118,14 @@ The reference implementation is Rust and is also the production implementation
   `lp-crypto` (signing, raw-public-key TLS material),
   `lp-transport` (QUIC connections, local discovery, remote discovery and relay clients),
   `ligatured` (Linux user daemon, D-Bus, systemd unit in `crates/ligatured/systemd/`),
-  `lpctl` (CLI). `integrations/wireguard-integration` is a non-core placeholder.
+  `lpctl` (CLI), `lp-vectors` (conformance vector formats and loader, test support,
+  `publish = false`). `integrations/wireguard-integration` is a non-core placeholder.
   Dependency direction: the three layer crates depend only on `lp-core`; binaries depend on
-  the layer crates; integrations depend on `lp-core` and never the other way round.
+  the layer crates; integrations depend on `lp-core` and never the other way round;
+  `lp-vectors` is only ever a dev-dependency.
+- `vectors/`: conformance vectors (`README.md` has the format and rules; `keys.json` holds
+  the committed test keys). Written only by generating tests with `LP_WRITE_VECTORS=1`,
+  never by hand, never overwritten.
 - `.github/workflows/ci.yml`: fmt, clippy, test on Linux and macOS; markdownlint; JSON
   Schema compile (ajv).
 

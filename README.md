@@ -105,6 +105,7 @@ Headscale/WireGuard configurations for users who want a full home-network overla
 | `docs/glossary.md`, `docs/prior-art.md` | Terminology and related work |
 | `schemas/` | Draft JSON Schemas for LP's records and messages (`org.ligatureprotocol.*` type names, placeholder domain) |
 | `impl/` | Rust reference implementation (cargo workspace) |
+| `vectors/` | Conformance vectors any implementation can run |
 
 ## Reference implementation
 
@@ -118,6 +119,8 @@ The `impl/` workspace contains:
   relay clients
 - `ligatured`: Linux user daemon (D-Bus, systemd user unit)
 - `lpctl`: CLI for pairing and inspection
+- `lp-vectors`: conformance vector formats and loader (test support; the vectors live in
+  `vectors/`)
 - `integrations/wireguard-integration`: non-core; generates Headscale/WireGuard peer
   configs from the device list
 

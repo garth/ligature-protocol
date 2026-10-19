@@ -54,7 +54,7 @@ needed, a short fingerprint of the key, which is never stored or compared.
 | Need | Crate | Why |
 | --- | --- | --- |
 | Ed25519 | `ed25519-dalek` 3 | The standard implementation; shares `curve25519-dalek` with the rustls stack; MSRV 1.85 |
-| Randomness | `rand_core` 0.9 with `os_rng` | Key generation source for dalek |
+| Randomness | `getrandom` 0.4 | Operating-system randomness for key seeds; `ed25519-dalek` 3 builds keys from a 32-byte seed, and its `rand_core` 0.10 has no OS generator of its own |
 | Hashing | `sha2` 0.11 | Fact identifiers, ceremony context |
 | Multibase | `multibase` 0.9 | base58btc with the `z` prefix; the `ed25519-pub` multicodec prefix `0xed 0x01` is a constant in `lp-crypto`, not a crate |
 | Serialisation | `serde` 1 with `derive` | One model for facts, messages, the store and the control channel |
@@ -198,3 +198,24 @@ ceremony, so a device never becomes a person by accident. Renaming is a later re
 
 **Logs.** stderr (LP-29). The systemd user unit needs nothing; the launchd plist (F4) sets
 `StandardErrorPath` to `~/Library/Logs/ligature/ligatured.log`. No rotation in milestone 1.
+
+## LP-33: conformance vector format and test layout
+
+Not protocol, but the format other implementations test against, so fixed from the first
+vector. Full rules in [`vectors/README.md`](../../vectors/README.md).
+
+**Bytes, not encodings.** A vector carries the exact `payload`, `signature` and `factId`
+the reference produced and asks an implementation to verify them, decode the payload to the
+given `input`, and reproduce the signature from the named seed. Reproducing the payload
+bytes is optional, as ADR 0035 requires. The ticket's wording about "deterministic CBOR"
+predates that ADR and is withdrawn.
+
+**Layout.** `vectors/keys.json` (six named test keys with committed seeds, test material
+only), then `keys/`, `facts/`, `ceremony/`, `gossip/`, one JSON file per case, negative
+cases included. Byte fields are hex; `input` follows the schema; keys are multibase.
+
+**Loader.** The workspace crate `lp-vectors` (`publish = false`) holds the exact Rust
+shapes (`KeyFile`, `FactVector`, `CodeVector`), `load_dir`, `load_file` and `write_file`.
+Layer crates use it as a dev-dependency only; it is never in a binary. Generation is a test
+that runs only with `LP_WRITE_VECTORS=1` and refuses to overwrite, so every change to a
+vector is a deliberate, reviewed diff. Every ordinary test run loads and checks every file.

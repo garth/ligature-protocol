@@ -1,0 +1,36 @@
+{
+  "format": "ligature-vector/1",
+  "description": "Test keys for the conformance vectors. Never use them for anything else.",
+  "keys": [
+    {
+      "name": "alice-master",
+      "seed": "5e4165a0ae0da9e47c52ae5a5df32dc5fef5f5415d13ccbb62540d17fc39d9dc",
+      "publicKey": "z6MkjDFtUBRdWTZuJW5Dzc2gnbAt3vXFp38AVYMDhjaACtkd"
+    },
+    {
+      "name": "alice-self",
+      "seed": "5e87dd3fe8a3f5fac1cae2afa6b20feb4b8bc679ea3e39f6ddbb3d9e06415e0d",
+      "publicKey": "z6MkvSJqp4DKHPTVH9SNYUd7o2nHDgp3BjBFTCaonh3r47QQ"
+    },
+    {
+      "name": "alice-user",
+      "seed": "f8e12acef08ca4806fa12fced19178fdb62d9c5d4b9f517f9d960492a5170a5e",
+      "publicKey": "z6Mkk2Vva4XuRhmzoUFhfpdhA3GA6C4SZu9ugh1QrU39smBa"
+    },
+    {
+      "name": "laptop-binding",
+      "seed": "5def6d1dc176b88597230923ac94b758f5ad4fdd6abb197e5275a069b8123072",
+      "publicKey": "z6MkjWBfkopWAz8pKibUhKhy6ZVHcHfjWBNEYEbNNT8WQJbG"
+    },
+    {
+      "name": "laptop-principal",
+      "seed": "f3a319eb740b8d2ee129517a86ad9dfbc12919e6b1f2eb1fcd16c21540232469",
+      "publicKey": "z6Mkrsywhbec8VHRpkiSSrjRZtLNwERq3EDbRRr7PNuLcaLt"
+    },
+    {
+      "name": "mallory",
+      "seed": "d5baf9479d870b2c449103c32224eba8b8fc02a4d9dd34f92b88d0b3de612754",
+      "publicKey": "z6MkhXqrJRAZdZU3xLeQnrP81UvEB9vHpmKuh4pARKkdn7Pe"
+    }
+  ]
+}

@@ -92,8 +92,9 @@ flowchart LR
 - A3. Envelopes, person facts and role facts (`lp-identity::cross_signing`): sign and
   verify an envelope over its payload bytes; build and verify the person fact (master key,
   display name, subordinate keys with the master's signatures); build role facts for
-  `binding` and `principal`; verify the chain to a master key. Unit tests become the first
-  conformance vectors.
+  `binding` and `principal`; verify the chain to a master key. The tests write and check
+  vectors under `vectors/keys/` and `vectors/facts/` through `lp-vectors`
+  ([decisions](01-implementation-decisions.md), LP-33).
 - A4. Local store on disk: a SQLite database of signed facts plus a separate 0600 key file,
   under `data/` in the project root for this milestone, behind one path-resolution
   function with `--data-dir` and `LIGATURE_DATA_DIR` overrides (see
@@ -184,7 +185,8 @@ flowchart LR
   Run by hand between a Linux machine and a Mac and recorded in the ticket.
 - G2. Loopback end-to-end test with two daemons in `data/a` and `data/b` on one machine,
   runs in CI on Linux and macOS.
-- G3. Commit the test fixtures as the first conformance vectors under `vectors/`.
+- G3. Review the vector set under `vectors/` for coverage (every fact type, every rule in
+  `vectors/README.md`, negative cases) and fill the gaps.
 - G4. Update chapters 02, 03, 04, 05, 06 and 08 with what was actually built, still marked
   draft; record any deviation as an ADR.
 

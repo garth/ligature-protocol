@@ -15,7 +15,8 @@
 //! WireGuard is not part of this crate or of the protocol; see the non-core
 //! `wireguard-integration` crate.
 //!
-//! **Status:** scaffold. Stub modules and documentation only.
+//! **Status:** milestone 1 in progress: QUIC with raw public keys is
+//! implemented; discovery is not.
 
 pub mod ble;
 pub mod discovery;

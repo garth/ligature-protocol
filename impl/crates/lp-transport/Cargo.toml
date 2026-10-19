@@ -13,5 +13,10 @@ quinn.workspace = true
 rustls.workspace = true
 mdns-sd.workspace = true
 tokio.workspace = true
+tracing.workspace = true
+lp-crypto.workspace = true
+[dev-dependencies]
+tokio.workspace = true
+
 [lints]
 workspace = true

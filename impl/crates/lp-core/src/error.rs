@@ -24,6 +24,8 @@ pub enum Error {
     Io(String),
     /// The local store failed.
     Store(String),
+    /// A connection or handshake failed.
+    Transport(String),
 }
 
 impl core::fmt::Display for Error {
@@ -37,6 +39,7 @@ impl core::fmt::Display for Error {
             Error::Chain(what) => write!(f, "trust chain: {what}"),
             Error::Io(what) => write!(f, "i/o: {what}"),
             Error::Store(what) => write!(f, "store: {what}"),
+            Error::Transport(what) => write!(f, "transport: {what}"),
         }
     }
 }

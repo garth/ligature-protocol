@@ -24,8 +24,9 @@ use lp_crypto::hash::sha256;
 use lp_crypto::signing::SigningKey;
 use serde::{Deserialize, Serialize};
 
-use crate::cross_signing::PersonKeys;
 use crate::facts;
+use crate::key_file::KeyFile;
+use crate::trust_store::TrustStore;
 
 /// The stream purpose of the ceremony.
 pub const PURPOSE: &str = "pairing";
@@ -247,6 +248,44 @@ pub struct Joined {
     pub self_signing: Option<SigningKey>,
     /// Everything else the introducer knew.
     pub gossip: Vec<Envelope>,
+}
+
+impl Joined {
+    /// Stores everything the ceremony produced and records the person (and
+    /// the self-signing key, if given) in the key file. Gossip that fails to
+    /// verify is skipped with a warning; the roles and person fact must store.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Store`] or the first failure storing a required fact.
+    pub fn persist(&self, store: &TrustStore, keys: &mut KeyFile) -> Result<(), Error> {
+        store.insert(&self.person)?;
+        for env in self.roles.iter().chain(&self.devices) {
+            store.insert(env)?;
+        }
+        for env in &self.gossip {
+            if let Err(e) = store.insert(env) {
+                tracing::warn!(%e, "skipping gossip fact from the ceremony");
+            }
+        }
+        let person = facts::verify_person(&self.person)?;
+        keys.set_joined(person.master_key, self.self_signing.as_ref());
+        Ok(())
+    }
+}
+
+impl Introduced {
+    /// Stores the newcomer's records and the roles I signed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Store`] or the first failure.
+    pub fn persist(&self, store: &TrustStore) -> Result<(), Error> {
+        for env in self.devices.iter().chain(&self.roles) {
+            store.insert(env)?;
+        }
+        Ok(())
+    }
 }
 
 /// The newcomer's side.
@@ -480,7 +519,8 @@ pub struct Introduced {
 /// The introducer's side.
 #[derive(Debug)]
 pub struct Introducer {
-    keys: PersonKeys,
+    self_signing: SigningKey,
+    person_key: PublicKey,
     person: Envelope,
     my_tls_key: PublicKey,
     offer: Offer,
@@ -494,12 +534,14 @@ pub struct Introducer {
 }
 
 impl Introducer {
-    /// Prepares an introducer: my person keys and current person fact, the
-    /// key my pairing connection authenticates with, the scanned offer,
-    /// whether the newcomer becomes an introducer, and the gossip to hand over.
+    /// Prepares an introducer: my self-signing key and master public key, my
+    /// current person fact, the key my pairing connection authenticates with,
+    /// the scanned offer, whether the newcomer becomes an introducer, and the
+    /// gossip to hand over.
     #[must_use]
     pub fn new(
-        keys: PersonKeys,
+        self_signing: SigningKey,
+        person_key: PublicKey,
         person: Envelope,
         my_tls_key: PublicKey,
         offer: Offer,
@@ -507,7 +549,8 @@ impl Introducer {
         gossip: Vec<Envelope>,
     ) -> Self {
         Self {
-            keys,
+            self_signing,
+            person_key,
             person,
             my_tls_key,
             offer,
@@ -613,7 +656,13 @@ impl Introducer {
         if self.state != IntroducerState::Greeted || !(self.i_confirmed && self.peer_confirmed) {
             return Ok(None);
         }
-        let roles = grant_roles(&self.keys, &self.offer, self.make_introducer, now)?;
+        let roles = grant_roles(
+            &self.self_signing,
+            self.person_key,
+            &self.offer,
+            self.make_introducer,
+            now,
+        )?;
         self.roles = roles.clone();
         self.state = IntroducerState::Granted;
         Ok(Some(Grant {
@@ -622,7 +671,7 @@ impl Introducer {
             roles,
             self_signing: self
                 .make_introducer
-                .then(|| Bytes(self.keys.self_signing.seed().to_vec())),
+                .then(|| Bytes(self.self_signing.seed().to_vec())),
             gossip: self.gossip.clone(),
         }))
     }
@@ -656,20 +705,36 @@ impl Introducer {
 ///
 /// Returns [`Error::Decode`] if encoding fails.
 pub fn grant_roles(
-    keys: &PersonKeys,
+    self_signing: &SigningKey,
+    person: PublicKey,
     offer: &Offer,
     make_introducer: bool,
     now: Timestamp,
 ) -> Result<Vec<Envelope>, Error> {
     Ok(vec![
-        facts::role_fact(keys, Role::Binding, offer.binding, make_introducer, now)?,
-        facts::role_fact(keys, Role::Principal, offer.principal, false, now)?,
+        facts::role_fact_by(
+            self_signing,
+            person,
+            Role::Binding,
+            offer.binding,
+            make_introducer,
+            now,
+        )?,
+        facts::role_fact_by(
+            self_signing,
+            person,
+            Role::Principal,
+            offer.principal,
+            false,
+            now,
+        )?,
     ])
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cross_signing::PersonKeys;
 
     fn now() -> Timestamp {
         Timestamp::from_unix(1_760_000_000).unwrap()
@@ -683,7 +748,8 @@ mod tests {
         let mut n = newcomer();
         let offer = n.offer(vec!["127.0.0.1:1".parse().unwrap()]);
         let mut i = Introducer::new(
-            alice.clone(),
+            alice.self_signing.clone(),
+            *alice.person(),
             person,
             *phone.public(),
             offer.clone(),
@@ -729,7 +795,8 @@ mod tests {
         let other = newcomer();
         let offer = n.offer(vec!["127.0.0.1:1".parse().unwrap()]);
         let mut i = Introducer::new(
-            alice,
+            alice.self_signing.clone(),
+            *alice.person(),
             person,
             PublicKey::from_bytes([3; 32]),
             offer,
@@ -822,7 +889,7 @@ mod tests {
         let grant = Grant {
             message_type: TypeName::new(types::GRANT),
             person: facts::person_fact(&alice, "Alice", 1, now()).unwrap(),
-            roles: grant_roles(&alice, &offer, true, now()).unwrap(),
+            roles: grant_roles(&alice.self_signing, *alice.person(), &offer, true, now()).unwrap(),
             self_signing: Some(Bytes(alice.self_signing.seed().to_vec())),
             gossip: vec![],
         };
@@ -847,7 +914,7 @@ mod tests {
         n.on_hello(*alice.self_signing.public(), &hello(&offer.code))
             .unwrap();
         n.confirm().unwrap();
-        let roles = grant_roles(&alice, &offer, true, now()).unwrap();
+        let roles = grant_roles(&alice.self_signing, *alice.person(), &offer, true, now()).unwrap();
         let (joined, _done) = n
             .on_grant(build(
                 roles.clone(),
@@ -875,7 +942,8 @@ mod tests {
         n3.on_hello(*alice.self_signing.public(), &hello(&offer3.code))
             .unwrap();
         n3.confirm().unwrap();
-        let roles3 = grant_roles(&alice, &offer3, true, now()).unwrap();
+        let roles3 =
+            grant_roles(&alice.self_signing, *alice.person(), &offer3, true, now()).unwrap();
         let wrong = Bytes(SigningKey::generate().unwrap().seed().to_vec());
         assert!(n3.on_grant(build(roles3, Some(wrong))).is_err());
 
@@ -886,7 +954,14 @@ mod tests {
             .unwrap();
         n4.confirm().unwrap();
         let mallory = PersonKeys::generate().unwrap();
-        let forged = grant_roles(&mallory, &offer4, false, now()).unwrap();
+        let forged = grant_roles(
+            &mallory.self_signing,
+            *mallory.person(),
+            &offer4,
+            false,
+            now(),
+        )
+        .unwrap();
         assert!(n4.on_grant(build(forged, None)).is_err());
     }
 }

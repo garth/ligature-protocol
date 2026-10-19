@@ -8,42 +8,39 @@ use std::fs;
 use std::io::Write as _;
 use std::path::Path;
 
-use lp_core::Error;
 use lp_core::wire::Bytes;
+use lp_core::{Error, PublicKey};
 use lp_crypto::signing::SigningKey;
 use serde::{Deserialize, Serialize};
 
 use crate::cross_signing::PersonKeys;
 
-/// Everything secret this daemon holds.
+/// Everything secret this daemon holds, plus the one public fact needed to
+/// read the store: whose device this is.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KeyFile {
     /// Format tag; always 1.
     pub version: u32,
-    /// The person's three keys, if this device holds them (the first device
-    /// does; a newcomer receives the self-signing key only if it is an
-    /// introducer, which milestone 1 does not persist separately).
+    /// The master public key of the person this device belongs to, once
+    /// initialised or joined.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub person: Option<PersonSeeds>,
+    pub person: Option<PublicKey>,
+    /// Master key seed: only on the first device for milestone 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub master: Option<Bytes>,
+    /// Self-signing key seed: on every introducer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub self_signing: Option<Bytes>,
+    /// User-signing key seed: with the master for milestone 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_signing: Option<Bytes>,
     /// This account's binding key on this device.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub binding: Option<Bytes>,
     /// This device's principal key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub principal: Option<Bytes>,
-}
-
-/// Seeds of a person's keys.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PersonSeeds {
-    /// Master key seed.
-    pub master: Bytes,
-    /// Self-signing key seed.
-    pub self_signing: Bytes,
-    /// User-signing key seed.
-    pub user_signing: Bytes,
 }
 
 impl KeyFile {
@@ -102,29 +99,48 @@ impl KeyFile {
         fs::rename(&tmp, path).map_err(io)
     }
 
-    /// The person's keys, rebuilt from their seeds.
+    /// Whether this device has an identity (created or joined).
+    #[must_use]
+    pub const fn is_initialised(&self) -> bool {
+        self.person.is_some() && self.binding.is_some()
+    }
+
+    /// The person's full key set, if this device holds all three private keys.
     ///
     /// # Errors
     ///
     /// Returns [`Error::Decode`] if a seed is not 32 bytes.
     pub fn person_keys(&self) -> Result<Option<PersonKeys>, Error> {
-        let Some(p) = &self.person else {
-            return Ok(None);
-        };
-        Ok(Some(PersonKeys::from_keys(
-            key(&p.master)?,
-            key(&p.self_signing)?,
-            key(&p.user_signing)?,
-        )))
+        match (&self.master, &self.self_signing, &self.user_signing) {
+            (Some(m), Some(s), Some(u)) => {
+                Ok(Some(PersonKeys::from_keys(key(m)?, key(s)?, key(u)?)))
+            }
+            _ => Ok(None),
+        }
     }
 
-    /// Records the person's keys.
+    /// Records a newly created person: all three keys.
     pub fn set_person(&mut self, keys: &PersonKeys) {
-        self.person = Some(PersonSeeds {
-            master: seed(&keys.master),
-            self_signing: seed(&keys.self_signing),
-            user_signing: seed(&keys.user_signing),
-        });
+        self.person = Some(*keys.person());
+        self.master = Some(seed(&keys.master));
+        self.self_signing = Some(seed(&keys.self_signing));
+        self.user_signing = Some(seed(&keys.user_signing));
+    }
+
+    /// Records a person joined through the ceremony: their master public key
+    /// and, if this device is an introducer, the self-signing key.
+    pub fn set_joined(&mut self, person: PublicKey, self_signing: Option<&SigningKey>) {
+        self.person = Some(person);
+        self.self_signing = self_signing.map(seed);
+    }
+
+    /// The self-signing key, if this device is an introducer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Decode`] if the seed is not 32 bytes.
+    pub fn self_signing_key(&self) -> Result<Option<SigningKey>, Error> {
+        self.self_signing.as_ref().map(key).transpose()
     }
 
     /// The binding key, if any.

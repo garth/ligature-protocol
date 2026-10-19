@@ -173,16 +173,33 @@ pub fn role_fact(
     introducer: bool,
     signed_at: Timestamp,
 ) -> Result<Envelope, Error> {
-    let fact = RoleFact {
-        subject,
-        role,
-        person: *keys.person(),
-        introducer: introducer && role == Role::Binding,
-        signed_at,
-    };
     let signer = match role {
         Role::Binding | Role::Principal => &keys.self_signing,
         Role::Person => &keys.user_signing,
+    };
+    role_fact_by(signer, *keys.person(), role, subject, introducer, signed_at)
+}
+
+/// Builds and signs a role fact with an explicit subordinate key, for an
+/// introducer that holds the self-signing key but not the master key.
+///
+/// # Errors
+///
+/// Returns [`Error::Decode`] if encoding fails.
+pub fn role_fact_by(
+    signer: &SigningKey,
+    person: PublicKey,
+    role: Role,
+    subject: PublicKey,
+    introducer: bool,
+    signed_at: Timestamp,
+) -> Result<Envelope, Error> {
+    let fact = RoleFact {
+        subject,
+        role,
+        person,
+        introducer: introducer && role == Role::Binding,
+        signed_at,
     };
     sign(signer, &fact)
 }

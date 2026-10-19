@@ -18,12 +18,17 @@ use lp_crypto::signing::SigningKey;
 use lp_identity::cross_signing::PersonKeys;
 use lp_identity::facts;
 use lp_identity::key_file::KeyFile;
+use lp_identity::pairing::{self, Joined};
 use lp_identity::trust::{Recognition, recognise};
 use lp_identity::trust_store::TrustStore;
 use lp_transport::manager::{Event, Manager};
 use lp_transport::mdns::{InstanceId, Mdns};
-use lp_transport::quic::Endpoint;
+use lp_transport::quic::{Connection, Endpoint};
+use lp_transport::stream::FramedStream;
 use tokio::sync::mpsc;
+
+/// An incoming `pairing` stream with its connection.
+pub type PairingStream = (Connection, FramedStream);
 
 /// What `status` reports.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -63,6 +68,7 @@ pub struct Daemon {
     manager: Manager,
     mdns: Mutex<Option<Mdns>>,
     instance_id: InstanceId,
+    pairing: Arc<Mutex<Option<mpsc::Sender<PairingStream>>>>,
 }
 
 impl std::fmt::Debug for Daemon {
@@ -128,6 +134,29 @@ impl Daemon {
         };
         let endpoint = Endpoint::bind(bind, &binding)?;
         let (manager, events) = Manager::start(endpoint);
+        let pairing: Arc<Mutex<Option<mpsc::Sender<PairingStream>>>> = Arc::new(Mutex::new(None));
+        let slot = pairing.clone();
+        manager.on_stream(
+            pairing::PURPOSE,
+            Arc::new(move |conn, stream| {
+                let waiting = slot
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clone();
+                Box::pin(async move {
+                    match waiting {
+                        Some(tx) => {
+                            let _ = tx.send((conn, stream)).await;
+                        }
+                        None => {
+                            tracing::debug!(peer = %conn.peer(), "pairing stream with no ceremony pending; dropping");
+                            let mut stream = stream;
+                            stream.reset(lp_core::frame::UNKNOWN_PURPOSE_CODE);
+                        }
+                    }
+                })
+            }),
+        );
         let daemon = Arc::new(Self {
             locations,
             keys: Mutex::new(keys),
@@ -138,6 +167,7 @@ impl Daemon {
             manager,
             mdns: Mutex::new(None),
             instance_id: InstanceId::random()?,
+            pairing,
         });
         if daemon.is_initialised() {
             daemon.start_advertising()?;
@@ -351,6 +381,119 @@ impl Daemon {
         let mut keys = self.lock_keys();
         f(&mut keys);
         keys.save(&self.locations.keys())
+    }
+
+    /// Starts waiting for an introducer: incoming `pairing` streams go to the
+    /// returned receiver until it is dropped or [`Self::stop_pairing`] runs.
+    /// Only one ceremony waits at a time.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Chain`] if a ceremony is already waiting.
+    pub fn expect_pairing(&self) -> Result<mpsc::Receiver<PairingStream>, Error> {
+        let mut slot = self
+            .pairing
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if slot.is_some() {
+            return Err(Error::Chain("a pairing is already in progress".to_owned()));
+        }
+        let (tx, rx) = mpsc::channel(1);
+        *slot = Some(tx);
+        Ok(rx)
+    }
+
+    /// Stops waiting for an introducer.
+    pub fn stop_pairing(&self) {
+        self.pairing
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+    }
+
+    /// Whether an unrecognised peer may stay connected: while uninitialised
+    /// or while a ceremony is waiting.
+    #[must_use]
+    pub fn accepts_strangers(&self) -> bool {
+        !self.is_initialised()
+            || self
+                .pairing
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .is_some()
+    }
+
+    /// Completes a newcomer's ceremony: persists the facts and keys, then
+    /// starts advertising.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::AlreadyInitialised`] or a store or key file error.
+    pub fn join(&self, joined: &Joined) -> Result<(), Error> {
+        if self.is_initialised() {
+            return Err(Error::AlreadyInitialised);
+        }
+        {
+            let mut keys = self.lock_keys();
+            joined.persist(&self.store, &mut keys)?;
+            keys.save(&self.locations.keys())?;
+        }
+        tracing::info!(person = ?self.person(), "joined a person through the ceremony");
+        self.start_advertising()
+    }
+
+    /// Every socket address an introducer could dial: each non-loopback IPv4
+    /// address of this host with the endpoint's port, loopback last.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Io`] if the port or interfaces cannot be read.
+    pub fn dialable_addrs(&self) -> Result<Vec<SocketAddr>, Error> {
+        let port = self.manager.endpoint().local_addr()?.port();
+        let mut addrs: Vec<SocketAddr> = if_addrs::get_if_addrs()
+            .map_err(|e| Error::Io(format!("interfaces: {e}")))?
+            .into_iter()
+            .filter(|i| !i.is_loopback())
+            .filter_map(|i| match i.ip() {
+                std::net::IpAddr::V4(v4) => Some(SocketAddr::new(v4.into(), port)),
+                std::net::IpAddr::V6(_) => None,
+            })
+            .collect();
+        addrs.sort_by_key(ToString::to_string);
+        addrs.dedup();
+        addrs.push(SocketAddr::new(std::net::Ipv4Addr::LOCALHOST.into(), port));
+        Ok(addrs)
+    }
+
+    /// All usable facts in the store, for handing over as gossip.
+    ///
+    /// # Errors
+    ///
+    /// Returns a store error.
+    pub fn all_facts(&self) -> Result<Vec<lp_core::envelope::Envelope>, Error> {
+        Ok(self.store.all()?.into_iter().map(|s| s.envelope).collect())
+    }
+
+    /// The newest verified person fact of this device's person.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::NotInitialised`] or [`Error::Chain`] if missing.
+    pub fn person_fact(&self) -> Result<lp_core::envelope::Envelope, Error> {
+        let owner = self.person().ok_or(Error::NotInitialised)?;
+        let mut best: Option<(u64, lp_core::envelope::Envelope)> = None;
+        for stored in self.store.about(&owner)? {
+            if stored.envelope.fact_type.as_str() != lp_core::facts::PERSON_TYPE {
+                continue;
+            }
+            if let Ok(fact) = facts::verify_person(&stored.envelope) {
+                if best.as_ref().is_none_or(|(v, _)| fact.version > *v) {
+                    best = Some((fact.version, stored.envelope));
+                }
+            }
+        }
+        best.map(|(_, e)| e)
+            .ok_or_else(|| Error::Chain("my person fact is missing".to_owned()))
     }
 
     /// Stops advertising and closes every connection.

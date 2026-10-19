@@ -9,8 +9,10 @@ rust-version.workspace = true
 
 [dependencies]
 lp-core.workspace = true
+ligatured.workspace = true
 clap.workspace = true
 qrcode.workspace = true
+tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 

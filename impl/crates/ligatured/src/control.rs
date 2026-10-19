@@ -117,7 +117,8 @@ impl ErrorBody {
         }
     }
 
-    fn new(code: &str, message: impl Into<String>) -> Self {
+    /// A body with `code` and `message`.
+    pub fn new(code: &str, message: impl Into<String>) -> Self {
         Self {
             code: code.to_owned(),
             message: message.into(),
@@ -436,36 +437,61 @@ fn unsafe_free_uid() -> u32 {
         .unwrap_or(u32::MAX)
 }
 
-/// Per-connection state: open pairings by request id (C4).
+/// Per-connection state: open pairings by request id.
 #[derive(Default)]
 pub struct ConnectionState {
     /// Pairing sessions keyed by the request id that opened them.
     pub pairings: std::collections::HashMap<u64, crate::ceremony::PairingHandle>,
 }
 
-async fn connection(daemon: Arc<Daemon>, mut stream: UnixStream) -> Result<(), Error> {
+/// Something to write to the client.
+#[derive(Debug)]
+pub enum Outgoing {
+    /// An event for an open request.
+    Event(Event),
+    /// A request's response.
+    Response(Response),
+}
+
+async fn connection(daemon: Arc<Daemon>, stream: UnixStream) -> Result<(), Error> {
+    let (mut reader, mut writer) = stream.into_split();
+    let (out, mut outgoing) = tokio::sync::mpsc::channel::<Outgoing>(32);
+    let writer_task = tokio::spawn(async move {
+        while let Some(msg) = outgoing.recv().await {
+            let result = match &msg {
+                Outgoing::Event(e) => write_frame(&mut writer, e).await,
+                Outgoing::Response(r) => write_frame(&mut writer, r).await,
+            };
+            if result.is_err() {
+                break;
+            }
+        }
+    });
     let mut state = ConnectionState::default();
-    while let Some(body) = read_frame(&mut stream).await? {
+    while let Some(body) = read_frame(&mut reader).await? {
         let request: Request = match frame::decode(&body) {
             Ok(r) => r,
             Err(e) => {
                 let id = frame::decode::<serde_json_like::IdOnly>(&body)
                     .map(|i| i.id)
                     .unwrap_or(0);
-                write_frame(
-                    &mut stream,
-                    &Response::error(id, ErrorBody::new("bad-request", e.to_string())),
-                )
-                .await?;
+                let _ = out
+                    .send(Outgoing::Response(Response::error(
+                        id,
+                        ErrorBody::new("bad-request", e.to_string()),
+                    )))
+                    .await;
                 continue;
             }
         };
-        let (events, response) = handle(&daemon, &mut state, request).await;
-        for event in events {
-            write_frame(&mut stream, &event).await?;
+        if let Some(response) = handle(&daemon, &mut state, request, out.clone()).await {
+            if out.send(Outgoing::Response(response)).await.is_err() {
+                break;
+            }
         }
-        write_frame(&mut stream, &response).await?;
     }
+    drop(out);
+    let _ = writer_task.await;
     Ok(())
 }
 
@@ -477,12 +503,14 @@ mod serde_json_like {
     }
 }
 
-/// Handles one request. Pairing requests are handled by [`crate::ceremony`].
+/// Handles one request. Returns the response, or `None` when a task will
+/// write it later (pairing, handled by [`crate::ceremony`]).
 pub async fn handle(
     daemon: &Arc<Daemon>,
     state: &mut ConnectionState,
     request: Request,
-) -> (Vec<Event>, Response) {
+    out: tokio::sync::mpsc::Sender<Outgoing>,
+) -> Option<Response> {
     let id = request.id;
     let result: Result<Response, Error> = match request.request_type.as_str() {
         types::STATUS => Response::ok(id, &daemon.status()),
@@ -505,18 +533,17 @@ pub async fn handle(
             )),
         },
         t if t.starts_with(types::PREFIX) && t.contains(".pair.") => {
-            return crate::ceremony::handle_control(daemon, state, request).await;
+            return crate::ceremony::handle_control(daemon, state, request, out).await;
         }
         other => Ok(Response::error(
             id,
             ErrorBody::new("unknown-type", format!("unknown request type {other}")),
         )),
     };
-    let response = match result {
+    Some(match result {
         Ok(r) => r,
         Err(e) => Response::error(id, ErrorBody::from_error(&e)),
-    };
-    (Vec::new(), response)
+    })
 }
 
 /// The `init` result.
@@ -557,7 +584,10 @@ impl Client {
         Ok(Self { stream, next_id: 1 })
     }
 
-    /// Sends a request and returns its response, passing events to `on_event`.
+    /// Sends a request and returns its response. Events for it go to
+    /// `on_event`, which may answer with a follow-up request (such as
+    /// `pair.confirm`) that is sent on the same connection; the follow-up's
+    /// own response is checked for an error and otherwise skipped.
     ///
     /// # Errors
     ///
@@ -566,7 +596,7 @@ impl Client {
     pub async fn call(
         &mut self,
         mut request: Request,
-        mut on_event: impl FnMut(Event),
+        mut on_event: impl FnMut(&Event) -> Option<Request>,
     ) -> Result<Response, Error> {
         request.id = self.next_id;
         self.next_id += 1;
@@ -581,10 +611,20 @@ impl Client {
                 if response.id == request.id {
                     return Ok(response);
                 }
+                if let Some(e) = &response.error {
+                    return Err(Error::Decode(format!(
+                        "follow-up request failed: {}: {}",
+                        e.code, e.message
+                    )));
+                }
                 continue;
             }
             let event: Event = frame::decode(&body)?;
-            on_event(event);
+            if let Some(mut follow_up) = on_event(&event) {
+                follow_up.id = self.next_id;
+                self.next_id += 1;
+                write_frame(&mut self.stream, &follow_up).await?;
+            }
         }
     }
 
@@ -594,6 +634,6 @@ impl Client {
     ///
     /// Returns the daemon's error as [`Error::Decode`] with its code.
     pub async fn request<T: DeserializeOwned>(&mut self, request: Request) -> Result<T, Error> {
-        self.call(request, |_| {}).await?.into_ok()
+        self.call(request, |_| None).await?.into_ok()
     }
 }

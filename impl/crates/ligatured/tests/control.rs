@@ -34,7 +34,7 @@ async fn status_init_devices_and_errors_over_the_socket() {
     assert_eq!(status.device_name, "laptop");
 
     let err = client
-        .call(Request::new(types::DEVICES, 0), |_| {})
+        .call(Request::new(types::DEVICES, 0), |_| None)
         .await
         .unwrap();
     assert_eq!(
@@ -45,7 +45,7 @@ async fn status_init_devices_and_errors_over_the_socket() {
     let mut init = Request::new(types::INIT, 0);
     init.name = Some("Alice".to_owned());
     let created: InitResult = client.request(init.clone()).await.unwrap();
-    let again = client.call(init, |_| {}).await.unwrap();
+    let again = client.call(init, |_| None).await.unwrap();
     assert_eq!(
         again.error.as_ref().map(|e| e.code.as_str()),
         Some("already-initialised")
@@ -74,7 +74,7 @@ async fn status_init_devices_and_errors_over_the_socket() {
     assert_eq!(devices.devices[0].display_name.as_deref(), Some("laptop"));
 
     let unknown = client
-        .call(Request::new("org.example.nothing", 0), |_| {})
+        .call(Request::new("org.example.nothing", 0), |_| None)
         .await
         .unwrap();
     assert_eq!(

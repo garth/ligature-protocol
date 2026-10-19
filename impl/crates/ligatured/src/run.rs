@@ -43,9 +43,12 @@ pub async fn run(locations: Locations, device_name: Option<&str>) -> Result<(), 
                         tracing::info!(peer = %conn.peer(), ?r, "peer connected");
                     }
                     Ok(r) => {
-                        tracing::info!(peer = %conn.peer(), ?r, "unrecognised peer; pairing only");
-                        // A stranger keeps its connection only while a ceremony
-                        // runs on it; the ceremony handler closes it otherwise.
+                        if for_events.accepts_strangers() {
+                            tracing::info!(peer = %conn.peer(), ?r, "unrecognised peer; pairing only");
+                        } else {
+                            tracing::info!(peer = %conn.peer(), ?r, "unrecognised peer; dropping");
+                            for_events.manager().drop_peer(conn.peer());
+                        }
                     }
                     Err(Error::NotInitialised) => {
                         tracing::debug!(peer = %conn.peer(), "not initialised; connection kept for pairing");

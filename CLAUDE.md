@@ -125,7 +125,8 @@ The reference implementation is Rust and is also the production implementation
   Dependency direction: `lp-crypto` depends only on `lp-core`; `lp-identity` and
   `lp-transport` depend on `lp-core` and `lp-crypto`; binaries depend on the layer crates;
   integrations depend on `lp-core` and never the other way round; `lp-vectors` is only ever
-  a dev-dependency.
+  a dev-dependency; `lpctl` depends on the `ligatured` library for the control channel
+  types and client, since the two are built and installed together.
 - `vectors/`: conformance vectors (`README.md` has the format and rules; `keys.json` holds
   the committed test keys). Written only by generating tests with `LP_WRITE_VECTORS=1`,
   never by hand, never overwritten.

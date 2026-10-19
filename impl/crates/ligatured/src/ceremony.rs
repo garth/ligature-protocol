@@ -180,29 +180,196 @@ async fn introducer_inner(
     Ok(introduced)
 }
 
-/// An open ceremony on a control connection (C4).
+/// An open ceremony on a control connection.
 #[derive(Debug)]
 pub struct PairingHandle {
-    /// Where the user's answer goes.
+    /// Where the user's answer goes, once.
     pub confirm: Option<oneshot::Sender<bool>>,
 }
 
-/// Handles the `pair.*` control requests. Filled in by C4; until then every
-/// pairing request is refused.
+/// Handles the `pair.*` control requests. `pair.join` and `pair.introduce`
+/// run the ceremony in a task that writes events and its final response to
+/// `out`; `pair.confirm` and `pair.abort` answer at once.
 pub async fn handle_control(
-    _daemon: &std::sync::Arc<crate::daemon::Daemon>,
-    _state: &mut crate::control::ConnectionState,
+    daemon: &std::sync::Arc<crate::daemon::Daemon>,
+    state: &mut crate::control::ConnectionState,
     request: crate::control::Request,
-) -> (Vec<crate::control::Event>, crate::control::Response) {
-    use crate::control::{ErrorBody, Response};
-    (
-        Vec::new(),
-        Response::error(
-            request.id,
-            ErrorBody {
-                code: "unknown-type".to_owned(),
-                message: "pairing over the control channel is not wired yet".to_owned(),
-            },
-        ),
-    )
+    out: mpsc::Sender<crate::control::Outgoing>,
+) -> Option<crate::control::Response> {
+    use crate::control::{Empty, ErrorBody, Event, Outgoing, Request, Response, types};
+    let id = request.id;
+    match request.request_type.as_str() {
+        types::PAIR_CONFIRM | types::PAIR_ABORT => {
+            let answer = request.request_type.as_str() == types::PAIR_CONFIRM;
+            let Some(pairing) = request.pairing else {
+                return Some(Response::error(
+                    id,
+                    ErrorBody::new("bad-request", "pairing id required"),
+                ));
+            };
+            match state
+                .pairings
+                .get_mut(&pairing)
+                .and_then(|h| h.confirm.take())
+            {
+                Some(tx) => {
+                    let _ = tx.send(answer);
+                    Some(
+                        Response::ok(id, &Empty {})
+                            .unwrap_or_else(|e| Response::error(id, ErrorBody::from_error(&e))),
+                    )
+                }
+                None => Some(Response::error(
+                    id,
+                    ErrorBody::new("not-found", "no pairing waiting for an answer"),
+                )),
+            }
+        }
+        types::PAIR_JOIN | types::PAIR_INTRODUCE => {
+            let (confirm_tx, confirm_rx) = oneshot::channel();
+            let (code_tx, mut code_rx) = mpsc::channel::<String>(1);
+            state.pairings.insert(
+                id,
+                PairingHandle {
+                    confirm: Some(confirm_tx),
+                },
+            );
+            let prompt = Prompt {
+                code: code_tx,
+                confirm: confirm_rx,
+            };
+            // Forward the code as an event.
+            let events = out.clone();
+            tokio::spawn(async move {
+                while let Some(code) = code_rx.recv().await {
+                    let _ = events
+                        .send(Outgoing::Event(Event {
+                            event_type: lp_core::wire::TypeName::new(types::PAIR_CODE),
+                            id,
+                            offer: None,
+                            code: Some(code),
+                        }))
+                        .await;
+                }
+            });
+            let daemon = daemon.clone();
+            let join = request.request_type.as_str() == types::PAIR_JOIN;
+            let req: Request = request;
+            tokio::spawn(async move {
+                let result = if join {
+                    run_join(&daemon, id, &out, prompt).await
+                } else {
+                    run_introduce(&daemon, &req, prompt).await
+                };
+                let response = match result {
+                    Ok(()) => Response::ok(id, &Empty {})
+                        .unwrap_or_else(|e| Response::error(id, ErrorBody::from_error(&e))),
+                    Err(e) => Response::error(id, ErrorBody::from_error(&e)),
+                };
+                let _ = out.send(Outgoing::Response(response)).await;
+            });
+            None
+        }
+        other => Some(Response::error(
+            id,
+            ErrorBody::new("unknown-type", format!("unknown request type {other}")),
+        )),
+    }
+}
+
+async fn run_join(
+    daemon: &std::sync::Arc<crate::daemon::Daemon>,
+    id: u64,
+    out: &mpsc::Sender<crate::control::Outgoing>,
+    prompt: Prompt,
+) -> Result<(), Error> {
+    use crate::control::{Event, Outgoing, types};
+    if daemon.is_initialised() {
+        return Err(Error::AlreadyInitialised);
+    }
+    let mut streams = daemon.expect_pairing()?;
+    let result = async {
+        let newcomer = Newcomer::new(
+            daemon.binding().clone(),
+            daemon.principal().clone(),
+            daemon.device_name(),
+            crate::daemon::platform(),
+            Timestamp::now(),
+        )?;
+        let offer = newcomer.offer(daemon.dialable_addrs()?);
+        out.send(Outgoing::Event(Event {
+            event_type: lp_core::wire::TypeName::new(types::PAIR_OFFER),
+            id,
+            offer: Some(offer.to_text()),
+            code: None,
+        }))
+        .await
+        .map_err(|_| Error::Io("control connection gone".to_owned()))?;
+        let (conn, stream) = streams
+            .recv()
+            .await
+            .ok_or_else(|| Error::Chain("pairing cancelled".to_owned()))?;
+        let joined = run_newcomer(&conn, stream, newcomer, prompt).await?;
+        daemon.join(&joined)
+    }
+    .await;
+    daemon.stop_pairing();
+    result
+}
+
+async fn run_introduce(
+    daemon: &std::sync::Arc<crate::daemon::Daemon>,
+    request: &crate::control::Request,
+    prompt: Prompt,
+) -> Result<(), Error> {
+    use lp_identity::pairing::{Offer, PURPOSE};
+    let text = request
+        .offer
+        .as_deref()
+        .ok_or_else(|| Error::Decode("pair.introduce needs the offer".to_owned()))?;
+    let offer = Offer::parse(text)?;
+    let self_signing = daemon
+        .self_signing()?
+        .ok_or_else(|| Error::Chain("this device is not an introducer".to_owned()))?;
+    let person = daemon.person().ok_or(Error::NotInitialised)?;
+    let person_fact = daemon.person_fact()?;
+    let gossip = daemon.all_facts()?;
+    let make_introducer = request.introducer.unwrap_or(true);
+
+    // Dial the offered addresses in order until one answers with the right key.
+    let mut conn = None;
+    let mut last = Error::Transport("offer has no address".to_owned());
+    for addr in &offer.addrs {
+        let attempt = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            daemon.manager().connect(*addr),
+        )
+        .await
+        .unwrap_or_else(|_| Err(Error::Transport(format!("{addr}: no answer within 3 s"))));
+        match attempt {
+            Ok(c) if c.peer() == &offer.binding => {
+                conn = Some(c);
+                break;
+            }
+            Ok(c) => {
+                last = Error::Chain(format!("{addr} answered with a key not in the offer"));
+                daemon.manager().drop_peer(c.peer());
+            }
+            Err(e) => last = e,
+        }
+    }
+    let conn = conn.ok_or(last)?;
+    let stream = lp_transport::manager::open_on(&conn, PURPOSE).await?;
+    let introducer = Introducer::new(
+        self_signing,
+        person,
+        person_fact,
+        *daemon.binding().public(),
+        offer,
+        make_introducer,
+        gossip,
+    );
+    let introduced = run_introducer(&conn, stream, introducer, prompt, Timestamp::now()).await?;
+    introduced.persist(daemon.store())?;
+    Ok(())
 }

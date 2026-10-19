@@ -666,6 +666,7 @@ dependencies = [
  "ciborium",
  "clap",
  "gethostname",
+ "if-addrs",
  "lp-core",
  "lp-crypto",
  "lp-identity",
@@ -776,8 +777,10 @@ name = "lpctl"
 version = "0.0.1"
 dependencies = [
  "clap",
+ "ligatured",
  "lp-core",
  "qrcode",
+ "tokio",
  "tracing",
  "tracing-subscriber",
 ]

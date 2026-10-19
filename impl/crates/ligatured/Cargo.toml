@@ -19,6 +19,7 @@ tracing-subscriber.workspace = true
 serde.workspace = true
 ciborium.workspace = true
 gethostname.workspace = true
+if-addrs.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

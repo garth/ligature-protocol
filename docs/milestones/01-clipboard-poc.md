@@ -153,7 +153,10 @@ flowchart LR
   operation, a size cap.
 - E2. A `Clipboard` trait: watch for changes, read text, set text.
 - E3. Linux implementation via `wlr-data-control` on Wayland (Hyprland is the first
-  target); detect changes, suppress echoes by content hash.
+  target); the compositor socket from `WAYLAND_DISPLAY`, else the newest `wayland-N` in
+  `$XDG_RUNTIME_DIR`, retried until found and withdrawn when lost
+  ([decisions](01-implementation-decisions.md), LP-34); detect changes, suppress echoes by
+  content hash.
 - E4. macOS implementation via the pasteboard: poll the change count at a short interval,
   read and set text; the same echo suppression.
 - E5. Clipboard stream handler: on local change send to every connected binding of mine;

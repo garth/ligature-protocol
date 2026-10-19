@@ -16,8 +16,11 @@ by compositor. On a multi-account machine each account runs its own `ligatured` 
 systemd user service for user-scoped capabilities, and a system-level service owns the
 device principal and device-scoped capabilities, learning who is present from logind. LP
 relies on the OS's account isolation to keep one account's keys and clipboard from another.
-Open question: the minimum set of compositors and portals to support (Hyprland is the first
-target), and how the system service drives audio and display without a session of its own.
+The account's daemon does not depend on the session's environment: it finds the compositor
+socket in the runtime directory, advertises the clipboard only while a compositor is
+reachable, and keeps running (gossip, revocations) when none is. Open question: the minimum
+set of compositors and portals to support (Hyprland is the first target), and how the
+system service drives audio and display without a session of its own.
 
 ## 2b. macOS
 

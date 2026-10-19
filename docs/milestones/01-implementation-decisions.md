@@ -219,3 +219,18 @@ shapes (`KeyFile`, `FactVector`, `CodeVector`), `load_dir`, `load_file` and `wri
 Layer crates use it as a dev-dependency only; it is never in a binary. Generation is a test
 that runs only with `LP_WRITE_VECTORS=1` and refuses to overwrite, so every change to a
 vector is a deliberate, reviewed diff. Every ordinary test run loads and checks every file.
+
+## LP-34: how the Linux daemon reaches the Wayland clipboard
+
+Not protocol. `wlr-data-control` needs a connection to the user's compositor, and a systemd
+user service only sees `WAYLAND_DISPLAY` when something imported it (UWSM does; a bare
+Hyprland session usually does not) and only if it started after the compositor.
+
+**Decision.** The clipboard provider takes the socket from `WAYLAND_DISPLAY` when set, else
+the newest `wayland-N` socket (not `.lock`) in `$XDG_RUNTIME_DIR`, passed to
+`wl-clipboard-rs` as an explicit path. If nothing connects, the daemon runs without a
+clipboard capability and retries every few seconds; when the compositor goes away it
+withdraws the capability (live manifests, ADR 0016) and waits again. A stale socket that
+refuses the connection is skipped. The daemon is never started by the compositor and the
+unit stays `WantedBy=default.target`, so gossip and revocations work with nobody logged in
+graphically. Chapter 08 section 2 states the behaviour.

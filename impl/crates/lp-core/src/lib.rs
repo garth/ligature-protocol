@@ -11,9 +11,11 @@ pub mod capability;
 pub mod device;
 pub mod envelope;
 pub mod error;
+pub mod facts;
 pub mod identity;
 pub mod key;
 pub mod paths;
+pub mod wire;
 
 pub use error::Error;
 pub use key::{DeviceKey, GroupKey, PersonKey, PublicKey};

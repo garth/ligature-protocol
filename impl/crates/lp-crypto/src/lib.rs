@@ -9,5 +9,6 @@
 //! **Status:** milestone 1 in progress: signing keys are implemented, TLS
 //! material is not.
 
+pub mod hash;
 pub mod session;
 pub mod signing;

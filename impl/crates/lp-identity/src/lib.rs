@@ -10,5 +10,6 @@
 //! **Status:** milestone 1 in progress.
 
 pub mod cross_signing;
+pub mod facts;
 pub mod pairing;
 pub mod trust_store;

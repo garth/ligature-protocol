@@ -15,6 +15,11 @@ pub enum Error {
     InvalidSignature(String),
     /// The operating system's random source failed.
     Randomness(String),
+    /// Bytes or text that do not decode as the expected form.
+    Decode(String),
+    /// A fact whose signer is not what the fact's type and role require, or
+    /// whose chain does not reach the expected master key.
+    Chain(String),
 }
 
 impl core::fmt::Display for Error {
@@ -24,6 +29,8 @@ impl core::fmt::Display for Error {
             Error::InvalidKey(what) => write!(f, "invalid key: {what}"),
             Error::InvalidSignature(what) => write!(f, "invalid signature: {what}"),
             Error::Randomness(what) => write!(f, "randomness unavailable: {what}"),
+            Error::Decode(what) => write!(f, "cannot decode: {what}"),
+            Error::Chain(what) => write!(f, "trust chain: {what}"),
         }
     }
 }

@@ -1,0 +1,16 @@
+{
+  "format": "ligature-vector/1",
+  "description": "The master key endorses alice-self as the self-signing key.",
+  "keys": [
+    "alice-master",
+    "alice-self",
+    "alice-user"
+  ],
+  "master": "z6MkjDFtUBRdWTZuJW5Dzc2gnbAt3vXFp38AVYMDhjaACtkd",
+  "purpose": "self-signing",
+  "key": "z6MkvSJqp4DKHPTVH9SNYUd7o2nHDgp3BjBFTCaonh3r47QQ",
+  "signature": "a9b226a8b726e6c6d691463d46059d6f811b9ba0546dade758999a17232ea32c282f1c9ec77acd01c9fa29d75ffa3544b729ce4c03017244c2cfb4b25e62f408",
+  "expect": {
+    "outcome": "valid"
+  }
+}

@@ -82,6 +82,29 @@ pub struct KeyFile {
     pub keys: Vec<TestKey>,
 }
 
+/// A subordinate-key vector (`vectors/keys/*.json`): a master key's
+/// endorsement of a self-signing or user-signing key.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubkeyVector {
+    /// Always [`FORMAT`].
+    pub format: String,
+    /// What the case shows.
+    pub description: String,
+    /// Names from `keys.json` the case uses.
+    pub keys: Vec<String>,
+    /// The master public key, multibase.
+    pub master: String,
+    /// `self-signing` or `user-signing`.
+    pub purpose: String,
+    /// The subordinate public key, multibase.
+    pub key: String,
+    /// Master signature over `"ligature/subkey/1" || purpose || key bytes`.
+    pub signature: Hex,
+    /// Expected outcome.
+    pub expect: Expect,
+}
+
 /// A signed-fact vector (`vectors/facts/*.json`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -105,8 +128,26 @@ pub struct FactVector {
     pub signature: Hex,
     /// SHA-256 of the payload bytes.
     pub fact_id: Hex,
+    /// For a role fact: the verified person fact the chain is checked against.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chain: Option<EnvelopeHex>,
     /// Expected outcome.
     pub expect: Expect,
+}
+
+/// An envelope with its byte fields as hex, as vectors carry it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvelopeHex {
+    /// The envelope's type.
+    #[serde(rename = "type")]
+    pub fact_type: String,
+    /// The payload bytes as transmitted.
+    pub payload: Hex,
+    /// The signer's public key, multibase.
+    pub signer: String,
+    /// The signature bytes.
+    pub signature: Hex,
 }
 
 /// A ceremony-code vector (`vectors/ceremony/*.json`): exporter output to six digits.

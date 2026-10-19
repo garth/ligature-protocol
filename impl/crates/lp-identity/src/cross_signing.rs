@@ -13,16 +13,7 @@ use lp_crypto::signing::{Signature, SigningKey, verify};
 /// Domain prefix of a master key's signature over a subordinate key.
 pub const SUBKEY_DOMAIN: &[u8] = b"ligature/subkey/1";
 
-/// The role a ceremony signature asserts about a key.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Role {
-    /// My account on a device: member of my device set.
-    Binding,
-    /// A device I use: I may request its device-scoped capabilities.
-    Principal,
-    /// Another person's master key that I have verified in person.
-    Person,
-}
+pub use lp_core::facts::Role;
 
 /// Which subordinate key a master signature is over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

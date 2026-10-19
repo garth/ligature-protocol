@@ -21,8 +21,13 @@ act on them. For a signed fact an implementation must:
 It may also check that its own encoding of `input` equals `payload`. The reference
 implementation does; others need not, and nothing in the protocol requires it.
 
-A vector whose `expect.outcome` is `invalid` must fail step 1 (or step 2 where the
-description says so). Its `reason` is for people; implementations need not match it.
+A role vector also carries `chain`: the person fact (as an envelope) the role is checked
+against, so step 5 is: verify that person fact, then check the role's signer is the
+subordinate key the role requires and that the role names that person.
+
+A vector whose `expect.outcome` is `invalid` must be rejected, at the signature, at
+decoding or at the chain as its description says. Its `reason` is for people;
+implementations need not match it.
 
 ## Layout
 
@@ -58,9 +63,13 @@ A fact vector:
   "signer": "z6Mk…",
   "signature": "…",
   "factId": "…",
+  "chain": { "type": "org.ligatureprotocol.person", "payload": "…", "signer": "…", "signature": "…" },
   "expect": { "outcome": "valid" }
 }
 ```
+
+A subordinate-key vector (`keys/`) has `master`, `purpose`, `key` and `signature`, and asks
+that `signature` verify as the master's endorsement of `key` for `purpose`.
 
 ## Adding a vector
 

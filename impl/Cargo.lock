@@ -733,6 +733,7 @@ dependencies = [
 name = "lp-transport"
 version = "0.0.1"
 dependencies = [
+ "getrandom 0.4.3",
  "lp-core",
  "lp-crypto",
  "mdns-sd",

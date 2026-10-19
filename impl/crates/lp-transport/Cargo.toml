@@ -15,6 +15,7 @@ mdns-sd.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 lp-crypto.workspace = true
+getrandom.workspace = true
 [dev-dependencies]
 tokio.workspace = true
 

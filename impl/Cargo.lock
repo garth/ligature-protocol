@@ -701,6 +701,7 @@ version = "0.0.1"
 dependencies = [
  "ciborium",
  "lp-core",
+ "lp-crypto",
  "rusqlite",
  "serde",
 ]

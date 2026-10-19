@@ -122,9 +122,10 @@ The reference implementation is Rust and is also the production implementation
   `ligatured` (Linux user daemon, D-Bus, systemd unit in `crates/ligatured/systemd/`),
   `lpctl` (CLI), `lp-vectors` (conformance vector formats and loader, test support,
   `publish = false`). `integrations/wireguard-integration` is a non-core placeholder.
-  Dependency direction: the three layer crates depend only on `lp-core`; binaries depend on
-  the layer crates; integrations depend on `lp-core` and never the other way round;
-  `lp-vectors` is only ever a dev-dependency.
+  Dependency direction: `lp-crypto` depends only on `lp-core`; `lp-identity` and
+  `lp-transport` depend on `lp-core` and `lp-crypto`; binaries depend on the layer crates;
+  integrations depend on `lp-core` and never the other way round; `lp-vectors` is only ever
+  a dev-dependency.
 - `vectors/`: conformance vectors (`README.md` has the format and rules; `keys.json` holds
   the committed test keys). Written only by generating tests with `LP_WRITE_VECTORS=1`,
   never by hand, never overwritten.

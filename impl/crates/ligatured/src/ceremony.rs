@@ -87,7 +87,11 @@ async fn newcomer_inner(
     stream.send(&ready).await?;
     let code = code_for(conn, &newcomer.exporter_context()?)?;
     let _ = prompt.code.send(code).await;
-    let ok = prompt.confirm.await.unwrap_or(false);
+    // Wait for the user, unless the introducer goes away first.
+    let ok = tokio::select! {
+        answer = prompt.confirm => answer.unwrap_or(false),
+        _ = conn.raw().closed() => return Err(newcomer.abort("connection lost")),
+    };
     if !ok {
         return Err(newcomer.abort("user said the codes differ"));
     }

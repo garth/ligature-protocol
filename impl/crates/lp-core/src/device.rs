@@ -6,10 +6,7 @@
 //! peers (spec chapter 06). It does not list capabilities; those are live
 //! (see [`crate::capability::Manifest`]).
 
-/// A device's principal or binding public key in multibase form (`z6Mk…`).
-/// This is the device's identifier.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct DeviceKey(pub String);
+pub use crate::key::DeviceKey;
 
 /// Whether a device record describes the device itself or one person's
 /// account on it. Spec chapter 10.

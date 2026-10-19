@@ -677,6 +677,7 @@ name = "lp-core"
 version = "0.0.1"
 dependencies = [
  "ciborium",
+ "multibase",
  "serde",
 ]
 
@@ -688,6 +689,7 @@ dependencies = [
  "ed25519-dalek",
  "getrandom 0.4.3",
  "lp-core",
+ "lp-vectors",
  "multibase",
  "rustls",
  "sha2",

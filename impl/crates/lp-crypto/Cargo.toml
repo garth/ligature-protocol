@@ -15,5 +15,9 @@ getrandom.workspace = true
 sha2.workspace = true
 multibase.workspace = true
 ciborium.workspace = true
+
+[dev-dependencies]
+lp-vectors.workspace = true
+
 [lints]
 workspace = true

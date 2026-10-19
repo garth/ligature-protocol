@@ -20,6 +20,8 @@
 
 pub mod ble;
 pub mod discovery;
+pub mod manager;
 pub mod mdns;
 pub mod quic;
 pub mod relay;
+pub mod stream;

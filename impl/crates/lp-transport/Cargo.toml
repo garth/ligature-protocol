@@ -16,6 +16,7 @@ tokio.workspace = true
 tracing.workspace = true
 lp-crypto.workspace = true
 getrandom.workspace = true
+serde.workspace = true
 [dev-dependencies]
 tokio.workspace = true
 

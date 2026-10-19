@@ -739,6 +739,7 @@ dependencies = [
  "mdns-sd",
  "quinn",
  "rustls",
+ "serde",
  "tokio",
  "tracing",
 ]

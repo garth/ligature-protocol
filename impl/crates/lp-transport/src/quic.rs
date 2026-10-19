@@ -150,6 +150,12 @@ impl Connection {
         &self.peer
     }
 
+    /// Whether this side opened the connection.
+    #[must_use]
+    pub fn dialled_by_us(&self) -> bool {
+        self.inner.side().is_client()
+    }
+
     /// The peer's current address.
     #[must_use]
     pub fn remote_address(&self) -> SocketAddr {

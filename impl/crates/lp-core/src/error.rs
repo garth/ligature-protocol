@@ -26,6 +26,10 @@ pub enum Error {
     Store(String),
     /// A connection or handshake failed.
     Transport(String),
+    /// The daemon has no identity yet; `lpctl init` or a pairing gives it one.
+    NotInitialised,
+    /// The daemon already has an identity.
+    AlreadyInitialised,
 }
 
 impl core::fmt::Display for Error {
@@ -40,6 +44,10 @@ impl core::fmt::Display for Error {
             Error::Io(what) => write!(f, "i/o: {what}"),
             Error::Store(what) => write!(f, "store: {what}"),
             Error::Transport(what) => write!(f, "transport: {what}"),
+            Error::NotInitialised => {
+                f.write_str("not initialised: run lpctl init or pair this device")
+            }
+            Error::AlreadyInitialised => f.write_str("already initialised"),
         }
     }
 }

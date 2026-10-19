@@ -1,0 +1,599 @@
+//! The control channel between `lpctl` and the daemon. Milestone 1 decision
+//! LP-30; `schemas/control.schema.json`. Implementation only, not protocol.
+//!
+//! A Unix domain socket at `<runtime-dir>/control.sock`, directory 0700 and
+//! socket 0600, peer uid checked on accept. Frames are the same 4-byte length
+//! plus CBOR map as on QUIC streams. Each request gets exactly one response;
+//! events for a request may precede it; requests on one connection are
+//! answered in order.
+
+use std::path::Path;
+use std::sync::Arc;
+
+use lp_core::frame::{self, MAX_FRAME};
+use lp_core::wire::TypeName;
+use lp_core::{Error, PublicKey};
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+use tokio::io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _};
+use tokio::net::{UnixListener, UnixStream};
+
+use crate::daemon::Daemon;
+
+/// Type names of the control messages.
+pub mod types {
+    /// Prefix of every control type.
+    pub const PREFIX: &str = "org.ligatureprotocol.control.";
+    /// The response type.
+    pub const RESPONSE: &str = "org.ligatureprotocol.control.response";
+    /// Create this person's keys on a fresh daemon.
+    pub const INIT: &str = "org.ligatureprotocol.control.init";
+    /// The daemon's status.
+    pub const STATUS: &str = "org.ligatureprotocol.control.status";
+    /// The trust store's devices.
+    pub const DEVICES: &str = "org.ligatureprotocol.control.devices";
+    /// Live capabilities of connected peers.
+    pub const CAPS: &str = "org.ligatureprotocol.control.caps";
+    /// Revoke a key.
+    pub const REVOKE: &str = "org.ligatureprotocol.control.revoke";
+    /// Start a ceremony as the introducer.
+    pub const PAIR_INTRODUCE: &str = "org.ligatureprotocol.control.pair.introduce";
+    /// Start a ceremony as the newcomer.
+    pub const PAIR_JOIN: &str = "org.ligatureprotocol.control.pair.join";
+    /// The user says the codes match.
+    pub const PAIR_CONFIRM: &str = "org.ligatureprotocol.control.pair.confirm";
+    /// The user stops the ceremony.
+    pub const PAIR_ABORT: &str = "org.ligatureprotocol.control.pair.abort";
+    /// Event: the offer to render as a QR code.
+    pub const PAIR_OFFER: &str = "org.ligatureprotocol.control.pair.offer";
+    /// Event: the six-digit code.
+    pub const PAIR_CODE: &str = "org.ligatureprotocol.control.pair.code";
+}
+
+/// A request from `lpctl`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Request {
+    /// The request type.
+    #[serde(rename = "type")]
+    pub request_type: TypeName,
+    /// Chosen by the client, unique on the connection.
+    pub id: u64,
+    /// `revoke`: the key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<PublicKey>,
+    /// `pair.introduce`: the scanned offer text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offer: Option<String>,
+    /// `pair.introduce`: whether the newcomer becomes an introducer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub introducer: Option<bool>,
+    /// `pair.confirm`/`pair.abort`: the open pairing request's id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pairing: Option<u64>,
+    /// `init`: the person's display name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// `init`: this device's display name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device_name: Option<String>,
+}
+
+impl Request {
+    /// A request of `t` with id `id` and no fields.
+    #[must_use]
+    pub fn new(t: &str, id: u64) -> Self {
+        Self {
+            request_type: TypeName::new(t),
+            id,
+            ..Self::default()
+        }
+    }
+}
+
+/// Why a request failed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ErrorBody {
+    /// One of the schema's codes.
+    pub code: String,
+    /// For a person.
+    pub message: String,
+}
+
+impl ErrorBody {
+    /// Maps a daemon error to a code and message.
+    #[must_use]
+    pub fn from_error(e: &Error) -> Self {
+        let code = match e {
+            Error::NotInitialised => "not-initialised",
+            Error::AlreadyInitialised => "already-initialised",
+            Error::Decode(_) | Error::InvalidKey(_) => "bad-request",
+            Error::InvalidSignature(_) | Error::Chain(_) => "mismatch",
+            _ => "internal",
+        };
+        Self {
+            code: code.to_owned(),
+            message: e.to_string(),
+        }
+    }
+
+    fn new(code: &str, message: impl Into<String>) -> Self {
+        Self {
+            code: code.to_owned(),
+            message: message.into(),
+        }
+    }
+}
+
+/// The one response to a request.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Response {
+    /// Always [`types::RESPONSE`].
+    #[serde(rename = "type")]
+    pub message_type: TypeName,
+    /// The request's id.
+    pub id: u64,
+    /// The result on success.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ok: Option<ciborium::Value>,
+    /// The failure.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<ErrorBody>,
+}
+
+impl Response {
+    /// A success carrying `value`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Decode`] if `value` cannot be represented.
+    pub fn ok<T: Serialize>(id: u64, value: &T) -> Result<Self, Error> {
+        let ok = ciborium::Value::serialized(value).map_err(|e| Error::Decode(e.to_string()))?;
+        Ok(Self {
+            message_type: TypeName::new(types::RESPONSE),
+            id,
+            ok: Some(ok),
+            error: None,
+        })
+    }
+
+    /// A failure.
+    #[must_use]
+    pub fn error(id: u64, body: ErrorBody) -> Self {
+        Self {
+            message_type: TypeName::new(types::RESPONSE),
+            id,
+            ok: None,
+            error: Some(body),
+        }
+    }
+
+    /// Decodes the `ok` value as `T`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Decode`] if there is no `ok` or it is not a `T`.
+    pub fn into_ok<T: DeserializeOwned>(self) -> Result<T, Error> {
+        match (self.ok, self.error) {
+            (Some(v), _) => v.deserialized().map_err(|e| Error::Decode(e.to_string())),
+            (None, Some(e)) => Err(Error::Decode(format!("{}: {}", e.code, e.message))),
+            (None, None) => Err(Error::Decode("response without ok or error".to_owned())),
+        }
+    }
+}
+
+/// An event the daemon sends before a request's response.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Event {
+    /// [`types::PAIR_OFFER`] or [`types::PAIR_CODE`].
+    #[serde(rename = "type")]
+    pub event_type: TypeName,
+    /// The request's id.
+    pub id: u64,
+    /// `pair.offer`: the text to render as a QR code.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offer: Option<String>,
+    /// `pair.code`: the six digits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+}
+
+/// Writes one frame to an async writer.
+///
+/// # Errors
+///
+/// Returns [`Error::Decode`] for an unencodable message and [`Error::Io`] on
+/// the socket.
+pub async fn write_frame<W: AsyncWrite + Unpin, T: Serialize>(
+    w: &mut W,
+    message: &T,
+) -> Result<(), Error> {
+    let bytes = frame::encode(message, MAX_FRAME)?;
+    w.write_all(&bytes)
+        .await
+        .map_err(|e| Error::Io(format!("control write: {e}")))
+}
+
+/// Reads one frame body from an async reader; `None` at a clean end.
+///
+/// # Errors
+///
+/// Returns [`Error::Decode`] for an oversize frame and [`Error::Io`] on the
+/// socket.
+pub async fn read_frame<R: AsyncRead + Unpin>(r: &mut R) -> Result<Option<Vec<u8>>, Error> {
+    let mut prefix = [0u8; 4];
+    match r.read_exact(&mut prefix).await {
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+        Err(e) => return Err(Error::Io(format!("control read: {e}"))),
+    }
+    let len = frame::body_len(prefix, MAX_FRAME)?;
+    let mut body = vec![0u8; len];
+    r.read_exact(&mut body)
+        .await
+        .map_err(|e| Error::Io(format!("control read: {e}")))?;
+    Ok(Some(body))
+}
+
+/// One device as `devices` lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceEntry {
+    /// The device key.
+    pub key: PublicKey,
+    /// `binding` or `principal`.
+    pub role: String,
+    /// For a binding: whether it holds the self-signing key.
+    pub introducer: bool,
+    /// From its device record, if known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    /// From its device record, if known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>,
+    /// Whether a revocation names it.
+    pub revoked: bool,
+    /// Whether it is connected right now.
+    pub connected: bool,
+    /// Whether it is this device.
+    pub this_device: bool,
+}
+
+/// The `devices` result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Devices {
+    /// Every device the person's facts name, newest role first.
+    pub devices: Vec<DeviceEntry>,
+}
+
+/// The daemon's devices, from its own verified role facts.
+///
+/// # Errors
+///
+/// Returns [`Error::NotInitialised`] or a store error.
+pub fn devices(daemon: &Daemon) -> Result<Devices, Error> {
+    use lp_core::facts::{DEVICE_TYPE, ROLE_TYPE, Role};
+    use lp_identity::facts;
+    let owner = daemon.person().ok_or(Error::NotInitialised)?;
+    let store = daemon.store();
+    let mut me = None;
+    for stored in store.about(&owner)? {
+        if stored.envelope.fact_type.as_str() == lp_core::facts::PERSON_TYPE {
+            if let Ok(p) = facts::verify_person(&stored.envelope) {
+                if me
+                    .as_ref()
+                    .is_none_or(|m: &lp_core::facts::PersonFact| p.version > m.version)
+                {
+                    me = Some(p);
+                }
+            }
+        }
+    }
+    let me = me.ok_or_else(|| Error::Chain("my person fact is missing".to_owned()))?;
+    let connected = daemon.manager().peers();
+    let mut out = Vec::new();
+    for stored in store.of_type(ROLE_TYPE)? {
+        let Ok(role) = facts::verify_role(&stored.envelope, &me) else {
+            continue;
+        };
+        let role_name = match role.role {
+            Role::Binding => "binding",
+            Role::Principal => "principal",
+            Role::Person => continue,
+        };
+        if out.iter().any(|d: &DeviceEntry| d.key == role.subject) {
+            continue;
+        }
+        let record = store
+            .about(&role.subject)?
+            .into_iter()
+            .filter(|s| s.envelope.fact_type.as_str() == DEVICE_TYPE)
+            .filter_map(|s| facts::verify_device(&s.envelope).ok())
+            .max_by_key(|d| d.created_at);
+        out.push(DeviceEntry {
+            key: role.subject,
+            role: role_name.to_owned(),
+            introducer: role.introducer,
+            display_name: record.as_ref().map(|d| d.display_name.clone()),
+            platform: record.as_ref().map(|d| d.platform.clone()),
+            revoked: store.is_revoked(&role.subject)?,
+            connected: connected.contains(&role.subject),
+            this_device: role.subject == *daemon.binding().public()
+                || role.subject == *daemon.principal().public(),
+        });
+    }
+    out.reverse();
+    Ok(Devices { devices: out })
+}
+
+/// Revokes `key` with this device's self-signing key and drops its connection.
+///
+/// # Errors
+///
+/// Returns [`Error::NotInitialised`], [`Error::Chain`] if this device is not
+/// an introducer, or a store error.
+pub fn revoke(daemon: &Daemon, key: &PublicKey) -> Result<(), Error> {
+    let owner = daemon.person().ok_or(Error::NotInitialised)?;
+    let self_signing = daemon.self_signing()?.ok_or_else(|| {
+        Error::Chain("this device is not an introducer and cannot revoke".to_owned())
+    })?;
+    let fact = lp_core::facts::RevocationFact {
+        subject: *key,
+        kind: lp_core::facts::RevocationKind::Revocation,
+        person: owner,
+        revoked_at: lp_core::wire::Timestamp::now(),
+    };
+    let env = lp_identity::facts::sign(&self_signing, &fact)?;
+    daemon.store().insert(&env)?;
+    daemon.manager().drop_peer(key);
+    tracing::info!(%key, "revoked");
+    Ok(())
+}
+
+/// Serves the control socket at `path` until the listener fails. Stale sockets
+/// are removed; the directory is made 0700 and the socket 0600.
+///
+/// # Errors
+///
+/// Returns [`Error::Io`] if the socket cannot be bound.
+pub fn serve(daemon: Arc<Daemon>, path: &Path) -> Result<tokio::task::JoinHandle<()>, Error> {
+    let listener = bind(path)?;
+    Ok(tokio::spawn(async move {
+        loop {
+            let (stream, _) = match listener.accept().await {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::error!(%e, "control socket accept failed");
+                    break;
+                }
+            };
+            if !same_user(&stream) {
+                tracing::warn!("control connection from another user refused");
+                continue;
+            }
+            let daemon = daemon.clone();
+            tokio::spawn(async move {
+                if let Err(e) = connection(daemon, stream).await {
+                    tracing::debug!(%e, "control connection ended");
+                }
+            });
+        }
+    }))
+}
+
+fn bind(path: &Path) -> Result<UnixListener, Error> {
+    let io = |e: std::io::Error| Error::Io(format!("{}: {e}", path.display()));
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(io)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700)).map_err(io)?;
+        }
+    }
+    if path.exists() {
+        // Stale if nobody answers.
+        if std::os::unix::net::UnixStream::connect(path).is_ok() {
+            return Err(Error::Io(format!(
+                "{}: another daemon is listening",
+                path.display()
+            )));
+        }
+        std::fs::remove_file(path).map_err(io)?;
+    }
+    let listener = UnixListener::bind(path).map_err(io)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).map_err(io)?;
+    }
+    tracing::info!(socket = %path.display(), "control socket ready");
+    Ok(listener)
+}
+
+fn same_user(stream: &UnixStream) -> bool {
+    match stream.peer_cred() {
+        Ok(cred) => {
+            #[cfg(unix)]
+            {
+                // SAFETY-free: getuid has no preconditions and cannot fail.
+                let me = unsafe_free_uid();
+                cred.uid() == me
+            }
+        }
+        Err(_) => false,
+    }
+}
+
+#[cfg(unix)]
+fn unsafe_free_uid() -> u32 {
+    // std exposes no getuid; the metadata of a file we own does. The data
+    // directory is created by this process, so its owner is us.
+    use std::os::unix::fs::MetadataExt as _;
+    std::fs::metadata("/proc/self")
+        .or_else(|_| std::env::current_exe().and_then(std::fs::metadata))
+        .map(|m| m.uid())
+        .unwrap_or(u32::MAX)
+}
+
+/// Per-connection state: open pairings by request id (C4).
+#[derive(Default)]
+pub struct ConnectionState {
+    /// Pairing sessions keyed by the request id that opened them.
+    pub pairings: std::collections::HashMap<u64, crate::ceremony::PairingHandle>,
+}
+
+async fn connection(daemon: Arc<Daemon>, mut stream: UnixStream) -> Result<(), Error> {
+    let mut state = ConnectionState::default();
+    while let Some(body) = read_frame(&mut stream).await? {
+        let request: Request = match frame::decode(&body) {
+            Ok(r) => r,
+            Err(e) => {
+                let id = frame::decode::<serde_json_like::IdOnly>(&body)
+                    .map(|i| i.id)
+                    .unwrap_or(0);
+                write_frame(
+                    &mut stream,
+                    &Response::error(id, ErrorBody::new("bad-request", e.to_string())),
+                )
+                .await?;
+                continue;
+            }
+        };
+        let (events, response) = handle(&daemon, &mut state, request).await;
+        for event in events {
+            write_frame(&mut stream, &event).await?;
+        }
+        write_frame(&mut stream, &response).await?;
+    }
+    Ok(())
+}
+
+mod serde_json_like {
+    #[derive(serde::Deserialize)]
+    pub struct IdOnly {
+        #[serde(default)]
+        pub id: u64,
+    }
+}
+
+/// Handles one request. Pairing requests are handled by [`crate::ceremony`].
+pub async fn handle(
+    daemon: &Arc<Daemon>,
+    state: &mut ConnectionState,
+    request: Request,
+) -> (Vec<Event>, Response) {
+    let id = request.id;
+    let result: Result<Response, Error> = match request.request_type.as_str() {
+        types::STATUS => Response::ok(id, &daemon.status()),
+        types::INIT => match request.name.as_deref() {
+            Some(name) if !name.trim().is_empty() => daemon
+                .init(name.trim(), request.device_name.as_deref())
+                .and_then(|person| Response::ok(id, &InitResult { person })),
+            _ => Ok(Response::error(
+                id,
+                ErrorBody::new("bad-request", "init needs a name"),
+            )),
+        },
+        types::DEVICES => devices(daemon).and_then(|d| Response::ok(id, &d)),
+        types::CAPS => Response::ok(id, &Caps { peers: Vec::new() }),
+        types::REVOKE => match request.key {
+            Some(key) => revoke(daemon, &key).and_then(|()| Response::ok(id, &Empty {})),
+            None => Ok(Response::error(
+                id,
+                ErrorBody::new("bad-request", "revoke needs a key"),
+            )),
+        },
+        t if t.starts_with(types::PREFIX) && t.contains(".pair.") => {
+            return crate::ceremony::handle_control(daemon, state, request).await;
+        }
+        other => Ok(Response::error(
+            id,
+            ErrorBody::new("unknown-type", format!("unknown request type {other}")),
+        )),
+    };
+    let response = match result {
+        Ok(r) => r,
+        Err(e) => Response::error(id, ErrorBody::from_error(&e)),
+    };
+    (Vec::new(), response)
+}
+
+/// The `init` result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InitResult {
+    /// The new person's master key.
+    pub person: PublicKey,
+}
+
+/// The `caps` result: filled in by D3.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Caps {
+    /// Per connected peer, its live manifest.
+    pub peers: Vec<ciborium::Value>,
+}
+
+/// An empty result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Empty {}
+
+/// A client of the control socket, for `lpctl` and tests.
+#[derive(Debug)]
+pub struct Client {
+    stream: UnixStream,
+    next_id: u64,
+}
+
+impl Client {
+    /// Connects to the socket at `path`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Io`] if nobody is listening.
+    pub async fn connect(path: &Path) -> Result<Self, Error> {
+        let stream = UnixStream::connect(path)
+            .await
+            .map_err(|e| Error::Io(format!("{}: {e} (is ligatured running?)", path.display())))?;
+        Ok(Self { stream, next_id: 1 })
+    }
+
+    /// Sends a request and returns its response, passing events to `on_event`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Io`] or [`Error::Decode`] on the channel; a daemon
+    /// error is inside the response.
+    pub async fn call(
+        &mut self,
+        mut request: Request,
+        mut on_event: impl FnMut(Event),
+    ) -> Result<Response, Error> {
+        request.id = self.next_id;
+        self.next_id += 1;
+        write_frame(&mut self.stream, &request).await?;
+        loop {
+            let body = read_frame(&mut self.stream)
+                .await?
+                .ok_or_else(|| Error::Io("daemon closed the control connection".to_owned()))?;
+            let t = frame::peek_type(&body)?;
+            if t.as_str() == types::RESPONSE {
+                let response: Response = frame::decode(&body)?;
+                if response.id == request.id {
+                    return Ok(response);
+                }
+                continue;
+            }
+            let event: Event = frame::decode(&body)?;
+            on_event(event);
+        }
+    }
+
+    /// Sends a request with no interest in events and decodes its `ok`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the daemon's error as [`Error::Decode`] with its code.
+    pub async fn request<T: DeserializeOwned>(&mut self, request: Request) -> Result<T, Error> {
+        self.call(request, |_| {}).await?.into_ok()
+    }
+}

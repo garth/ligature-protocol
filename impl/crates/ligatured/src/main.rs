@@ -1,17 +1,15 @@
 //! `ligatured`: the Ligature Protocol user daemon.
 //!
-//! Runs as a user service for one account's binding (a system-level instance owns
-//! the device principal), holds that account's keys and trust store, performs
-//! discovery, and exposes a control socket for `lpctl` and desktop integrations.
-//! See `systemd/ligatured.service` next to this crate.
+//! Runs as a user service for one account's binding (a system-level instance
+//! will own the device principal later), holds that account's keys and trust
+//! store, performs discovery, and exposes a control socket for `lpctl` and
+//! desktop integrations. See `systemd/ligatured.service` next to this crate.
 //!
 //! There is no configuration file. The daemon takes its data and runtime
 //! directories from the command line or the environment (`LIGATURE_DATA_DIR`,
 //! `LIGATURE_RUNTIME_DIR`), defaulting to `data/` under the working directory for
 //! milestone 1. Logging goes to stderr through `tracing`; systemd and launchd
 //! capture it. The level is set with `RUST_LOG` and defaults to `info`.
-//!
-//! **Status:** scaffold. Starts, logs its directories and exits.
 
 use std::path::PathBuf;
 
@@ -29,9 +27,13 @@ struct Options {
     /// Directory holding the control socket (default: the data directory).
     #[arg(long, env = RUNTIME_DIR_ENV)]
     runtime_dir: Option<PathBuf>,
+    /// This device's display name on first start (default: the host name).
+    #[arg(long)]
+    device_name: Option<String>,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let options = Options::parse();
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -44,6 +46,10 @@ fn main() {
         version = env!("CARGO_PKG_VERSION"),
         data_dir = %locations.data_dir.display(),
         control_socket = %locations.control_socket().display(),
-        "ligatured starting (scaffold; no protocol logic yet)"
+        "ligatured starting"
     );
+    if let Err(e) = ligatured::run::run(locations, options.device_name.as_deref()).await {
+        tracing::error!(%e, "ligatured stopped");
+        std::process::exit(1);
+    }
 }

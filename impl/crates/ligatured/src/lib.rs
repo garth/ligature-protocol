@@ -2,4 +2,6 @@
 //! exercise. See the crate's `main.rs` for the binary.
 
 pub mod ceremony;
+pub mod control;
 pub mod daemon;
+pub mod run;

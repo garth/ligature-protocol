@@ -183,7 +183,7 @@ impl<'de> Deserialize<'de> for Timestamp {
 }
 
 /// A reverse-DNS type name naming a schema.
-#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Clone, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct TypeName(pub String);
 

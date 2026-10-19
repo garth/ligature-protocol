@@ -179,3 +179,30 @@ async fn introducer_inner(
     stream.finish();
     Ok(introduced)
 }
+
+/// An open ceremony on a control connection (C4).
+#[derive(Debug)]
+pub struct PairingHandle {
+    /// Where the user's answer goes.
+    pub confirm: Option<oneshot::Sender<bool>>,
+}
+
+/// Handles the `pair.*` control requests. Filled in by C4; until then every
+/// pairing request is refused.
+pub async fn handle_control(
+    _daemon: &std::sync::Arc<crate::daemon::Daemon>,
+    _state: &mut crate::control::ConnectionState,
+    request: crate::control::Request,
+) -> (Vec<crate::control::Event>, crate::control::Response) {
+    use crate::control::{ErrorBody, Response};
+    (
+        Vec::new(),
+        Response::error(
+            request.id,
+            ErrorBody {
+                code: "unknown-type".to_owned(),
+                message: "pairing over the control channel is not wired yet".to_owned(),
+            },
+        ),
+    )
+}

@@ -11,5 +11,6 @@
 
 pub mod cross_signing;
 pub mod facts;
+pub mod key_file;
 pub mod pairing;
 pub mod trust_store;

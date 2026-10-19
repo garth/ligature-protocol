@@ -13,10 +13,12 @@ lp-crypto.workspace = true
 serde.workspace = true
 ciborium.workspace = true
 rusqlite.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 lp-vectors.workspace = true
 serde_json.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true

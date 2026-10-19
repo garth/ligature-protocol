@@ -41,6 +41,8 @@ pub async fn run(locations: Locations, device_name: Option<&str>) -> Result<(), 
                 Event::Connected(conn) => match for_events.recognise(conn.peer()) {
                     Ok(r) if r.is_trusted() => {
                         tracing::info!(peer = %conn.peer(), ?r, "peer connected");
+                        let d = for_events.clone();
+                        tokio::spawn(async move { d.on_trusted(&conn).await });
                     }
                     Ok(r) => {
                         if for_events.accepts_strangers() {

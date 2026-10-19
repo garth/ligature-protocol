@@ -4,4 +4,5 @@
 pub mod ceremony;
 pub mod control;
 pub mod daemon;
+pub mod gossip;
 pub mod run;

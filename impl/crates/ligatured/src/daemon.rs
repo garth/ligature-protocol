@@ -157,6 +157,7 @@ impl Daemon {
                 })
             }),
         );
+        crate::gossip::register(&manager, store.clone());
         let daemon = Arc::new(Self {
             locations,
             keys: Mutex::new(keys),
@@ -494,6 +495,16 @@ impl Daemon {
         }
         best.map(|(_, e)| e)
             .ok_or_else(|| Error::Chain("my person fact is missing".to_owned()))
+    }
+
+    /// A trusted peer connected: if we dialled it, open the gossip stream and
+    /// exchange facts. The acceptor's side runs in the registered handler.
+    pub async fn on_trusted(&self, conn: &Connection) {
+        if conn.dialled_by_us() {
+            if let Err(e) = crate::gossip::run_dialer(&self.store, conn).await {
+                tracing::warn!(peer = %conn.peer(), %e, "gossip failed");
+            }
+        }
     }
 
     /// Stops advertising and closes every connection.

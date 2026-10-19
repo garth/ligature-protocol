@@ -111,9 +111,9 @@ flowchart LR
 - B2. Recognition check on connect: the peer key is a binding of mine (chain verifies
   against my master key) or the connection proceeds no further than the pairing offer.
 - B3. mDNS/DNS-SD advertise and browse (`_ligature._udp`) with one Rust implementation on
-  both platforms (`mdns-sd`, LP-28), with a random per-boot identifier in the TXT record as the placeholder
-  for the per-epoch identifier of chapter 04 section 4.1. Confirm it coexists with Bonjour
-  on macOS.
+  both platforms (`mdns-sd`, LP-28): TXT keys `v` and `id`, instance and host name
+  `lp-<id>`, nothing identifying ([ADR 0037](../adr/0037-local-discovery-record.md)).
+  Confirm it coexists with Bonjour on macOS.
 - B4. Connection manager: one connection per peer, reconnect on loss, ALPN `ligature/1`,
   the frame codec and the stream header, stream open per purpose
   ([ADR 0036](../adr/0036-stream-framing-and-message-typing.md)).

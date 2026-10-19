@@ -234,3 +234,13 @@ withdraws the capability (live manifests, ADR 0016) and waits again. A stale soc
 refuses the connection is skipped. The daemon is never started by the compositor and the
 unit stays `WantedBy=default.target`, so gossip and revocations work with nobody logged in
 graphically. Chapter 08 section 2 states the behaviour.
+
+## LP-35: mDNS record contents and the per-boot identifier
+
+Became [ADR 0037](../adr/0037-local-discovery-record.md) because implementations must agree
+on the service type and record: `_ligature._udp`, TXT keys `v` and `id` only, `lp-<id>` as
+instance and host name, nothing identifying, `id` a hint and never a credential. The
+per-epoch recognisable identifier stays an open question in chapter 04. Implementation
+notes: `id` is 8 bytes from `getrandom` at daemon start; the browser keeps a map from `id`
+to last outcome with a back-off after a failed authentication and a cap on concurrent dials;
+each daemon in G2 has its own `id` and port, so two on one machine are distinct instances.

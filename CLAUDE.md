@@ -42,7 +42,9 @@ The authoritative record is `docs/adr/`. Summary, in layer order:
    ALPN `ligature/1` is the protocol version; every stream is bidirectional and starts with
    a header naming its purpose (`gossip`, `manifest` or a capability type); a message is a
    4-byte big-endian length plus one CBOR map with a `type`, 1 MiB maximum by default
-   (ADR 0036). The session is the end-to-end layer (decision 3). mDNS/DNS-SD + BLE locally. Remotely,
+   (ADR 0036). The session is the end-to-end layer (decision 3). mDNS/DNS-SD + BLE locally:
+   service `_ligature._udp`, TXT keys `v` and `id` only, `lp-<id>` as instance and host
+   name, nothing identifying, `id` a hint never a credential (ADR 0037). Remotely,
    three replaceable untrusted helper roles: discovery (signed records in a DHT via pkarr,
    gossiped relays), hole-punch coordination, relay (default: the user's home hub). Rule:
    any helper may be operated by anyone, is listed in the user's own records, and is never

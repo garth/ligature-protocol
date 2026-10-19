@@ -62,9 +62,16 @@ terminates nothing, so it sees only ciphertext whether the path is direct or rel
 
 ### 4.1 mDNS/DNS-SD
 
-Each device advertises a DNS-SD service instance. The TXT record carries a per-epoch
-identifier that lets devices in the same set recognise each other without revealing the
-user's identity to bystanders. Open question: the exact derivation of that identifier.
+Each device advertises a DNS-SD service instance of type `_ligature._udp`, the QUIC port in
+the SRV record ([ADR 0037](../adr/0037-local-discovery-record.md)). The record carries
+nothing identifying: no key, no display name, no host name, nothing stable across restarts.
+Its TXT record has two keys, `v` (the protocol version, the same number as the ALPN token)
+and `id` (16 hex characters drawn at random when the daemon starts), and `lp-<id>` is both
+the instance name and the SRV target host. `id` is a hint for telling instances apart and
+backing off after a failed authentication, never a credential: a device dials every
+instance whose version it supports and the raw-public-key handshake decides. Open question:
+a per-epoch derivation of `id` that lets devices in one set recognise each other before
+dialling, without revealing anything to bystanders.
 
 ### 4.2 BLE
 

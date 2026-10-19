@@ -107,7 +107,9 @@ The reference implementation is Rust and is also the production implementation
 - `docs/milestones/`: one plan per milestone with scope, non-goals, decisions to pin, exit
   criteria and a task breakdown; `01-clipboard-poc.md` is the current one, and
   `01-implementation-decisions.md` records non-protocol implementation choices (store is
-  SQLite via rusqlite bundled; keys in a separate 0600 file).
+  SQLite via rusqlite bundled; keys in a separate 0600 file; state under `data/` in the
+  project root during milestone 1, gitignored; no configuration file; `lpctl init --name`
+  creates the first identity).
 - `schemas/*.schema.json`: JSON Schema 2020-12 drafts (person, device, capability, grant,
   group, role, revocation, envelope, message; `control` is implementation-only).
   Spec chapters link to these by relative path.

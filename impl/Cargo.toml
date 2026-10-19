@@ -43,7 +43,7 @@ mdns-sd = "0.21"
 
 # Platform integration and tooling (LP-29). Clipboard crates are target-gated in
 # ligatured; library crates never depend on them.
-clap = { version = "4.6", features = ["derive"] }
+clap = { version = "4.6", features = ["derive", "env"] }
 qrcode = { version = "0.14", default-features = false }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

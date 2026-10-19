@@ -36,10 +36,10 @@ daemon starts without it.
 dedicated thread (or uses `spawn_blocking`) behind the `TrustStore` type, so the rest of
 the code never sees SQLite.
 
-**Locations.** `$XDG_DATA_HOME/ligature/` (default `~/.local/share/ligature/`) on Linux and
-`~/Library/Application Support/ligature/` on macOS, resolved by one function and overridable
-with `--data-dir` (LP-32). The control socket lives in the runtime directory, not here
-(LP-30).
+**Locations.** During milestone 1 the data directory is `data/` under the project root,
+ignored by git (LP-32). `$XDG_DATA_HOME/ligature/` (default `~/.local/share/ligature/`) on
+Linux and `~/Library/Application Support/ligature/` on macOS become the defaults afterwards.
+One function (`lp-core::paths::Locations`) resolves it, overridable with `--data-dir`.
 
 ## LP-26: the key is the identifier
 
@@ -129,11 +129,12 @@ never depend on a clipboard, terminal or UI crate.
 Not protocol: the channel exists between two processes on one machine and nothing on it
 crosses to another device.
 
-**Socket.** `runtime_dir()/control.sock`, where the runtime directory is
-`$XDG_RUNTIME_DIR/ligature/` on Linux and `$TMPDIR/ligature/` on macOS (the per-user
-temporary directory launchd agents receive, short enough for the 104-byte socket path
-limit), falling back to the data directory if the variable is unset. `--runtime-dir`
-overrides it (G2 runs two daemons). Directory 0700, socket 0600. On start the daemon
+**Socket.** `<runtime-dir>/control.sock`. During milestone 1 the runtime directory is the
+data directory, so the socket is `data/control.sock` under the project root (LP-32).
+Afterwards it becomes `$XDG_RUNTIME_DIR/ligature/` on Linux and `$TMPDIR/ligature/` on
+macOS (the per-user temporary directory launchd agents receive, short enough for the
+104-byte socket path limit), falling back to the data directory if the variable is unset.
+`--runtime-dir` overrides it (G2 runs two daemons). Directory 0700, socket 0600. On start the daemon
 removes a stale socket file once connecting to it fails. On accept it reads the peer
 credentials and drops a connection whose uid is not its own.
 
@@ -171,3 +172,29 @@ agree on it: length-prefixed typed CBOR frames, a stream header as the first fra
 messages carrying envelopes, ALPN `ligature/1` as the only version. Implementation note: the
 `Frame` codec and the message types live in `lp-core`; `lp-transport` dispatches streams on
 the header and knows nothing about what the messages mean.
+
+## LP-32: configuration, first run and locations
+
+**No configuration file.** The daemon has three inputs: the data directory, the runtime
+directory and the log level. Everything else is a fact in the store or an argument to an
+`lpctl` command.
+
+**Directories.** `--data-dir` and `--runtime-dir` on both binaries, with `LIGATURE_DATA_DIR`
+and `LIGATURE_RUNTIME_DIR` as their defaults, so a script sets two variables once and every
+process it starts agrees. For milestone 1 the data directory defaults to `data/` relative
+to the working directory, which is the project root when run from a checkout, and the
+runtime directory defaults to the data directory; `data/` is ignored by git. G2 runs its two
+daemons in `data/a` and `data/b`. The platform locations named under LP-25 and LP-30 take
+over after the milestone, by changing the defaults in `lp-core::paths` and nothing else.
+
+**First run.** A daemon starts with no identity and serves only its control socket:
+`status` reports `initialised: false`, nothing is advertised on mDNS, and the only other
+request it accepts is a pairing started by `lpctl pair`. `lpctl init --name "Garth"` creates
+the master, self-signing and user-signing keys and this device's binding and principal keys
+in one step; the person's name is required because it has no sensible default (ADR 0032),
+the device's name defaults to the host name (ADR 0034) and `--device-name` overrides it.
+`lpctl pair` as a newcomer creates device keys only and receives the person through the
+ceremony, so a device never becomes a person by accident. Renaming is a later request.
+
+**Logs.** stderr (LP-29). The systemd user unit needs nothing; the launchd plist (F4) sets
+`StandardErrorPath` to `~/Library/Logs/ligature/ligatured.log`. No rotation in milestone 1.

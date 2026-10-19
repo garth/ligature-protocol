@@ -95,9 +95,9 @@ flowchart LR
   `binding` and `principal`; verify the chain to a master key. Unit tests become the first
   conformance vectors.
 - A4. Local store on disk: a SQLite database of signed facts plus a separate 0600 key file,
-  under `$XDG_DATA_HOME/ligature/` on Linux and `~/Library/Application Support/ligature/`
-  on macOS, behind one path-resolution function (see
-  [implementation decisions](01-implementation-decisions.md), LP-25). Load, save,
+  under `data/` in the project root for this milestone, behind one path-resolution
+  function with `--data-dir` and `LIGATURE_DATA_DIR` overrides (see
+  [implementation decisions](01-implementation-decisions.md), LP-25 and LP-32). Load, save,
   round-trip and quarantine tests.
 - A5. Revocation fact: create, verify, apply to the store (`revoked` flag retained).
 
@@ -121,9 +121,10 @@ flowchart LR
 
 ### Phase C: the ceremony
 
-- C1. Newcomer side (`lp-identity::pairing::Newcomer`): generate keys, show fingerprint and
-  QR in the terminal, accept an incoming pairing connection, derive the short code from the
-  TLS exporter, display it.
+- C1. Newcomer side (`lp-identity::pairing::Newcomer`): generate device keys only (the person
+  arrives through the ceremony; `lpctl init` is for the first device, LP-32), show fingerprint and
+  QR in the terminal, accept an incoming pairing connection, derive the short code from the TLS
+  exporter, display it.
 - C2. Introducer side (`Introducer`): scan or type the fingerprint, connect, derive the same
   code, ask the user to confirm it matches, sign the newcomer's binding (and principal) with
   the chosen roles, send signatures, the self-signing key if the newcomer is to be an
@@ -163,14 +164,17 @@ flowchart LR
 
 - F1. `ligatured` holds both the binding and, for this milestone, the principal key (a
   personal device's principal and binding share a process; the separate system-level
-  daemon is deferred). One binary, platform differences behind traits.
+  daemon is deferred). One binary, platform differences behind traits. No configuration
+  file; it starts without an identity until `lpctl init` or a pairing gives it one
+  (LP-32).
 - F2. Control channel: a Unix domain socket in the runtime directory carrying
   length-prefixed CBOR messages (`schemas/control.schema.json`,
   [decisions](01-implementation-decisions.md), LP-30), used by `lpctl` for status, pair,
   devices, revoke and caps. Identical on both platforms.
 - F3. Linux service: systemd user unit (`crates/ligatured/systemd/`).
-- F4. macOS service: launchd agent plist (`crates/ligatured/launchd/`), run from a local
-  build without signing or notarisation.
+- F4. macOS service: launchd agent plist (`crates/ligatured/launchd/`), stderr to
+  `~/Library/Logs/ligature/ligatured.log`, run from a local build without signing or
+  notarisation.
 - F5. Persistence across restart: keys, store, and reconnection without a new ceremony, on
   both platforms.
 
@@ -178,8 +182,8 @@ flowchart LR
 
 - G1. End-to-end script for two machines on one LAN: pair, copy both ways, revoke, restart.
   Run by hand between a Linux machine and a Mac and recorded in the ticket.
-- G2. Loopback end-to-end test with two daemons and separate data directories on one
-  machine, runs in CI on Linux and macOS.
+- G2. Loopback end-to-end test with two daemons in `data/a` and `data/b` on one machine,
+  runs in CI on Linux and macOS.
 - G3. Commit the test fixtures as the first conformance vectors under `vectors/`.
 - G4. Update chapters 02, 03, 04, 05, 06 and 08 with what was actually built, still marked
   draft; record any deviation as an ADR.

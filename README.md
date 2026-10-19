@@ -127,6 +127,9 @@ cargo build
 cargo test
 ```
 
+During milestone 1 the daemon keeps its state in `data/` under the project root (ignored by
+git); `--data-dir` or `LIGATURE_DATA_DIR` moves it.
+
 ## Documentation
 
 - [Specification overview](docs/spec/00-overview.md)

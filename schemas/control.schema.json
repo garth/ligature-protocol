@@ -17,6 +17,7 @@
     "requestType": {
       "type": "string",
       "enum": [
+        "org.ligatureprotocol.control.init",
         "org.ligatureprotocol.control.status",
         "org.ligatureprotocol.control.devices",
         "org.ligatureprotocol.control.caps",
@@ -62,6 +63,16 @@
         "pairing": {
           "$ref": "#/$defs/id",
           "description": "pair.confirm and pair.abort: the id of the open pair.introduce or pair.join request on this connection."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "init: the person's self-asserted display name (ADR 0032). Required by init."
+        },
+        "deviceName": {
+          "type": "string",
+          "minLength": 1,
+          "description": "init: this device's display name; defaults to the host name (ADR 0034)."
         }
       }
     },
@@ -79,7 +90,7 @@
           "$ref": "#/$defs/id"
         },
         "ok": {
-          "description": "The result when the request succeeded. Its shape depends on the request: status, devices and caps return objects described by the daemon's documentation; revoke and the pairing requests return an empty map.",
+          "description": "The result when the request succeeded. Its shape depends on the request: status returns at least initialised (boolean), version (string) and, once initialised, person (public key), name and deviceName; devices and caps return objects described by the daemon's documentation; init, revoke and the pairing requests return an empty map.",
           "type": "object"
         },
         "error": {
@@ -95,6 +106,8 @@
                 "unknown-type",
                 "bad-request",
                 "not-found",
+                "not-initialised",
+                "already-initialised",
                 "aborted",
                 "mismatch",
                 "internal"

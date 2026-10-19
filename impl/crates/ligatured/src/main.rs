@@ -5,29 +5,45 @@
 //! discovery, and exposes a control socket for `lpctl` and desktop integrations.
 //! See `systemd/ligatured.service` next to this crate.
 //!
-//! Logging goes to stderr through `tracing`; systemd and launchd capture it. The
-//! level is set with `RUST_LOG` and defaults to `info`.
+//! There is no configuration file. The daemon takes its data and runtime
+//! directories from the command line or the environment (`LIGATURE_DATA_DIR`,
+//! `LIGATURE_RUNTIME_DIR`), defaulting to `data/` under the working directory for
+//! milestone 1. Logging goes to stderr through `tracing`; systemd and launchd
+//! capture it. The level is set with `RUST_LOG` and defaults to `info`.
 //!
-//! **Status:** scaffold. Starts, logs a line and exits.
+//! **Status:** scaffold. Starts, logs its directories and exits.
+
+use std::path::PathBuf;
 
 use clap::Parser;
+use lp_core::paths::{DATA_DIR_ENV, Locations, RUNTIME_DIR_ENV};
 use tracing_subscriber::EnvFilter;
 
 /// Command-line options of the daemon.
 #[derive(Debug, Parser)]
 #[command(version, about = "Ligature Protocol user daemon")]
-struct Options {}
+struct Options {
+    /// Directory holding the store and the key file (default: data/).
+    #[arg(long, env = DATA_DIR_ENV)]
+    data_dir: Option<PathBuf>,
+    /// Directory holding the control socket (default: the data directory).
+    #[arg(long, env = RUNTIME_DIR_ENV)]
+    runtime_dir: Option<PathBuf>,
+}
 
 fn main() {
-    let _options = Options::parse();
+    let options = Options::parse();
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )
         .with_writer(std::io::stderr)
         .init();
+    let locations = Locations::resolve(options.data_dir.as_deref(), options.runtime_dir.as_deref());
     tracing::info!(
         version = env!("CARGO_PKG_VERSION"),
+        data_dir = %locations.data_dir.display(),
+        control_socket = %locations.control_socket().display(),
         "ligatured starting (scaffold; no protocol logic yet)"
     );
 }

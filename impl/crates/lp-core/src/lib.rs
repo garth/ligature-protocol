@@ -13,6 +13,7 @@ pub mod device;
 pub mod envelope;
 pub mod error;
 pub mod identity;
+pub mod paths;
 
 pub use error::Error;
 

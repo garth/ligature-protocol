@@ -16,6 +16,10 @@ tokio.workspace = true
 clap.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 wl-clipboard-rs.workspace = true

@@ -453,6 +453,203 @@ impl Newcomer {
     }
 }
 
+/// Where the introducer is in the ceremony.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntroducerState {
+    /// Connected; hello not yet answered.
+    Greeting,
+    /// Ready received; codes can be derived and shown.
+    Greeted,
+    /// Both sides confirmed; grant sent, waiting for done.
+    Granted,
+    /// Done.
+    Done,
+    /// Stopped.
+    Aborted,
+}
+
+/// What an introducer ends the ceremony with, for the daemon to persist.
+#[derive(Debug, Clone)]
+pub struct Introduced {
+    /// The newcomer's device records.
+    pub devices: Vec<Envelope>,
+    /// The roles I signed over its keys.
+    pub roles: Vec<Envelope>,
+}
+
+/// The introducer's side.
+#[derive(Debug)]
+pub struct Introducer {
+    keys: PersonKeys,
+    person: Envelope,
+    my_tls_key: PublicKey,
+    offer: Offer,
+    make_introducer: bool,
+    gossip: Vec<Envelope>,
+    devices: Vec<Envelope>,
+    roles: Vec<Envelope>,
+    i_confirmed: bool,
+    peer_confirmed: bool,
+    state: IntroducerState,
+}
+
+impl Introducer {
+    /// Prepares an introducer: my person keys and current person fact, the
+    /// key my pairing connection authenticates with, the scanned offer,
+    /// whether the newcomer becomes an introducer, and the gossip to hand over.
+    #[must_use]
+    pub fn new(
+        keys: PersonKeys,
+        person: Envelope,
+        my_tls_key: PublicKey,
+        offer: Offer,
+        make_introducer: bool,
+        gossip: Vec<Envelope>,
+    ) -> Self {
+        Self {
+            keys,
+            person,
+            my_tls_key,
+            offer,
+            make_introducer,
+            gossip,
+            devices: Vec::new(),
+            roles: Vec::new(),
+            i_confirmed: false,
+            peer_confirmed: false,
+            state: IntroducerState::Greeting,
+        }
+    }
+
+    /// The key the pairing connection must authenticate: the offer's binding
+    /// key. A connection to any other key is not the device that was scanned.
+    #[must_use]
+    pub const fn expected_peer(&self) -> &PublicKey {
+        &self.offer.binding
+    }
+
+    /// Where the ceremony is.
+    #[must_use]
+    pub const fn state(&self) -> IntroducerState {
+        self.state
+    }
+
+    /// The first message: the offer's one-time code.
+    #[must_use]
+    pub fn hello(&self) -> Hello {
+        Hello {
+            message_type: TypeName::new(types::HELLO),
+            code: self.offer.code.clone(),
+        }
+    }
+
+    /// The newcomer answered with its device records: self-signed, over the
+    /// two keys in the offer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Chain`] if a record does not verify or names another key.
+    pub fn on_ready(&mut self, ready: Ready) -> Result<(), Error> {
+        if self.state != IntroducerState::Greeting {
+            return Err(self.abort("ready out of order"));
+        }
+        let mut keys = Vec::new();
+        for env in &ready.devices {
+            let fact = facts::verify_device(env)
+                .map_err(|e| self.abort(&format!("device record: {e}")))?;
+            if fact.key != self.offer.binding && fact.key != self.offer.principal {
+                return Err(self.abort("device record for a key not in the offer"));
+            }
+            keys.push(fact.key);
+        }
+        if !keys.contains(&self.offer.binding) || !keys.contains(&self.offer.principal) {
+            return Err(self.abort("device records do not cover both offered keys"));
+        }
+        self.devices = ready.devices;
+        self.state = IntroducerState::Greeted;
+        Ok(())
+    }
+
+    /// The exporter context for this ceremony.
+    #[must_use]
+    pub fn exporter_context(&self) -> [u8; 32] {
+        exporter_context(&self.offer.binding, &self.my_tls_key)
+    }
+
+    /// The user confirmed the codes match. Returns the message to send.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Chain`] out of order.
+    pub fn confirm(&mut self) -> Result<Confirmed, Error> {
+        if self.state != IntroducerState::Greeted {
+            return Err(self.abort("confirm out of order"));
+        }
+        self.i_confirmed = true;
+        Ok(Confirmed {
+            message_type: TypeName::new(types::CONFIRMED),
+        })
+    }
+
+    /// The newcomer's user confirmed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Chain`] out of order.
+    pub fn on_confirmed(&mut self) -> Result<(), Error> {
+        if self.state != IntroducerState::Greeted {
+            return Err(self.abort("peer confirmed out of order"));
+        }
+        self.peer_confirmed = true;
+        Ok(())
+    }
+
+    /// The grant, available once both sides have confirmed. Signs the roles.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Decode`] if encoding fails.
+    pub fn grant(&mut self, now: Timestamp) -> Result<Option<Grant>, Error> {
+        if self.state != IntroducerState::Greeted || !(self.i_confirmed && self.peer_confirmed) {
+            return Ok(None);
+        }
+        let roles = grant_roles(&self.keys, &self.offer, self.make_introducer, now)?;
+        self.roles = roles.clone();
+        self.state = IntroducerState::Granted;
+        Ok(Some(Grant {
+            message_type: TypeName::new(types::GRANT),
+            person: self.person.clone(),
+            roles,
+            self_signing: self
+                .make_introducer
+                .then(|| Bytes(self.keys.self_signing.seed().to_vec())),
+            gossip: self.gossip.clone(),
+        }))
+    }
+
+    /// The newcomer stored everything.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Chain`] out of order.
+    pub fn on_done(&mut self) -> Result<Introduced, Error> {
+        if self.state != IntroducerState::Granted {
+            return Err(self.abort("done out of order"));
+        }
+        self.state = IntroducerState::Done;
+        Ok(Introduced {
+            devices: self.devices.clone(),
+            roles: self.roles.clone(),
+        })
+    }
+
+    /// Stops the ceremony.
+    pub fn abort(&mut self, reason: &str) -> Error {
+        self.state = IntroducerState::Aborted;
+        Error::Chain(format!("pairing aborted: {reason}"))
+    }
+}
+
 /// Helper for an introducer to build the grant's role facts.
 ///
 /// # Errors
@@ -476,6 +673,76 @@ mod tests {
 
     fn now() -> Timestamp {
         Timestamp::from_unix(1_760_000_000).unwrap()
+    }
+
+    #[test]
+    fn the_two_state_machines_complete_a_ceremony() {
+        let alice = PersonKeys::generate().unwrap();
+        let person = facts::person_fact(&alice, "Alice", 1, now()).unwrap();
+        let phone = SigningKey::generate().unwrap(); // Alice's existing binding
+        let mut n = newcomer();
+        let offer = n.offer(vec!["127.0.0.1:1".parse().unwrap()]);
+        let mut i = Introducer::new(
+            alice.clone(),
+            person,
+            *phone.public(),
+            offer.clone(),
+            true,
+            vec![],
+        );
+        assert_eq!(i.expected_peer(), n.binding().public());
+
+        let ready = n.on_hello(*phone.public(), &i.hello()).unwrap();
+        i.on_ready(ready).unwrap();
+        assert_eq!(n.exporter_context().unwrap(), i.exporter_context());
+        let exporter = [7u8; 32];
+        assert_eq!(
+            short_code(&exporter).unwrap(),
+            short_code(&exporter).unwrap()
+        );
+
+        // Newcomer confirms first; the introducer has no grant yet.
+        let c = n.confirm().unwrap();
+        assert_eq!(c.message_type.as_str(), types::CONFIRMED);
+        i.on_confirmed().unwrap();
+        assert!(
+            i.grant(now()).unwrap().is_none(),
+            "needs my confirmation too"
+        );
+        i.confirm().unwrap();
+        let grant = i.grant(now()).unwrap().expect("both confirmed");
+        assert!(grant.self_signing.is_some());
+        let (joined, done) = n.on_grant(grant).unwrap();
+        assert_eq!(joined.devices.len(), 2);
+        let _ = done;
+        let introduced = i.on_done().unwrap();
+        assert_eq!(introduced.roles.len(), 2);
+        assert_eq!(introduced.devices.len(), 2);
+        assert_eq!(i.state(), IntroducerState::Done);
+    }
+
+    #[test]
+    fn the_introducer_rejects_records_for_other_keys() {
+        let alice = PersonKeys::generate().unwrap();
+        let person = facts::person_fact(&alice, "Alice", 1, now()).unwrap();
+        let n = newcomer();
+        let other = newcomer();
+        let offer = n.offer(vec!["127.0.0.1:1".parse().unwrap()]);
+        let mut i = Introducer::new(
+            alice,
+            person,
+            PublicKey::from_bytes([3; 32]),
+            offer,
+            false,
+            vec![],
+        );
+        let mut other = other;
+        let other_offer = other.offer(vec!["127.0.0.1:1".parse().unwrap()]);
+        let ready = other
+            .on_hello(PublicKey::from_bytes([3; 32]), &hello(&other_offer.code))
+            .unwrap();
+        assert!(i.on_ready(ready).is_err());
+        assert_eq!(i.state(), IntroducerState::Aborted);
     }
 
     fn newcomer() -> Newcomer {

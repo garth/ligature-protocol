@@ -507,6 +507,26 @@ impl Daemon {
         }
     }
 
+    /// Runs a gossip exchange with every connected, recognised peer now, so a
+    /// fact created here (a revocation) does not wait for the next session.
+    pub async fn gossip_all(&self) {
+        for peer in self.manager.peers() {
+            let trusted = self
+                .recognise(&peer)
+                .map(|r| r.is_trusted())
+                .unwrap_or(false);
+            let Some(conn) = self.manager.peer(&peer) else {
+                continue;
+            };
+            if !trusted {
+                continue;
+            }
+            if let Err(e) = crate::gossip::run_dialer(&self.store, &conn).await {
+                tracing::debug!(%peer, %e, "gossip push failed");
+            }
+        }
+    }
+
     /// Stops advertising and closes every connection.
     pub fn shutdown(&self) {
         if let Some(m) = self

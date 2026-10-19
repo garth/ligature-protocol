@@ -351,6 +351,17 @@ pub fn revoke(daemon: &Daemon, key: &PublicKey) -> Result<(), Error> {
     Ok(())
 }
 
+/// Revokes and then pushes the revocation to every connected peer.
+///
+/// # Errors
+///
+/// As [`revoke`].
+pub async fn revoke_and_push(daemon: &Arc<Daemon>, key: &PublicKey) -> Result<(), Error> {
+    revoke(daemon, key)?;
+    daemon.gossip_all().await;
+    Ok(())
+}
+
 /// Serves the control socket at `path` until the listener fails. Stale sockets
 /// are removed; the directory is made 0700 and the socket 0600.
 ///
@@ -526,7 +537,9 @@ pub async fn handle(
         types::DEVICES => devices(daemon).and_then(|d| Response::ok(id, &d)),
         types::CAPS => Response::ok(id, &Caps { peers: Vec::new() }),
         types::REVOKE => match request.key {
-            Some(key) => revoke(daemon, &key).and_then(|()| Response::ok(id, &Empty {})),
+            Some(key) => revoke_and_push(daemon, &key)
+                .await
+                .and_then(|()| Response::ok(id, &Empty {})),
             None => Ok(Response::error(
                 id,
                 ErrorBody::new("bad-request", "revoke needs a key"),

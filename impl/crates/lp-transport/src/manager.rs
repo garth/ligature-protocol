@@ -99,12 +99,14 @@ impl Manager {
     pub async fn connect(&self, addr: SocketAddr) -> Result<Connection, Error> {
         let conn = self.endpoint.connect(addr).await?;
         if let Some(existing) = self.lock().peers.get(conn.peer()).cloned() {
-            if existing.dialled_by_us() || !self.we_keep_our_dial(conn.peer()) {
+            let alive = existing.raw().close_reason().is_none();
+            if alive && (existing.dialled_by_us() || !self.we_keep_our_dial(conn.peer())) {
                 tracing::debug!(peer = %conn.peer(), "already connected; dropping duplicate dial");
                 conn.close();
                 return Ok(existing);
             }
-            // Both sides dialled at once and the tie-break keeps ours.
+            // Either the old connection is dead, or both sides dialled at once
+            // and the tie-break keeps ours.
         }
         self.adopt(conn.clone()).await;
         Ok(conn)
@@ -162,9 +164,9 @@ impl Manager {
         self.endpoint.public() < peer
     }
 
-    /// Records a connection, starts its stream loop and reports it. An
-    /// incoming connection that duplicates a live one we dialled loses the
-    /// tie-break when our key is lower; otherwise it replaces the old one.
+    /// Records a connection, starts its stream loop and reports it. A new
+    /// connection never displaces a live one for the same peer unless both
+    /// sides dialled at once and the tie-break says so; a dead one is replaced.
     async fn adopt(&self, conn: Connection) {
         let peer = *conn.peer();
         {
@@ -173,13 +175,17 @@ impl Manager {
                 if old.raw().stable_id() == conn.raw().stable_id() {
                     return;
                 }
-                if !conn.dialled_by_us() && old.dialled_by_us() && self.we_keep_our_dial(&peer) {
-                    tracing::debug!(%peer, "dropping incoming duplicate; keeping our dial");
+                let old_alive = old.raw().close_reason().is_none();
+                let simultaneous = conn.dialled_by_us() != old.dialled_by_us();
+                let new_wins =
+                    simultaneous && (conn.dialled_by_us() == self.we_keep_our_dial(&peer));
+                if old_alive && !new_wins {
+                    tracing::debug!(%peer, "dropping duplicate connection; keeping the live one");
                     drop(st);
                     conn.close();
                     return;
                 }
-                tracing::debug!(%peer, "replacing an existing connection");
+                tracing::debug!(%peer, old_alive, "replacing an existing connection");
                 old.close();
             }
             st.peers.insert(peer, conn.clone());

@@ -65,12 +65,16 @@ flowchart TB
 
 ## 5. Document conventions
 
-Each chapter states its intent per section and lists open questions inline. Wire formats,
-message encodings and state machines are deliberately absent from this draft and will be
-added once the architecture decisions in `docs/adr/` are accepted.
+Each chapter states its intent per section and lists open questions inline. Wire formats
+appear only where an accepted decision in `docs/adr/` fixes them (the fact envelope, the
+stream frame and header, the gossip messages); state machines are still absent from this
+draft.
 
 ## 6. Schemas and encoding
 
 Records and messages are defined in JSON Schema 2020-12 under `schemas/`, with reverse-DNS
 type names ([ADR 0020](../adr/0020-json-schema-and-reverse-dns-names.md)), and encoded as
-CBOR on the wire ([ADR 0025](../adr/0025-cbor-wire-encoding.md)).
+CBOR on the wire ([ADR 0025](../adr/0025-cbor-wire-encoding.md)). Signed facts travel in
+an envelope ([ADR 0035](../adr/0035-byte-exact-signatures-forgiving-decoding.md)) and every
+message on a stream is a length-prefixed, typed CBOR map
+([ADR 0036](../adr/0036-stream-framing-and-message-typing.md)).

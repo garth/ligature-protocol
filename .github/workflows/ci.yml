@@ -67,6 +67,13 @@ jobs:
         run: |
           set -e
           npm install --no-save ajv-cli@5.0.0 ajv-formats@3.0.1
+          # A schema may reference another by file name (message -> envelope), so every
+          # other schema is supplied with -r.
           for f in schemas/*.schema.json; do
-            npx ajv compile --spec=draft2020 -c ajv-formats -s "$f"
+            refs=""
+            for r in schemas/*.schema.json; do
+              [ "$r" != "$f" ] && refs="$refs -r $r"
+            done
+            # shellcheck disable=SC2086
+            npx ajv compile --spec=draft2020 -c ajv-formats -s "$f" $refs
           done

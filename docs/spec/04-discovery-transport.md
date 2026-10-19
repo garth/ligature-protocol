@@ -27,9 +27,16 @@ of this chapter is constrained by this rule.
 
 There is one QUIC connection per device pair and one stream per capability (clipboard,
 files, remote input, notifications, media control, and so on), so a large file transfer
-never stalls an interactive stream. Open question: whether some capabilities need several
-streams (for example one per file in flight) and how stream identifiers map to capability
-type names.
+never stalls an interactive stream. The TLS handshake carries the ALPN token `ligature/1`,
+which is the protocol version; no message carries one. Every stream is bidirectional and
+its first frame is a stream header
+([`org.ligatureprotocol.stream`](../../schemas/message.schema.json)) naming its purpose:
+`gossip`, `manifest`, or a capability type. Whichever peer needs a stream opens it; the
+dialer opens the gossip stream first. A receiver that does not understand a purpose closes
+that stream and nothing else. A message on a stream is a frame: a 4-byte big-endian length
+and one CBOR map with a `type` field, at most 1 MiB unless the capability says otherwise
+([ADR 0036](../adr/0036-stream-framing-and-message-typing.md)). Open question: whether
+some capabilities need several streams (for example one per file in flight).
 
 ### 3.2 Authentication
 

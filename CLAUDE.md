@@ -39,7 +39,10 @@ The authoritative record is `docs/adr/`. Summary, in layer order:
 4. **Transport**: application-level QUIC (RFC 9000), one connection per device pair, one
    stream per capability, device keys as TLS raw public keys (RFC 7250), connection
    migration; quinn over rustls, mutual RPK, rustls default suites, no 0-RTT (ADR 0028).
-   The session is the end-to-end layer (decision 3). mDNS/DNS-SD + BLE locally. Remotely,
+   ALPN `ligature/1` is the protocol version; every stream is bidirectional and starts with
+   a header naming its purpose (`gossip`, `manifest` or a capability type); a message is a
+   4-byte big-endian length plus one CBOR map with a `type`, 1 MiB maximum by default
+   (ADR 0036). The session is the end-to-end layer (decision 3). mDNS/DNS-SD + BLE locally. Remotely,
    three replaceable untrusted helper roles: discovery (signed records in a DHT via pkarr,
    gossiped relays), hole-punch coordination, relay (default: the user's home hub). Rule:
    any helper may be operated by anyone, is listed in the user's own records, and is never
@@ -58,7 +61,9 @@ The authoritative record is `docs/adr/`. Summary, in layer order:
    CBOR. Every signed fact travels in an envelope (type, payload bytes, signer, signature
    over `"ligature/fact/1" || type || payload`); verify the bytes as received, then
    decode; never re-encode; no canonical form; decoders ignore unknown fields and schemas
-   never set `additionalProperties: false`. (ADR 0020, 0025, 0035)
+   never set `additionalProperties: false`. An envelope never travels bare: on the gossip
+   stream it rides in `gossip.fact`, beside `gossip.have` and `gossip.want`
+   (`schemas/message.schema.json`). (ADR 0020, 0025, 0035, 0036)
 7. **Capabilities**: devices advertise typed capabilities (notifications, clipboard, files,
    remote input, media control, telephony/SMS, displays, sensors); peers discover, request,
    and receive explicit grants. (ADR 0008)
@@ -104,7 +109,7 @@ The reference implementation is Rust and is also the production implementation
   `01-implementation-decisions.md` records non-protocol implementation choices (store is
   SQLite via rusqlite bundled; keys in a separate 0600 file).
 - `schemas/*.schema.json`: JSON Schema 2020-12 drafts (person, device, capability, grant,
-  group).
+  group, role, revocation, envelope, message; `control` is implementation-only).
   Spec chapters link to these by relative path.
 - `impl/`: Rust cargo workspace, edition 2024. Crates: `lp-core` (shared types, capability
   model), `lp-identity` (master key, ceremony, roles, trust store, optional publication),
@@ -141,7 +146,8 @@ Every schema must compile under draft 2020-12 with formats enabled, as CI does:
 
 ```sh
 npm install --no-save ajv-cli@5.0.0 ajv-formats@3.0.1
-npx ajv compile --spec=draft2020 -c ajv-formats -s schemas/<name>.schema.json
+npx ajv compile --spec=draft2020 -c ajv-formats -s schemas/<name>.schema.json \
+  -r schemas/envelope.schema.json   # -r for every schema the file references
 ```
 
 ## Conventions

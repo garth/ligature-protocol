@@ -140,8 +140,9 @@ credentials and drops a connection whose uid is not its own.
 **Framing.** A frame is a 4-byte big-endian length followed by exactly one CBOR map. A
 length above 1 MiB closes the connection before anything is decoded. Unknown fields are
 ignored. Nothing on this channel is signed, so the byte-exact rule of ADR 0035 does not
-arise. LP-31 decides framing on QUIC streams; one `Frame` codec in `lp-core` should serve
-both if it picks the same shape.
+arise. QUIC streams use the same frame
+([ADR 0036](../adr/0036-stream-framing-and-message-typing.md)), so one `Frame` codec in
+`lp-core` serves both.
 
 **Messages.** [`schemas/control.schema.json`](../../schemas/control.schema.json), type
 names `org.ligatureprotocol.control.*`, marked implementation-only and linked from no spec
@@ -162,3 +163,11 @@ second channel.
 **Versioning.** None on the wire. `status` returns the daemon's version; `lpctl` and
 `ligatured` come from one workspace and are installed together, and an unknown request type
 answers with the error code `unknown-type`.
+
+## LP-31: stream framing, message typing and versioning
+
+Became [ADR 0036](../adr/0036-stream-framing-and-message-typing.md) because peers must
+agree on it: length-prefixed typed CBOR frames, a stream header as the first frame, gossip
+messages carrying envelopes, ALPN `ligature/1` as the only version. Implementation note: the
+`Frame` codec and the message types live in `lp-core`; `lp-transport` dispatches streams on
+the header and knows nothing about what the messages mean.

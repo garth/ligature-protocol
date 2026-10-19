@@ -58,12 +58,15 @@ signer so that an older fact can never replace a newer one.
 
 ## 4. Gossip
 
-When a session is established (chapter 04) the two devices exchange what the other lacks,
-in this order: revocations, device bindings, group membership, then anything else. Both
-sides apply what verifies and discard the rest. Gossip is small (a household has tens of
-facts, not millions), so a full exchange of fact identifiers on every connect is
-acceptable. Open question: whether to use a Merkle-style summary instead of a plain list
-once groups grow.
+When a session is established (chapter 04) the two devices exchange what the other lacks, in this
+order: revocations, device bindings, group membership, then anything else. Both sides apply what
+verifies and discard the rest. The exchange runs on the `gossip` stream in three messages
+([`message.schema.json`](../../schemas/message.schema.json)): `gossip.have` lists the identifiers a
+side holds, `gossip.want` the ones it asks for, and `gossip.fact` carries one envelope; an envelope
+never travels outside a message ([ADR 0036](../adr/0036-stream-framing-and-message-typing.md)).
+Gossip is small (a household has tens of facts, not millions), so a full exchange of fact
+identifiers on every connect is acceptable. Open question: whether to use a Merkle-style summary
+instead of a plain list once groups grow.
 
 ```mermaid
 sequenceDiagram

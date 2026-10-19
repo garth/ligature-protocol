@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ligatureprotocol.org/schemas/message.schema.json",
+  "title": "org.ligatureprotocol.message",
+  "description": "DRAFT. Messages on a QUIC stream (ADR 0036). A frame is a 4-byte big-endian length followed by one CBOR map carrying a reverse-DNS type. The first frame on every stream is the stream header; the gossip stream then carries have, want and fact messages. Decoders ignore unknown fields. The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "$defs": {
+    "typeName": {
+      "type": "string",
+      "description": "A reverse-DNS type name such as org.ligatureprotocol.capability.clipboard.",
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+    },
+    "factId": {
+      "type": "string",
+      "description": "A fact identifier: the SHA-256 of the envelope's payload bytes, as 64 lowercase hex characters in JSON and a 32-byte string in CBOR.",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "streamHeader": {
+      "type": "object",
+      "description": "The first frame on every stream. Names what the stream is for.",
+      "required": [
+        "type",
+        "purpose"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.stream"
+        },
+        "purpose": {
+          "anyOf": [
+            {
+              "enum": [
+                "gossip",
+                "manifest"
+              ]
+            },
+            {
+              "$ref": "#/$defs/typeName"
+            }
+          ],
+          "description": "gossip, manifest, or the capability type the stream carries. A receiver that does not understand the purpose closes the stream with application error code 1."
+        }
+      }
+    },
+    "gossipHave": {
+      "type": "object",
+      "description": "The fact identifiers this side holds. Sent by both sides once the gossip stream is open.",
+      "required": [
+        "type",
+        "facts"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.gossip.have"
+        },
+        "facts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/factId"
+          }
+        }
+      }
+    },
+    "gossipWant": {
+      "type": "object",
+      "description": "The fact identifiers this side lacks and asks for.",
+      "required": [
+        "type",
+        "facts"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.gossip.want"
+        },
+        "facts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/factId"
+          }
+        }
+      }
+    },
+    "gossipFact": {
+      "type": "object",
+      "description": "One signed fact. Revocations and abandonments are sent before anything else; the receiver verifies the envelope before storing it.",
+      "required": [
+        "type",
+        "envelope"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.gossip.fact"
+        },
+        "envelope": {
+          "$ref": "envelope.schema.json"
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/streamHeader"
+    },
+    {
+      "$ref": "#/$defs/gossipHave"
+    },
+    {
+      "$ref": "#/$defs/gossipWant"
+    },
+    {
+      "$ref": "#/$defs/gossipFact"
+    }
+  ]
+}

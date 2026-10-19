@@ -113,8 +113,9 @@ flowchart LR
   both platforms (`mdns-sd`, LP-28), with a random per-boot identifier in the TXT record as the placeholder
   for the per-epoch identifier of chapter 04 section 4.1. Confirm it coexists with Bonjour
   on macOS.
-- B4. Connection manager: one connection per peer, reconnect on loss, stream open per
-  capability type.
+- B4. Connection manager: one connection per peer, reconnect on loss, ALPN `ligature/1`,
+  the frame codec and the stream header, stream open per purpose
+  ([ADR 0036](../adr/0036-stream-framing-and-message-typing.md)).
 - B5. Integration test: two endpoints on loopback discover each other and open an
   authenticated connection. Runs on both platforms in CI.
 
@@ -135,13 +136,14 @@ flowchart LR
 
 ### Phase D: gossip and manifests
 
-- D1. Gossip exchange after authentication (`lp-identity::trust_store`): list fact
-  identifiers, send what the peer lacks, revocations first; apply what verifies.
+- D1. Gossip exchange after authentication (`lp-identity::trust_store`) on the `gossip`
+  stream with `gossip.have`, `gossip.want` and `gossip.fact`: list fact identifiers, send
+  what the peer lacks, revocations first; apply what verifies.
 - D2. `lpctl revoke` and the propagation test: revoke on A, B learns on next connect to A.
 - D3. Manifest after gossip (`lp-core::Manifest`): send current capabilities, update on
   change, withdraw on disconnect. `lpctl caps` shows the live view.
-- D4. Message schemas for gossip and manifests under `schemas/`; tests decode CBOR and
-  validate the result against the schema.
+- D4. Manifest messages added to `schemas/` beside the stream header and gossip messages
+  of `message.schema.json`; tests decode CBOR and validate the result against the schema.
 
 ### Phase E: clipboard
 

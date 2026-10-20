@@ -117,7 +117,7 @@ The `impl/` workspace contains:
 - `lp-crypto`: signing and session key material for raw-public-key TLS
 - `lp-transport`: QUIC connections, local discovery (mDNS/BLE), remote discovery and
   relay clients
-- `ligatured`: Linux user daemon (D-Bus, systemd user unit)
+- `ligatured`: the user daemon (control socket; systemd user unit and launchd agent)
 - `lpctl`: CLI for pairing and inspection
 - `lp-vectors`: conformance vector formats and loader (test support; the vectors live in
   `vectors/`)

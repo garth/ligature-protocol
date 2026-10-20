@@ -120,7 +120,8 @@ The reference implementation is Rust and is also the production implementation
   model), `lp-identity` (master key, ceremony, roles, trust store, optional publication),
   `lp-crypto` (signing, raw-public-key TLS material),
   `lp-transport` (QUIC connections, local discovery, remote discovery and relay clients),
-  `ligatured` (Linux user daemon, D-Bus, systemd unit in `crates/ligatured/systemd/`),
+  `ligatured` (user daemon; control socket; systemd unit in `crates/ligatured/systemd/`,
+  launchd plist in `crates/ligatured/launchd/`),
   `lpctl` (CLI), `lp-vectors` (conformance vector formats and loader, test support,
   `publish = false`). `integrations/wireguard-integration` is a non-core placeholder.
   Dependency direction: `lp-crypto` depends only on `lp-core`; `lp-identity` and

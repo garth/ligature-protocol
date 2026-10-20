@@ -4,6 +4,8 @@
 pub mod capabilities;
 pub mod ceremony;
 pub mod clipboard;
+#[cfg(target_os = "linux")]
+pub mod clipboard_linux;
 pub mod control;
 pub mod daemon;
 pub mod gossip;

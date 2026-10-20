@@ -30,11 +30,36 @@ struct Options {
     /// This device's display name on first start (default: the host name).
     #[arg(long)]
     device_name: Option<String>,
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+/// Internal subcommands.
+#[derive(Debug, clap::Subcommand)]
+enum Command {
+    /// The Wayland clipboard helper the daemon starts for itself (Linux).
+    #[command(hide = true)]
+    ClipboardHelper,
 }
 
 #[tokio::main]
 async fn main() {
     let options = Options::parse();
+    if let Some(Command::ClipboardHelper) = options.command {
+        #[cfg(target_os = "linux")]
+        {
+            if let Err(e) = ligatured::clipboard_linux::run_helper() {
+                eprintln!("clipboard helper: {e}");
+                std::process::exit(1);
+            }
+            return;
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            eprintln!("clipboard helper is Linux only");
+            std::process::exit(1);
+        }
+    }
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),

@@ -288,6 +288,7 @@ async fn run_join(
         return Err(Error::AlreadyInitialised);
     }
     let mut streams = daemon.expect_pairing()?;
+    let _ceremony = daemon.begin_ceremony();
     let result = async {
         let newcomer = Newcomer::new(
             daemon.binding().clone(),
@@ -310,7 +311,11 @@ async fn run_join(
             .await
             .ok_or_else(|| Error::Chain("pairing cancelled".to_owned()))?;
         let joined = run_newcomer(&conn, stream, newcomer, prompt).await?;
-        daemon.join(&joined)
+        daemon.join(&joined)?;
+        // The introducer's connection is now a trusted peer's: gossip and
+        // announce on it as if it had just connected.
+        daemon.on_trusted(&conn).await;
+        Ok(())
     }
     .await;
     daemon.stop_pairing();
@@ -328,6 +333,7 @@ async fn run_introduce(
         .as_deref()
         .ok_or_else(|| Error::Decode("pair.introduce needs the offer".to_owned()))?;
     let offer = Offer::parse(text)?;
+    let _ceremony = daemon.begin_ceremony();
     let self_signing = daemon
         .self_signing()?
         .ok_or_else(|| Error::Chain("this device is not an introducer".to_owned()))?;
@@ -371,5 +377,7 @@ async fn run_introduce(
     );
     let introduced = run_introducer(&conn, stream, introducer, prompt, Timestamp::now()).await?;
     introduced.persist(daemon.store())?;
+    // The newcomer is now one of ours on this very connection.
+    daemon.on_trusted(&conn).await;
     Ok(())
 }

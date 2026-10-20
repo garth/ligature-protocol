@@ -71,6 +71,19 @@ pub struct Daemon {
     pairing: Arc<Mutex<Option<mpsc::Sender<PairingStream>>>>,
     registry: Arc<crate::capabilities::Registry>,
     clipboard: Mutex<Option<Arc<crate::clipboard_sync::ClipboardSync>>>,
+    clipboard_impl: Mutex<Option<Arc<dyn crate::clipboard::Clipboard>>>,
+    ceremonies: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+/// Marks a ceremony as in progress for as long as it lives, so unrecognised
+/// peers keep their connections.
+#[derive(Debug)]
+pub struct CeremonyGuard(Arc<std::sync::atomic::AtomicUsize>);
+
+impl Drop for CeremonyGuard {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
 }
 
 impl std::fmt::Debug for Daemon {
@@ -175,6 +188,8 @@ impl Daemon {
             pairing,
             registry,
             clipboard: Mutex::new(None),
+            clipboard_impl: Mutex::new(None),
+            ceremonies: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         });
         if daemon.is_initialised() {
             daemon.start_advertising()?;
@@ -419,15 +434,24 @@ impl Daemon {
     }
 
     /// Whether an unrecognised peer may stay connected: while uninitialised
-    /// or while a ceremony is waiting.
+    /// or while a ceremony is in progress on either side.
     #[must_use]
     pub fn accepts_strangers(&self) -> bool {
         !self.is_initialised()
+            || self.ceremonies.load(std::sync::atomic::Ordering::SeqCst) > 0
             || self
                 .pairing
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .is_some()
+    }
+
+    /// Marks a ceremony (either role) as in progress until the guard drops.
+    #[must_use]
+    pub fn begin_ceremony(&self) -> CeremonyGuard {
+        self.ceremonies
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        CeremonyGuard(Arc::clone(&self.ceremonies))
     }
 
     /// Completes a newcomer's ceremony: persists the facts and keys, then
@@ -531,12 +555,25 @@ impl Daemon {
         self: &Arc<Self>,
         clipboard: Arc<dyn crate::clipboard::Clipboard>,
     ) -> Arc<crate::clipboard_sync::ClipboardSync> {
-        let sync = crate::clipboard_sync::ClipboardSync::start(self.clone(), clipboard);
+        let sync = crate::clipboard_sync::ClipboardSync::start(self.clone(), clipboard.clone());
         *self
             .clipboard
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(sync.clone());
+        *self
+            .clipboard_impl
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(clipboard);
         sync
+    }
+
+    /// The local clipboard, if one was attached.
+    #[must_use]
+    pub fn clipboard(&self) -> Option<Arc<dyn crate::clipboard::Clipboard>> {
+        self.clipboard_impl
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 
     /// The clipboard synchroniser, if one was attached.

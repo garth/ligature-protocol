@@ -1,0 +1,44 @@
+[package]
+name = "ligature-android"
+description = "Ligature Protocol daemon as a library for the Android app, behind UniFFI bindings"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+name = "ligature_android"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["bindgen"]
+
+[features]
+# The Kotlin binding generator, run on the host; never part of the library.
+bindgen = ["uniffi/cli", "uniffi/cargo-metadata"]
+
+[dependencies]
+ligatured.workspace = true
+lp-core.workspace = true
+lp-identity.workspace = true
+lp-transport.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uniffi.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+# Not the workspace lints: the C ABI that UniFFI exports needs `#[unsafe(no_mangle)]`,
+# which the `unsafe_code` lint covers. Nothing in this crate writes an `unsafe` block.
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "allow"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }

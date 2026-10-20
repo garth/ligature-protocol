@@ -1,0 +1,4 @@
+# Binding generation (LP-77). The Kotlin package the Android app imports.
+[bindings.kotlin]
+package_name = "org.ligatureprotocol.core"
+cdylib_name = "ligature_android"

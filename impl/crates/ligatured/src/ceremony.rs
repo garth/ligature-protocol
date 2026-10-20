@@ -277,13 +277,21 @@ pub async fn handle_control(
     }
 }
 
-async fn run_join(
+/// Runs the newcomer's whole ceremony for `daemon`: makes the offer and sends
+/// its text on `offer`, waits for an introducer to dial, runs the exchange with
+/// `prompt`, persists the outcome and treats the introducer's connection as a
+/// trusted peer's. For hosts without the control socket (the Android app) as
+/// much as for `pair.join`.
+///
+/// # Errors
+///
+/// Returns [`Error::AlreadyInitialised`], [`Error::Chain`] if a ceremony is
+/// already waiting, or the ceremony's failure.
+pub async fn join(
     daemon: &std::sync::Arc<crate::daemon::Daemon>,
-    id: u64,
-    out: &mpsc::Sender<crate::control::Outgoing>,
     prompt: Prompt,
+    offer: mpsc::Sender<String>,
 ) -> Result<(), Error> {
-    use crate::control::{Event, Outgoing, types};
     if daemon.is_initialised() {
         return Err(Error::AlreadyInitialised);
     }
@@ -297,15 +305,11 @@ async fn run_join(
             crate::daemon::platform(),
             Timestamp::now(),
         )?;
-        let offer = newcomer.offer(daemon.dialable_addrs()?);
-        out.send(Outgoing::Event(Event {
-            event_type: lp_core::wire::TypeName::new(types::PAIR_OFFER),
-            id,
-            offer: Some(offer.to_text()),
-            code: None,
-        }))
-        .await
-        .map_err(|_| Error::Io("control connection gone".to_owned()))?;
+        let text = newcomer.offer(daemon.dialable_addrs()?).to_text();
+        offer
+            .send(text)
+            .await
+            .map_err(|_| Error::Io("nobody to show the offer to".to_owned()))?;
         let (conn, stream) = streams
             .recv()
             .await
@@ -322,17 +326,23 @@ async fn run_join(
     result
 }
 
-async fn run_introduce(
+/// Runs the introducer's whole ceremony for `daemon` against the offer text a
+/// newcomer showed: dials it, runs the exchange with `prompt`, persists the
+/// outcome and treats the newcomer's connection as a trusted peer's.
+///
+/// # Errors
+///
+/// Returns [`Error::Decode`] for a malformed offer, [`Error::Chain`] if this
+/// device is not an introducer, [`Error::Transport`] if no address answers
+/// with the offered key, or the ceremony's failure.
+pub async fn introduce(
     daemon: &std::sync::Arc<crate::daemon::Daemon>,
-    request: &crate::control::Request,
+    offer_text: &str,
+    make_introducer: bool,
     prompt: Prompt,
 ) -> Result<(), Error> {
     use lp_identity::pairing::{Offer, PURPOSE};
-    let text = request
-        .offer
-        .as_deref()
-        .ok_or_else(|| Error::Decode("pair.introduce needs the offer".to_owned()))?;
-    let offer = Offer::parse(text)?;
+    let offer = Offer::parse(offer_text)?;
     let _ceremony = daemon.begin_ceremony();
     let self_signing = daemon
         .self_signing()?
@@ -340,7 +350,6 @@ async fn run_introduce(
     let person = daemon.person().ok_or(Error::NotInitialised)?;
     let person_fact = daemon.person_fact()?;
     let gossip = daemon.all_facts()?;
-    let make_introducer = request.introducer.unwrap_or(true);
 
     // Dial the offered addresses in order until one answers with the right key.
     let mut conn = None;
@@ -380,4 +389,40 @@ async fn run_introduce(
     // The newcomer is now one of ours on this very connection.
     daemon.on_trusted(&conn).await;
     Ok(())
+}
+
+async fn run_join(
+    daemon: &std::sync::Arc<crate::daemon::Daemon>,
+    id: u64,
+    out: &mpsc::Sender<crate::control::Outgoing>,
+    prompt: Prompt,
+) -> Result<(), Error> {
+    use crate::control::{Event, Outgoing, types};
+    let (offer_tx, mut offer_rx) = mpsc::channel::<String>(1);
+    let events = out.clone();
+    tokio::spawn(async move {
+        while let Some(offer) = offer_rx.recv().await {
+            let _ = events
+                .send(Outgoing::Event(Event {
+                    event_type: lp_core::wire::TypeName::new(types::PAIR_OFFER),
+                    id,
+                    offer: Some(offer),
+                    code: None,
+                }))
+                .await;
+        }
+    });
+    join(daemon, prompt, offer_tx).await
+}
+
+async fn run_introduce(
+    daemon: &std::sync::Arc<crate::daemon::Daemon>,
+    request: &crate::control::Request,
+    prompt: Prompt,
+) -> Result<(), Error> {
+    let text = request
+        .offer
+        .as_deref()
+        .ok_or_else(|| Error::Decode("pair.introduce needs the offer".to_owned()))?;
+    introduce(daemon, text, request.introducer.unwrap_or(true), prompt).await
 }

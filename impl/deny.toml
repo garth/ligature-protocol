@@ -5,6 +5,11 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
+ignore = [
+    # basic-toml, unmaintained: a dependency of uniffi's binding generator, which
+    # runs on the host under the `bindgen` feature and is never in a library (LP-77).
+    "RUSTSEC-2026-0374",
+]
 
 [licenses]
 version = 2
@@ -18,6 +23,9 @@ allow = [
     "Zlib",
     "Unicode-3.0",
     "CC0-1.0",
+    # uniffi and its support crates (LP-77): file-level copyleft that never
+    # touches our own files.
+    "MPL-2.0",
 ]
 confidence-threshold = 0.9
 

@@ -34,6 +34,31 @@ jobs:
       - name: cargo test
         run: cargo test --workspace
 
+  android-library:
+    name: Android library (aarch64 and x86_64 cross-build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: impl
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: impl
+      - name: cargo-ndk
+        run: cargo install cargo-ndk --locked
+      - name: Cross-build the library with the runner's NDK
+        run: cargo ndk -t arm64-v8a -t x86_64 build -p ligature-android --release
+      - name: Kotlin bindings generate from the host build
+        run: |
+          cargo build -p ligature-android
+          cargo run -p ligature-android --features bindgen --bin uniffi-bindgen -- \
+            generate --library target/debug/libligature_android.so --language kotlin \
+            --no-format --out-dir target/kotlin
+
   deny:
     name: cargo-deny (licences, advisories, bans)
     runs-on: ubuntu-latest

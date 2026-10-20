@@ -11,8 +11,9 @@ Continuity-like ecosystem for Linux users. Principles: local-first, self-hostabl
 required central server, end-to-end encrypted, built on existing open standards,
 interoperate rather than replace.
 
-Status is pre-alpha. The spec is a draft, the Rust workspace is a scaffold with no protocol
-logic, and the `org.ligatureprotocol` type names use a placeholder domain.
+Status is pre-alpha. The spec is a draft, the Rust workspace implements milestone 1 (pairing
+and the text clipboard between a Linux machine and a Mac on one LAN) and nothing beyond it,
+and the `org.ligatureprotocol` type names use a placeholder domain.
 
 ## Architecture decisions
 

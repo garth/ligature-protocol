@@ -1,8 +1,8 @@
 # Milestone 1: a Linux machine and a Mac share the clipboard
 
-**Status:** Built. Every task is done and automated on Linux (phases A to F, G2, G3, G4);
-the two-machine run between a Linux machine and a Mac (G1) is the one check that remains,
-and the macOS clipboard, launchd agent and CI jobs have not yet run on a Mac.
+**Status:** Complete. Every task is done. The loopback end-to-end test (G2) runs in CI on
+Linux and macOS, and the two-machine run between a Linux machine and a Mac (G1) has been
+done by hand: pair, copy and paste text both ways, revoke, restart.
 
 ## 1. Goal
 

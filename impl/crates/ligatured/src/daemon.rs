@@ -99,6 +99,8 @@ pub const fn platform() -> &'static str {
         "linux"
     } else if cfg!(target_os = "macos") {
         "macos"
+    } else if cfg!(target_os = "android") {
+        "android"
     } else {
         "other"
     }

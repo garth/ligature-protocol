@@ -28,7 +28,7 @@ pub fn default_bind() -> SocketAddr {
 ///
 /// Returns the error that stopped it.
 pub async fn run(locations: Locations, device_name: Option<&str>) -> Result<(), Error> {
-    let (daemon, mut events) = Daemon::open(locations.clone(), default_bind(), device_name)?;
+    let (daemon, events) = Daemon::open(locations.clone(), default_bind(), device_name)?;
     tracing::info!(
         binding = %daemon.binding().public(),
         initialised = daemon.is_initialised(),
@@ -50,23 +50,39 @@ pub async fn run(locations: Locations, device_name: Option<&str>) -> Result<(), 
         None => tracing::warn!("no clipboard implementation on this platform"),
     }
 
-    // Connection events: recognise, keep or drop.
-    let for_events = daemon.clone();
+    spawn_connection_events(daemon.clone(), events);
+    spawn_discovery(daemon.clone());
+
+    control
+        .await
+        .map_err(|e| Error::Io(format!("control task: {e}")))?;
+    daemon.shutdown();
+    Ok(())
+}
+
+/// Handles connection events for `daemon` in a task: a recognised peer gets
+/// gossip and the manifest exchange, a stranger is kept only while a ceremony
+/// can use it, a departed peer has its capabilities withdrawn. Runs until the
+/// manager closes the channel.
+pub fn spawn_connection_events(
+    daemon: Arc<Daemon>,
+    mut events: tokio::sync::mpsc::Receiver<Event>,
+) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         while let Some(event) = events.recv().await {
             match event {
-                Event::Connected(conn) => match for_events.recognise(conn.peer()) {
+                Event::Connected(conn) => match daemon.recognise(conn.peer()) {
                     Ok(r) if r.is_trusted() => {
                         tracing::info!(peer = %conn.peer(), ?r, "peer connected");
-                        let d = for_events.clone();
+                        let d = daemon.clone();
                         tokio::spawn(async move { d.on_trusted(&conn).await });
                     }
                     Ok(r) => {
-                        if for_events.accepts_strangers() {
+                        if daemon.accepts_strangers() {
                             tracing::info!(peer = %conn.peer(), ?r, "unrecognised peer; pairing only");
                         } else {
                             tracing::info!(peer = %conn.peer(), ?r, "unrecognised peer; dropping");
-                            for_events.manager().drop_peer(conn.peer());
+                            daemon.manager().drop_peer(conn.peer());
                         }
                     }
                     Err(Error::NotInitialised) => {
@@ -76,21 +92,17 @@ pub async fn run(locations: Locations, device_name: Option<&str>) -> Result<(), 
                 },
                 Event::Disconnected(peer) => {
                     tracing::info!(%peer, "peer disconnected");
-                    for_events.on_disconnected(&peer);
+                    daemon.on_disconnected(&peer);
                 }
             }
         }
-    });
+    })
+}
 
-    // Discovery: dial every supported instance; the handshake decides.
-    let for_discovery = daemon.clone();
-    tokio::spawn(async move { discovery_loop(for_discovery).await });
-
-    control
-        .await
-        .map_err(|e| Error::Io(format!("control task: {e}")))?;
-    daemon.shutdown();
-    Ok(())
+/// Browses mDNS for `daemon` in a task once it is initialised and dials every
+/// instance found; the handshake and the trust store decide what to keep.
+pub fn spawn_discovery(daemon: Arc<Daemon>) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move { discovery_loop(daemon).await })
 }
 
 async fn discovery_loop(daemon: Arc<Daemon>) {

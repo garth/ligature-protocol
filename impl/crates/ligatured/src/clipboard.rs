@@ -158,6 +158,24 @@ impl Clipboard for FakeClipboard {
     }
 }
 
+/// The platform's clipboard, started: Wayland through the helper process on
+/// Linux, `NSPasteboard` on macOS, nothing elsewhere.
+#[must_use]
+pub fn platform_clipboard() -> Option<Arc<dyn Clipboard>> {
+    #[cfg(target_os = "linux")]
+    {
+        Some(crate::clipboard_linux::LinuxClipboard::start())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Some(crate::clipboard_macos::MacClipboard::start())
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

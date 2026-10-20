@@ -6,6 +6,8 @@ pub mod ceremony;
 pub mod clipboard;
 #[cfg(target_os = "linux")]
 pub mod clipboard_linux;
+#[cfg(target_os = "macos")]
+pub mod clipboard_macos;
 pub mod control;
 pub mod daemon;
 pub mod gossip;

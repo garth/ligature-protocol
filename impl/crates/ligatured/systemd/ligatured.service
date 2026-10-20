@@ -1,14 +1,32 @@
-# Ligature Protocol user daemon. Install to ~/.config/systemd/user/ and run
+# Ligature Protocol user daemon (milestone 1).
+#
+# Install the binaries, then the unit, then enable it:
+#   cd impl && cargo install --path crates/ligatured --path crates/lpctl
+#   mkdir -p ~/.config/systemd/user
+#   cp crates/ligatured/systemd/ligatured.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
 #   systemctl --user enable --now ligatured
-# Scaffold: the binary currently exits immediately.
+#
+# Logs:   journalctl --user -u ligatured -f
+# Status: lpctl --data-dir ~/.local/share/ligature status
+#
+# The daemon runs whether or not a graphical session exists: it finds the
+# compositor socket itself (LP-34) and needs no imported environment. There is
+# no configuration file (LP-32); the data directory is set here because a
+# service has no working directory of its own, and lpctl is pointed at the
+# same place with --data-dir or LIGATURE_DATA_DIR.
 [Unit]
-Description=Ligature Protocol device daemon
+Description=Ligature Protocol user daemon
+Documentation=https://github.com/ligature-protocol/ligature-protocol
 After=network.target
 
 [Service]
 Type=simple
 ExecStart=%h/.cargo/bin/ligatured
+Environment=LIGATURE_DATA_DIR=%h/.local/share/ligature
+Environment=RUST_LOG=info
 Restart=on-failure
+RestartSec=2
 
 [Install]
 WantedBy=default.target

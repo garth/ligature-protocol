@@ -3,6 +3,7 @@
 
 pub mod capabilities;
 pub mod ceremony;
+pub mod clipboard;
 pub mod control;
 pub mod daemon;
 pub mod gossip;

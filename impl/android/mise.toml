@@ -1,0 +1,5 @@
+# Toolchain for the Android app: `mise install` here, then `./gradlew assembleDebug`.
+# The Android SDK and NDK are not mise tools; see README.md.
+[tools]
+java = "21"
+rust = "stable"

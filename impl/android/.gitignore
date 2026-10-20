@@ -1,0 +1,6 @@
+# Gradle and build output
+.gradle/
+build/
+local.properties
+.kotlin/
+# The Rust library and the generated bindings are built into app/build/.

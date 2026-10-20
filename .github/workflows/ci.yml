@@ -59,6 +59,34 @@ jobs:
             generate --library target/debug/libligature_android.so --language kotlin \
             --no-format --out-dir target/kotlin
 
+  android-app:
+    name: Android app (assembleDebug)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: impl/android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: impl
+      - name: cargo-ndk
+        run: cargo install cargo-ndk --locked
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Assemble the debug APK (builds the Rust library and the bindings on the way)
+        run: ./gradlew assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ligature-debug-apk
+          path: impl/android/app/build/outputs/apk/debug/app-debug.apk
+
   deny:
     name: cargo-deny (licences, advisories, bans)
     runs-on: ubuntu-latest

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Ligature</string>
+    <string name="share_target">Send to my devices</string>
+    <string name="tile_label">Send clipboard</string>
+    <string name="notification_channel">Ligature node</string>
+    <string name="notification_title">Ligature is running</string>
+    <string name="notification_action_send">Send clipboard</string>
+    <string name="sent_to">Sent to %1$d device(s)</string>
+    <string name="sent_to_none">No device is connected</string>
+    <string name="clipboard_empty">The clipboard holds no text</string>
+</resources>

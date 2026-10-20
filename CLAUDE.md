@@ -108,11 +108,15 @@ The reference implementation is Rust and is also the production implementation
   live in `docs/adr/superseded/`.
 - `docs/glossary.md`, `docs/prior-art.md`.
 - `docs/milestones/`: one plan per milestone with scope, non-goals, decisions to pin, exit
-  criteria and a task breakdown; `01-clipboard-poc.md` is the current one, and
-  `01-implementation-decisions.md` records non-protocol implementation choices (store is
+  criteria and a task breakdown. `01-clipboard-poc.md` is done (Linux and macOS share the
+  clipboard) and `01-implementation-decisions.md` records its non-protocol choices (store is
   SQLite via rusqlite bundled; keys in a separate 0600 file; state under `data/` in the
   project root during milestone 1, gitignored; no configuration file; `lpctl init --name`
-  creates the first identity).
+  creates the first identity). `02-android-clipboard.md` is the current one (an Android
+  phone, LineageOS first, joins the two desktops) and `02-implementation-decisions.md`
+  records the Android choices (the daemon as a library behind UniFFI; the clipboard read by
+  the app when Android allows and automatic only with `READ_CLIPBOARD_IN_BACKGROUND` on a
+  platform-signed build; a `connectedDevice` foreground service with the multicast lock).
 - `schemas/*.schema.json`: JSON Schema 2020-12 drafts (person, device, capability, grant,
   group, role, revocation, envelope, message, pairing, capability.clipboard; `control` is
   implementation-only).
@@ -124,17 +128,26 @@ The reference implementation is Rust and is also the production implementation
   `ligatured` (user daemon; control socket; systemd unit in `crates/ligatured/systemd/`,
   launchd plist in `crates/ligatured/launchd/`),
   `lpctl` (CLI), `lp-vectors` (conformance vector formats and loader, test support,
-  `publish = false`). `integrations/wireguard-integration` is a non-core placeholder.
+  `publish = false`), `ligature-android` (the daemon as a `cdylib` for the Android app behind
+  UniFFI 0.32 proc macros, `publish = false`; the one crate that allows `unsafe_code`, for
+  the exported C ABI; its `uniffi-bindgen` binary, feature `bindgen`, generates the Kotlin).
+  `integrations/wireguard-integration` is a non-core placeholder.
   Dependency direction: `lp-crypto` depends only on `lp-core`; `lp-identity` and
   `lp-transport` depend on `lp-core` and `lp-crypto`; binaries depend on the layer crates;
   integrations depend on `lp-core` and never the other way round; `lp-vectors` is only ever
   a dev-dependency; `lpctl` depends on the `ligatured` library for the control channel
-  types and client, since the two are built and installed together.
+  types and client, since the two are built and installed together; `ligature-android`
+  depends on the `ligatured` library and runs its loops without the control socket.
+- `impl/android/`: the Android app, a Gradle project (Kotlin, Compose, min SDK 29) with its
+  own README. Gradle runs `cargo ndk` and `uniffi-bindgen` before compiling; the library and
+  the generated bindings live under `app/build/` and are never committed. `mise.toml` there
+  names the JDK and Rust; `local.properties` (ignored) names the SDK.
 - `vectors/`: conformance vectors (`README.md` has the format and rules; `keys.json` holds
   the committed test keys). Written only by generating tests with `LP_WRITE_VECTORS=1`,
   never by hand, never overwritten.
-- `.github/workflows/ci.yml`: fmt, clippy, test on Linux and macOS; markdownlint; JSON
-  Schema compile (ajv).
+- `.github/workflows/ci.yml`: fmt, clippy, test on Linux and macOS; the Android library
+  cross-build and Kotlin generation; the debug APK; cargo-deny; markdownlint; JSON Schema
+  compile (ajv).
 
 ## Commands
 
@@ -153,7 +166,18 @@ cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 CI treats clippy warnings as errors and the workspace lints set `missing_docs = "warn"`,
-so every public item needs a doc comment. `unsafe_code` is forbidden workspace-wide.
+so every public item needs a doc comment. `unsafe_code` is forbidden workspace-wide, except
+in `ligature-android`, whose exported C ABI needs it.
+
+The Android app builds from `impl/android` with the SDK and NDK r27 installed
+(`local.properties` names the SDK), the Android Rust targets added and `cargo-ndk`
+installed; see `impl/android/README.md`:
+
+```sh
+cd impl/android
+./gradlew assembleDebug          # cross-builds the Rust library, generates the Kotlin, builds the APK
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
 
 Markdown lint uses `.markdownlint-cli2.jsonc` (100-column lines, license files ignored).
 Every schema must compile under draft 2020-12 with formats enabled, as CI does:

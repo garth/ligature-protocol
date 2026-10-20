@@ -210,7 +210,8 @@ flowchart LR
 
 ## 7. After this milestone
 
-Milestone 2 candidates, in no order: offline or passphrase-derived master keys and the
+Milestone 2 is [02-android-clipboard.md](02-android-clipboard.md): an Android phone joins
+the two desktops. The other candidates, in no order: offline or passphrase-derived master keys and the
 introducer choice at pairing; D-Bus desktop integration on Linux; the `share` family between
 two people (requires the `person` role and the second master key); the headless pairing
 page; a group with one group device; relays and the DHT for the away-from-home case; the

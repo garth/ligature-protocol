@@ -1,8 +1,9 @@
 # Ligature Protocol (LP)
 
 > **Status: pre-alpha.** Nothing here is stable. The specification is a draft, the
-> reference implementation covers pairing and the text clipboard between a Linux machine
-> and a Mac, and the `org.ligatureprotocol` type names use a placeholder domain.
+> reference implementation shares the clipboard between a Linux machine, a Mac and an
+> Android phone (milestones 1 and 2), and the `org.ligatureprotocol` type names use a
+> placeholder domain.
 
 Ligature Protocol binds a person's devices (Linux and macOS desktops and laptops, Android
 phones and tablets, home hubs, and iPhones where the platform allows) into one trusted
@@ -137,14 +138,17 @@ cargo build
 cargo test
 ```
 
-During milestone 1 the daemon keeps its state in `data/` under the project root (ignored by
-git); `--data-dir` or `LIGATURE_DATA_DIR` moves it.
+The daemon keeps its state in `data/` under the project root for now (ignored by git);
+`--data-dir` or `LIGATURE_DATA_DIR` moves it. The Android app builds from `impl/android`
+(see its [README](impl/android/README.md)).
 
 ## Documentation
 
 - [Specification overview](docs/spec/00-overview.md)
 - [Shared devices and groups](docs/spec/10-shared-devices-and-groups.md)
 - [Milestone 1 plan: a Linux machine and a Mac share the clipboard](docs/milestones/01-clipboard-poc.md)
+- [Milestone 2 plan: an Android phone joins them](docs/milestones/02-android-clipboard.md)
+  and [the Android app](impl/android/README.md)
 - [Architecture decisions](docs/adr/)
 - [Glossary](docs/glossary.md)
 - [Prior art](docs/prior-art.md)

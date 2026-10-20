@@ -52,10 +52,40 @@ bundle so the user grants permissions once.
 
 ## 3. Android
 
-Background execution, battery optimisation and the clipboard restrictions introduced in
-Android 10 shape what an LP app can do. Notification access, SMS and telephony require
-specific permissions and, for SMS, Play Store policy approval. Open question: whether the
-Android reference app targets Play Store distribution or F-Droid first.
+An Android phone or tablet is a full peer: the reference daemon runs as a library inside
+an app, on the app's own threads, with its keys and store in the app's private storage.
+The app supplies what the platform keeps from a library and nothing else; it speaks no
+protocol of its own. LineageOS is the first target (no Google services, sideloaded;
+[ADR 0033](../adr/0033-supported-platforms.md)). What the platform allows:
+
+- **Running.** A foreground service of type `connectedDevice` with a persistent
+  notification keeps the daemon alive and is restarted at boot; the user may still have
+  to exempt the app from battery optimisation. mDNS needs the Wi-Fi multicast lock, which
+  the service holds while it runs. The QUIC endpoint, discovery, gossip and manifests are
+  the same code as on the desktops.
+- **Clipboard.** Since Android 10 an app may read the clipboard only while its window has
+  focus or it is the default keyboard; the change listener fires only when a read would
+  be allowed. Writing is unrestricted. A phone therefore always receives (the daemon sets
+  the primary clip from the background) and sends in one of two ways: automatically, when
+  the app holds `READ_CLIPBOARD_IN_BACKGROUND`, a signature-level permission granted only
+  to a build signed with the platform key (a self-built LineageOS); or on the user's
+  request, from a quick-settings tile, a notification action, the app's own screen or the
+  share sheet, each of which gives the app a moment of focus or hands it the text
+  directly. The capability is advertised in both cases: what differs is when a `set` goes
+  out, not whether the peer may send one.
+- **Pairing.** The phone has a screen and a camera, so it shows its offer as a QR code
+  and as text (the newcomer role); introducing another device from a pasted offer works
+  too. A camera-based scanner is a later addition.
+- **Device name.** The name under Settings → About phone, else the model, as the host
+  name the device record carries ([ADR 0034](../adr/0034-keys-are-identifiers.md)).
+- **Notifications, SMS, telephony.** Notification access, SMS and telephony need their own
+  permissions and, for SMS, store policy approval; none is offered yet.
+- **Keys.** The Android Keystore holds no Ed25519 keys on most devices (section 3a); the
+  key file is software-held under the app's private directory.
+
+Open question: whether a platform-signed build should be the documented LineageOS path
+(an app in the ROM's `priv-app`) or stay a developer's option, and whether an input
+method is ever worth offering as the automatic path on unmodified ROMs.
 
 ## 4. iOS
 

@@ -9,18 +9,19 @@ those constraints so capability specs do not assume more than a platform allows.
 
 ## 2. Linux (Wayland)
 
-The reference daemon (`ligatured`) runs as a systemd user service and exposes D-Bus
-interfaces. Clipboard, notifications and remote input on Wayland go through compositor
-protocols and portals (for example `wlr-data-control`, `xdg-desktop-portal`), which differ
-by compositor. On a multi-account machine each account runs its own `ligatured` as a
-systemd user service for user-scoped capabilities, and a system-level service owns the
-device principal and device-scoped capabilities, learning who is present from logind. LP
-relies on the OS's account isolation to keep one account's keys and clipboard from another.
-The account's daemon does not depend on the session's environment: it finds the compositor
-socket in the runtime directory, advertises the clipboard only while a compositor is
-reachable, and keeps running (gossip, revocations) when none is. Open question: the minimum
-set of compositors and portals to support (Hyprland is the first target), and how the
-system service drives audio and display without a session of its own.
+The reference daemon (`ligatured`) runs as a systemd user service and exposes a control socket for
+`lpctl` (D-Bus integration is a later milestone). Clipboard, notifications and remote input on
+Wayland go through compositor protocols and portals (for example `wlr-data-control`, `xdg-desktop-
+portal`), which differ by compositor. On a multi-account machine each account runs its own
+`ligatured` as a systemd user service for user-scoped capabilities, and a system-level service owns
+the device principal and device-scoped capabilities, learning who is present from logind. LP relies
+on the OS's account isolation to keep one account's keys and clipboard from another. The account's
+daemon does not depend on the session's environment: it finds the compositor socket in the runtime
+directory and runs the Wayland side in a small helper process whose environment names that socket,
+advertises the clipboard only while a compositor is reachable, and keeps running (gossip,
+revocations) when none is. Open question: the minimum set of compositors and portals to support
+(Hyprland is the first target), and how the system service drives audio and display without a
+session of its own.
 
 ## 2b. macOS
 
@@ -31,7 +32,8 @@ native mDNS/DNS-SD implementation and CoreBluetooth the BLE stack, so discovery 
 extra components. What a third-party daemon may offer is bounded by platform permissions:
 
 - **Clipboard**: NSPasteboard has no change notification, so the watcher polls the change
-  count; reading the pasteboard from a background process is permitted.
+  count (every 250 ms in the reference daemon); reading the pasteboard from a background
+  process is permitted.
 - **Notifications**: a daemon may post notifications, but may not read other
   applications' notifications, so macOS can display forwarded notifications and cannot
   forward its own.

@@ -20,12 +20,15 @@ the manifest it arrives in. See
 
 ## 2a. Manifests and the live registry
 
-After a session is authenticated (chapter 04) each side sends a **manifest**: the full list
-of descriptors it currently offers. While the session lasts it sends updates as
-capabilities appear (a display is plugged in) or disappear (a phone goes to the background
-and loses clipboard access). When the session ends, every capability from that peer is
-withdrawn. A device's view of the network is therefore the union of the manifests of the
-peers it is connected to, and a hub's directory is nothing more than that.
+After a session is authenticated and gossip has run (chapter 04, chapter 06) each side
+opens a `manifest` stream to the other and sends a **manifest**
+([`org.ligatureprotocol.manifest`](../../schemas/message.schema.json)): the full list of
+descriptors it currently offers. While the session lasts it sends a new full manifest on
+the same stream whenever a capability appears (a display is plugged in) or disappears (a
+phone goes to the background and loses clipboard access); the newest replaces the last.
+When the session ends, every capability from that peer is withdrawn. A device's view of
+the network is therefore the union of the manifests of the peers it is connected to, and a
+hub's directory is nothing more than that.
 
 A manifest is filtered by audience: to another person's device it lists only the
 capabilities that person could use (for example `share`, and device-scoped capabilities

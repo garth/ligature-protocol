@@ -43,32 +43,50 @@ user chooses at pairing time according to their requirements. Open question: whe
 
 ## 4. The ceremony
 
-1. The newcomer displays its key fingerprint and a one-time code, or serves a page that
-   does (section 5).
-2. An introducer of mine scans or reads it, shows the same short code on both sides, and
-   the user confirms they match by voice or by eye.
-3. The introducer signs the newcomer's key with the chosen role and sends the signature,
-   the self-signing key if the newcomer is to be an introducer, and current gossip
-   (chapter 06).
-4. Both sides store what they received. Every other device learns of it by gossip.
+1. The newcomer displays an **offer**, as a QR code and as text
+   (`ligature:pair/1?b=…&p=…&a=…&c=…`): its binding and principal keys, the addresses it
+   can be dialled at, and a one-time code. A headless device serves a page that shows it
+   (section 5).
+2. An introducer of mine reads the offer, dials it over QUIC with raw public keys, and
+   refuses to go on unless the key the connection authenticates is the offer's binding key.
+   It opens a stream with purpose `pairing` and sends `hello` with the one-time code, which
+   proves it saw the offer; the newcomer answers `ready` with its self-signed device
+   records ([`org.ligatureprotocol.pair`](../../schemas/pairing.schema.json)).
+3. Both derive the short code from the TLS exporter and show it. Each side sends
+   `confirmed` when its user says the codes match; either may send `abort`.
+4. Only after both confirmations does the introducer send `grant`: its person fact, a
+   `binding` role over the newcomer's binding key and a `principal` role over its
+   principal key, the self-signing key if the newcomer is to be an introducer, and current
+   gossip (chapter 06). The newcomer accepts the grant only after its own confirmation,
+   only if the person fact verifies and both roles chain to it over exactly its own keys,
+   and answers `done`.
+5. Both sides store what they received. Every other device learns of it by gossip.
 
 BLE, NFC or UWB ranging may be used to tighten the proximity check where hardware allows
-but are never required. The short code is a six-digit (or two-word) short authentication
-string derived from the TLS exporter of the pairing connection, so an interposed attacker
-holding two sessions cannot show the same code to both sides
-([ADR 0029](../adr/0029-ceremony-code-from-tls-exporter.md)).
+but are never required. The short code is a six-digit short authentication string derived
+from the TLS exporter of the pairing connection, so an interposed attacker holding two
+sessions cannot show the same code to both sides
+([ADR 0029](../adr/0029-ceremony-code-from-tls-exporter.md)): label
+`EXPORTER-ligatureprotocol-pairing-sas`, context SHA-256 of the newcomer's binding key
+followed by the introducer's key, 32 bytes of output, of which the first 20 bits are shown
+as six decimal digits.
 
 ```mermaid
 sequenceDiagram
     participant N as Newcomer
     participant I as Introducer, holding the self-signing key
-    N->>N: generate keys
-    N->>I: show fingerprint and one-time code, by QR, screen or pairing page
+    N->>N: generate device keys
+    N->>I: offer (keys, addresses, one-time code) by QR, screen or pairing page
     I->>N: QUIC connection, raw public keys presented both ways
+    I->>N: hello with the one-time code, on the pairing stream
+    N->>I: ready with self-signed device records
     N->>N: derive code from TLS exporter
     I->>I: derive code from TLS exporter
-    Note over N,I: user confirms the two codes match. A mismatch aborts
-    I->>N: role signatures, self-signing key if the newcomer is an introducer, current gossip
+    Note over N,I: each user confirms the two codes match. A mismatch aborts
+    N->>I: confirmed
+    I->>N: confirmed
+    I->>N: grant (person fact, role facts, self-signing key if introducer, gossip)
+    N->>I: done
     N->>N: store
     I->>I: store
     Note over N,I: every other device learns of the newcomer by gossip

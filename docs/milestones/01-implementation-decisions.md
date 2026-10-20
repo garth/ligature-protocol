@@ -226,14 +226,16 @@ Not protocol. `wlr-data-control` needs a connection to the user's compositor, an
 user service only sees `WAYLAND_DISPLAY` when something imported it (UWSM does; a bare
 Hyprland session usually does not) and only if it started after the compositor.
 
-**Decision.** The clipboard provider takes the socket from `WAYLAND_DISPLAY` when set, else
-the newest `wayland-N` socket (not `.lock`) in `$XDG_RUNTIME_DIR`, passed to
-`wl-clipboard-rs` as an explicit path. If nothing connects, the daemon runs without a
-clipboard capability and retries every few seconds; when the compositor goes away it
-withdraws the capability (live manifests, ADR 0016) and waits again. A stale socket that
-refuses the connection is skipped. The daemon is never started by the compositor and the
-unit stays `WantedBy=default.target`, so gossip and revocations work with nobody logged in
-graphically. Chapter 08 section 2 states the behaviour.
+**Decision.** The clipboard provider takes the socket from `WAYLAND_DISPLAY` when set, else the
+newest `wayland-N` socket (not `.lock`) in `$XDG_RUNTIME_DIR`. `wl-clipboard-rs` has no public way
+to take a socket path and setting a process-wide environment variable at runtime is unsafe in Rust,
+so the Wayland side runs in a helper child process (`ligatured clipboard-helper`) started with
+`WAYLAND_DISPLAY` naming that socket; parent and child exchange the usual length-prefixed CBOR
+frames over the child's stdio. If nothing connects, the daemon runs without a clipboard capability
+and retries every few seconds; when the compositor goes away it withdraws the capability (live
+manifests, ADR 0016) and waits again. A stale socket that refuses the connection is skipped. The
+daemon is never started by the compositor and the unit stays `WantedBy=default.target`, so gossip
+and revocations work with nobody logged in graphically. Chapter 08 section 2 states the behaviour.
 
 ## LP-35: mDNS record contents and the per-boot identifier
 

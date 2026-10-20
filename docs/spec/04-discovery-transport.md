@@ -43,9 +43,10 @@ some capabilities need several streams (for example one per file in flight).
 Peers authenticate with their LP device keys using TLS raw public keys (RFC 7250). There
 are no certificate authorities. A connection proceeds past authentication only if the
 presented key is a binding of mine, a principal I use, or a binding of a known person
-(chapter 02); otherwise the only thing offered is the pairing ceremony. Open question:
-whether to pin the exact key or accept any key whose signature chain to a known master key
-verifies, learning the device on the spot.
+(chapter 02); otherwise the only thing offered is the pairing ceremony. The handshake
+accepts any well-formed raw public key; recognition is decided afterwards from the local
+store, so a device learned through gossip is recognised the first time it connects and a
+revoked one is refused on its next connection.
 
 ### 3.3 Connection migration
 

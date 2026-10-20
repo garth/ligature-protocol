@@ -17,14 +17,16 @@ never stored; they are announced live (chapter 05). No off-device state is requi
 - Device records it has learned, each with its role signature: bindings, principals and
   known persons (chapter 02, [`org.ligatureprotocol.device`](../../schemas/device.schema.json)).
 - Revocations and key-abandonment statements it has learned (chapter 07).
-- Grants it has issued (chapter 05) and, optionally, grants it has received.
+- Grants it has issued (chapter 05). They are signed facts in the same store but are never
+  gossiped: a grant concerns only the device that gave it.
 - Group keys and membership documents for the groups it is party to or owned by
   (chapter 10).
 - Relays it uses (chapter 04).
 
 Nothing here is a cache of a remote truth; the local store *is* the truth as far as that
-device knows. Open question: whether received grants should be stored or always re-sent by
-the grantor on connect.
+device knows. Received grants are not stored; the grantor re-sends what it allows on each
+connection. A fact that fails to verify when the store is opened is quarantined and logged,
+never silently deleted and never used.
 
 ## 3. Signed facts
 

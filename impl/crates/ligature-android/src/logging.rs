@@ -15,20 +15,23 @@ use crate::{LogLevel, SharedHost};
 static HOST: Mutex<Option<SharedHost>> = Mutex::new(None);
 static INSTALLED: OnceLock<()> = OnceLock::new();
 
+/// The filter with `debug` on: our own crates at `debug`, everything else
+/// (rustls, quinn, mdns-sd, which log every packet) at `info`.
+const DEBUG_DIRECTIVES: &str = "info,ligature_android=debug,ligatured=debug,lp_core=debug,lp_crypto=debug,\
+     lp_identity=debug,lp_transport=debug";
+
 /// Makes `host` the destination of log lines and installs the layer once.
-/// `debug` lowers the threshold from `info` to `debug`; the threshold of the
-/// first installation is the one that stays for the process.
+/// `debug` lowers the threshold from `info` to `debug` for the protocol
+/// crates; the threshold of the first installation is the one that stays for
+/// the process.
 pub fn install(host: SharedHost, debug: bool) {
     *HOST
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(host);
     INSTALLED.get_or_init(|| {
-        let level = if debug {
-            tracing::Level::DEBUG
-        } else {
-            tracing::Level::INFO
-        };
-        let filter = tracing_subscriber::filter::LevelFilter::from_level(level);
+        let directives = if debug { DEBUG_DIRECTIVES } else { "info" };
+        let filter = tracing_subscriber::EnvFilter::try_new(directives)
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
         // Fails only if the process already has a global subscriber (a test
         // harness, for example); then that one keeps the lines.
         let _ = tracing_subscriber::registry()
@@ -64,6 +67,12 @@ impl<S: tracing::Subscriber> Layer<S> for HostLayer {
         };
         let mut line = Line::default();
         event.record(&mut line);
+        // A record bridged from the `log` crate carries its real target in a
+        // field; the event's own target is just `log`.
+        let target = line
+            .log_target
+            .take()
+            .unwrap_or_else(|| event.metadata().target().to_owned());
         let level = match *event.metadata().level() {
             tracing::Level::ERROR => LogLevel::Error,
             tracing::Level::WARN => LogLevel::Warn,
@@ -71,17 +80,21 @@ impl<S: tracing::Subscriber> Layer<S> for HostLayer {
             tracing::Level::DEBUG => LogLevel::Debug,
             tracing::Level::TRACE => LogLevel::Trace,
         };
-        host.log(level, event.metadata().target().to_owned(), line.text);
+        host.log(level, target, line.text);
     }
 }
 
 #[derive(Default)]
 struct Line {
     text: String,
+    log_target: Option<String>,
 }
 
 impl Visit for Line {
     fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+        if field.name().starts_with("log.") {
+            return;
+        }
         if field.name() == "message" {
             let message = format!("{value:?}");
             if self.text.is_empty() {
@@ -98,6 +111,13 @@ impl Visit for Line {
     }
 
     fn record_str(&mut self, field: &Field, value: &str) {
+        if field.name() == "log.target" {
+            self.log_target = Some(value.to_owned());
+            return;
+        }
+        if field.name().starts_with("log.") {
+            return;
+        }
         if field.name() == "message" {
             self.record_debug(field, &format_args!("{value}"));
         } else {

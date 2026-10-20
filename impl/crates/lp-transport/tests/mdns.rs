@@ -12,12 +12,12 @@ async fn wait_for(rx: &mut tokio::sync::mpsc::Receiver<Discovered>, want: &Insta
             .await
             .expect("discovery within 15 s")
             .expect("browser alive");
-        if let Discovered::Found { id, addrs } = ev {
-            if id == *want {
-                assert!(!addrs.is_empty(), "resolved with addresses");
-                assert!(addrs.iter().all(|a| a.port() == port), "{addrs:?}");
-                return;
-            }
+        if let Discovered::Found { id, addrs } = ev
+            && id == *want
+        {
+            assert!(!addrs.is_empty(), "resolved with addresses");
+            assert!(addrs.iter().all(|a| a.port() == port), "{addrs:?}");
+            return;
         }
     }
 }

@@ -69,7 +69,18 @@ discovery and platform crates are LP-28 and LP-29.
 updates are deliberate commits of their own. `cargo-deny` runs in CI (`impl/deny.toml`):
 licences allowed are MIT, Apache-2.0, BSD-2/3, ISC, Zlib, Unicode-3.0 and CC0; advisories
 and yanked crates fail the build; wildcard versions and unknown sources are refused;
-multiple versions of one crate warn. MSRV stays 1.85.
+multiple versions of one crate warn. MSRV stays 1.85 (raised to 1.88 in LP-73, below).
+
+## LP-73: MSRV raised to 1.88 for the `time` advisory
+
+RUSTSEC-2026-0009 (stack exhaustion while parsing) is fixed in `time` 0.3.47, and every
+release from 0.3.47 on needs Rust 1.88. `lp-core` parses RFC 3339 timestamps that arrive
+from peers, so the fix is taken rather than the advisory ignored, and the workspace
+`rust-version` becomes 1.88. CI builds with stable, so nothing else changes. The same
+ticket gave the workspace path dependencies (`lp-core = { path = …, version = "0.0.1" }`)
+a version: without one cargo-deny reports them as wildcards, and `cargo publish` would
+refuse them. Raising the floor let clippy ask for let chains (`if let … && …`, stable since
+1.88) in place of nested `if`s; those were collapsed where it asked.
 
 ## LP-28: crates for networking and discovery
 

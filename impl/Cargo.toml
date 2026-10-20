@@ -17,14 +17,14 @@ version = "0.0.1"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/ligature-protocol/ligature-protocol"
-rust-version = "1.85"
+rust-version = "1.88"
 
 [workspace.dependencies]
-lp-core = { path = "crates/lp-core" }
-lp-identity = { path = "crates/lp-identity" }
-lp-crypto = { path = "crates/lp-crypto" }
-lp-transport = { path = "crates/lp-transport" }
-lp-vectors = { path = "crates/lp-vectors" }
+lp-core = { path = "crates/lp-core", version = "0.0.1" }
+lp-identity = { path = "crates/lp-identity", version = "0.0.1" }
+lp-crypto = { path = "crates/lp-crypto", version = "0.0.1" }
+lp-transport = { path = "crates/lp-transport", version = "0.0.1" }
+lp-vectors = { path = "crates/lp-vectors", version = "0.0.1" }
 
 # Crypto, encoding, runtime, store (LP-27). Versions are pinned by Cargo.lock;
 # bumps are deliberate commits of their own.
@@ -40,7 +40,7 @@ base64 = "0.22"
 tempfile = "3"
 gethostname = "1"
 if-addrs = "0.15"
-ligatured = { path = "crates/ligatured" }
+ligatured = { path = "crates/ligatured", version = "0.0.1" }
 jsonschema = { version = "0.59", default-features = false }
 time = { version = "0.3", features = ["std", "formatting", "parsing", "serde-well-known", "macros"] }
 tokio = { version = "1.53", features = ["rt-multi-thread", "net", "sync", "time", "macros", "fs", "io-util"] }

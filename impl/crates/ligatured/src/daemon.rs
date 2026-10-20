@@ -517,10 +517,10 @@ impl Daemon {
             if stored.envelope.fact_type.as_str() != lp_core::facts::PERSON_TYPE {
                 continue;
             }
-            if let Ok(fact) = facts::verify_person(&stored.envelope) {
-                if best.as_ref().is_none_or(|(v, _)| fact.version > *v) {
-                    best = Some((fact.version, stored.envelope));
-                }
+            if let Ok(fact) = facts::verify_person(&stored.envelope)
+                && best.as_ref().is_none_or(|(v, _)| fact.version > *v)
+            {
+                best = Some((fact.version, stored.envelope));
             }
         }
         best.map(|(_, e)| e)
@@ -531,10 +531,10 @@ impl Daemon {
     /// exchange facts (the acceptor's side runs in the registered handler);
     /// then, on both sides, announce our manifest.
     pub async fn on_trusted(&self, conn: &Connection) {
-        if conn.dialled_by_us() {
-            if let Err(e) = crate::gossip::run_dialer(&self.store, conn).await {
-                tracing::warn!(peer = %conn.peer(), %e, "gossip failed");
-            }
+        if conn.dialled_by_us()
+            && let Err(e) = crate::gossip::run_dialer(&self.store, conn).await
+        {
+            tracing::warn!(peer = %conn.peer(), %e, "gossip failed");
         }
         self.registry.announce_to(conn);
         if let Some(sync) = self.clipboard_sync() {
@@ -637,13 +637,12 @@ fn stored_device_name(store: &TrustStore, binding: &PublicKey) -> Result<Option<
         if stored.envelope.fact_type.as_str() != DEVICE_TYPE {
             continue;
         }
-        if let Ok(fact) = facts::verify_device(&stored.envelope) {
-            if newest
+        if let Ok(fact) = facts::verify_device(&stored.envelope)
+            && newest
                 .as_ref()
                 .is_none_or(|n| fact.created_at > n.created_at)
-            {
-                newest = Some(fact);
-            }
+        {
+            newest = Some(fact);
         }
     }
     Ok(newest.map(|f| f.display_name))
@@ -657,10 +656,10 @@ pub fn person_name(store: &TrustStore, person: &PublicKey) -> Option<String> {
         if stored.envelope.fact_type.as_str() != lp_core::facts::PERSON_TYPE {
             continue;
         }
-        if let Ok(fact) = facts::verify_person(&stored.envelope) {
-            if best.as_ref().is_none_or(|b| fact.version > b.version) {
-                best = Some(fact);
-            }
+        if let Ok(fact) = facts::verify_person(&stored.envelope)
+            && best.as_ref().is_none_or(|b| fact.version > b.version)
+        {
+            best = Some(fact);
         }
     }
     best.map(|f| f.display_name)

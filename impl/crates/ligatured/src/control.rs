@@ -288,15 +288,13 @@ pub fn devices(daemon: &Daemon) -> Result<Devices, Error> {
     let store = daemon.store();
     let mut me = None;
     for stored in store.about(&owner)? {
-        if stored.envelope.fact_type.as_str() == lp_core::facts::PERSON_TYPE {
-            if let Ok(p) = facts::verify_person(&stored.envelope) {
-                if me
-                    .as_ref()
-                    .is_none_or(|m: &lp_core::facts::PersonFact| p.version > m.version)
-                {
-                    me = Some(p);
-                }
-            }
+        if stored.envelope.fact_type.as_str() == lp_core::facts::PERSON_TYPE
+            && let Ok(p) = facts::verify_person(&stored.envelope)
+            && me
+                .as_ref()
+                .is_none_or(|m: &lp_core::facts::PersonFact| p.version > m.version)
+        {
+            me = Some(p);
         }
     }
     let me = me.ok_or_else(|| Error::Chain("my person fact is missing".to_owned()))?;
@@ -504,10 +502,10 @@ async fn connection(daemon: Arc<Daemon>, stream: UnixStream) -> Result<(), Error
                 continue;
             }
         };
-        if let Some(response) = handle(&daemon, &mut state, request, out.clone()).await {
-            if out.send(Outgoing::Response(response)).await.is_err() {
-                break;
-            }
+        if let Some(response) = handle(&daemon, &mut state, request, out.clone()).await
+            && out.send(Outgoing::Response(response)).await.is_err()
+        {
+            break;
         }
     }
     drop(out);

@@ -1,8 +1,8 @@
 # Ligature Protocol (LP)
 
 > **Status: pre-alpha.** Nothing here is stable. The specification is a draft, the
-> reference implementation is a scaffold, and the `org.ligatureprotocol` type names use a
-> placeholder domain.
+> reference implementation covers pairing and the text clipboard between a Linux machine
+> and a Mac, and the `org.ligatureprotocol` type names use a placeholder domain.
 
 Ligature Protocol binds a person's devices (Linux and macOS desktops and laptops, Android
 phones and tablets, home hubs, and iPhones where the platform allows) into one trusted
@@ -123,6 +123,13 @@ The `impl/` workspace contains:
   `vectors/`)
 - `integrations/wireguard-integration`: non-core; generates Headscale/WireGuard peer
   configs from the device list
+
+What works today, on Linux and macOS: two daemons on the same LAN pair with the
+proximity ceremony started from `lpctl pair`, and text copied on either machine can be
+pasted on the other, in both directions, with no server, account or internet connection.
+Revoking a device stops it connecting, and pairings survive a restart. This is the
+[milestone 1](docs/milestones/01-clipboard-poc.md) scope; everything else in the
+specification is unimplemented.
 
 ```sh
 cd impl

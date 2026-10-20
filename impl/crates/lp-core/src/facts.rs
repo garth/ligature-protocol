@@ -18,6 +18,8 @@ pub const ROLE_TYPE: &str = "org.ligatureprotocol.role";
 pub const DEVICE_TYPE: &str = "org.ligatureprotocol.device";
 /// Type name of a revocation or abandonment.
 pub const REVOCATION_TYPE: &str = "org.ligatureprotocol.revocation";
+/// Type name of a grant.
+pub const GRANT_TYPE: &str = "org.ligatureprotocol.grant";
 
 /// The role a ceremony signature asserts about a key. Spec chapter 02 section 3.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -153,6 +155,53 @@ pub struct RevocationFact {
     pub revoked_at: Timestamp,
 }
 
+/// How a grant came about. Spec chapter 10 section 5.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GrantBasis {
+    /// Same person, user-scoped capability: no prompt was needed.
+    Implicit,
+    /// A person approved it, once or as a standing grant.
+    Approval,
+    /// Device policy allowed it while nobody was present.
+    Policy,
+}
+
+/// `org.ligatureprotocol.grant`: one device may use a capability of another.
+/// Signed by the grantor's key; held by the device that issued it and never
+/// gossiped (spec chapter 05 section 4).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrantFact {
+    /// The principal or binding offering the capability.
+    pub grantor: PublicKey,
+    /// The device permitted to use it.
+    pub grantee: PublicKey,
+    /// The grantee's owner, when it is another person.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grantee_person: Option<PublicKey>,
+    /// The capability type.
+    pub capability: TypeName,
+    /// How the grant came about.
+    #[serde(default = "implicit")]
+    pub basis: GrantBasis,
+    /// Whether the approver chose to remember the answer.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub standing: bool,
+    /// When the grant ends, if ever.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<Timestamp>,
+    /// When the grant was withdrawn, if it was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revoked_at: Option<Timestamp>,
+    /// When the grant was made.
+    pub created_at: Timestamp,
+}
+
+const fn implicit() -> GrantBasis {
+    GrantBasis::Implicit
+}
+
 /// Which type name a fact payload type carries.
 pub trait FactType {
     /// The reverse-DNS type name.
@@ -180,6 +229,13 @@ impl FactType for RevocationFact {
 impl FactType for DeviceFact {
     const TYPE: &'static str = DEVICE_TYPE;
 }
+
+impl FactType for GrantFact {
+    const TYPE: &'static str = GRANT_TYPE;
+}
+
+/// Fact types that stay on the device that made them and are never gossiped.
+pub const LOCAL_ONLY_TYPES: [&str; 1] = [GRANT_TYPE];
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_false(b: &bool) -> bool {

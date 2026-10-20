@@ -10,8 +10,8 @@ use lp_core::PublicKey;
 use lp_core::capability::{CLIPBOARD_TYPE, Descriptor, Manifest, Scope};
 use lp_core::envelope::{Envelope, FactId};
 use lp_core::facts::{
-    DeviceFact, DeviceKind, PersonFact, Registration, RevocationFact, RevocationKind, Role,
-    RoleFact, SubordinateKey,
+    DeviceFact, DeviceKind, GrantBasis, GrantFact, PersonFact, Registration, RevocationFact,
+    RevocationKind, Role, RoleFact, SubordinateKey,
 };
 use lp_core::frame::{GossipFact, GossipHave, GossipWant, StreamHeader};
 use lp_core::wire::{Bytes, Timestamp, TypeName};
@@ -194,6 +194,26 @@ fn facts_validate_against_their_schemas() {
             person: None,
             principal: None,
             introducer: false,
+            created_at: at(),
+        },
+    );
+}
+
+#[test]
+fn grants_validate_against_the_grant_schema() {
+    let s = LocalSchemas::load();
+    check(
+        &s,
+        "grant",
+        &GrantFact {
+            grantor: key(4),
+            grantee: key(7),
+            grantee_person: None,
+            capability: TypeName::new(CLIPBOARD_TYPE),
+            basis: GrantBasis::Implicit,
+            standing: true,
+            expires_at: None,
+            revoked_at: None,
             created_at: at(),
         },
     );

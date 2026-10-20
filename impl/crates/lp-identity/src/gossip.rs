@@ -66,6 +66,7 @@ pub fn facts_for(store: &TrustStore, wanted: &GossipWant) -> Result<Vec<GossipFa
         .all()?
         .into_iter()
         .filter(|f| asked.contains(&f.id))
+        .filter(|f| !lp_core::facts::LOCAL_ONLY_TYPES.contains(&f.envelope.fact_type.as_str()))
         .collect();
     facts.sort_by(|a, b| {
         rank(a.envelope.fact_type.as_str())

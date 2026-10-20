@@ -190,29 +190,4 @@ impl Manifest {
     }
 }
 
-/// How a grant came about. Spec chapter 10 section 5.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum GrantBasis {
-    /// Same identity, user-scoped capability: no prompt was needed.
-    Implicit,
-    /// A person approved it, once or as a standing grant.
-    Approval,
-    /// Device policy allowed it while nobody was present.
-    Policy,
-}
-
-/// An explicit authorisation for one device to use a capability of another.
-///
-/// Expiry and capability-specific restrictions will be added when the grant
-/// semantics in spec chapter 05 are settled.
-#[derive(Debug, Clone)]
-pub struct Grant {
-    /// How the grant came about.
-    pub basis: GrantBasis,
-    /// Key of the device offering the capability.
-    pub grantor: crate::device::DeviceKey,
-    /// Key of the device permitted to use it.
-    pub grantee: crate::device::DeviceKey,
-    /// The granted capability type.
-    pub capability_type: CapabilityType,
-}
+// Grants are facts: see [`crate::facts::GrantFact`].

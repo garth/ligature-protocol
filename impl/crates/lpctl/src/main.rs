@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use ligatured::control::{Caps, Client, Devices, Empty, Event, InitResult, Request, types};
 use ligatured::daemon::Status;
+use ligatured::grants::Grants;
 use lp_core::paths::{DATA_DIR_ENV, Locations, RUNTIME_DIR_ENV};
 use lp_core::{Error, PublicKey};
 
@@ -61,6 +62,8 @@ enum Command {
     },
     /// Show the live capabilities of connected peers.
     Caps,
+    /// List the grants this device has issued.
+    Grants,
 }
 
 #[tokio::main]
@@ -165,6 +168,23 @@ async fn run(options: &Options, locations: &Locations) -> Result<(), Error> {
             req.key = Some(*key);
             let _: Empty = client.request(req).await?;
             println!("revoked {key}");
+        }
+        Command::Grants => {
+            let g: Grants = client.request(Request::new(types::GRANTS, 0)).await?;
+            if g.grants.is_empty() {
+                println!("no grants");
+            }
+            for grant in g.grants {
+                println!(
+                    "{:<9} {:<8} {}  to {} ({}…)  {}",
+                    format!("{:?}", grant.basis).to_lowercase(),
+                    grant.grantor.fingerprint(),
+                    grant.capability,
+                    grant.grantee,
+                    grant.grantee.fingerprint(),
+                    grant.created_at
+                );
+            }
         }
         Command::Caps => {
             let caps: Caps = client.request(Request::new(types::CAPS, 0)).await?;

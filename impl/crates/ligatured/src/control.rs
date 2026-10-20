@@ -36,6 +36,8 @@ pub mod types {
     pub const CAPS: &str = "org.ligatureprotocol.control.caps";
     /// Revoke a key.
     pub const REVOKE: &str = "org.ligatureprotocol.control.revoke";
+    /// The grants this device issued.
+    pub const GRANTS: &str = "org.ligatureprotocol.control.grants";
     /// Start a ceremony as the introducer.
     pub const PAIR_INTRODUCE: &str = "org.ligatureprotocol.control.pair.introduce";
     /// Start a ceremony as the newcomer.
@@ -535,6 +537,7 @@ pub async fn handle(
             )),
         },
         types::DEVICES => devices(daemon).and_then(|d| Response::ok(id, &d)),
+        types::GRANTS => crate::grants::list(daemon).and_then(|g| Response::ok(id, &g)),
         types::CAPS => Response::ok(
             id,
             &Caps {

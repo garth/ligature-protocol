@@ -14,7 +14,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use lp_core::envelope::{Envelope, FactId};
-use lp_core::facts::{DEVICE_TYPE, PERSON_TYPE, REVOCATION_TYPE, ROLE_TYPE};
+use lp_core::facts::{DEVICE_TYPE, GRANT_TYPE, PERSON_TYPE, REVOCATION_TYPE, ROLE_TYPE};
 use lp_core::paths::Locations;
 use lp_core::wire::{Bytes, Timestamp, TypeName};
 use lp_core::{Error, PublicKey};
@@ -226,7 +226,8 @@ impl TrustStore {
         )
     }
 
-    /// Identifiers of every usable fact, for gossip.
+    /// Identifiers of every usable fact that may be gossiped: everything
+    /// except the local-only types (grants).
     ///
     /// # Errors
     ///
@@ -234,10 +235,10 @@ impl TrustStore {
     pub fn ids(&self) -> Result<Vec<FactId>, Error> {
         let conn = self.conn();
         let mut stmt = conn
-            .prepare("SELECT hash FROM facts WHERE quarantined = 0 ORDER BY hash")
+            .prepare("SELECT hash FROM facts WHERE quarantined = 0 AND kind != ?1 ORDER BY hash")
             .map_err(store_err)?;
         let rows = stmt
-            .query_map([], |r| r.get::<_, String>(0))
+            .query_map([GRANT_TYPE], |r| r.get::<_, String>(0))
             .map_err(store_err)?;
         rows.map(|r| {
             let hex = r.map_err(store_err)?;
@@ -356,7 +357,7 @@ impl TrustStore {
 
 /// The subject key and timestamp a fact is indexed by, from its decoded payload.
 fn index_fields(envelope: &Envelope) -> Result<(PublicKey, Timestamp), Error> {
-    use lp_core::facts::{DeviceFact, PersonFact, RevocationFact, RoleFact};
+    use lp_core::facts::{DeviceFact, GrantFact, PersonFact, RevocationFact, RoleFact};
     match envelope.fact_type.as_str() {
         PERSON_TYPE => {
             let f: PersonFact = facts::decode(envelope)?;
@@ -373,6 +374,10 @@ fn index_fields(envelope: &Envelope) -> Result<(PublicKey, Timestamp), Error> {
         DEVICE_TYPE => {
             let f: DeviceFact = facts::decode(envelope)?;
             Ok((f.key, f.created_at))
+        }
+        GRANT_TYPE => {
+            let f: GrantFact = facts::decode(envelope)?;
+            Ok((f.grantee, f.created_at))
         }
         other => Err(Error::Decode(format!("unknown fact type {other}"))),
     }

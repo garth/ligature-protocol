@@ -21,6 +21,7 @@
         "org.ligatureprotocol.control.status",
         "org.ligatureprotocol.control.devices",
         "org.ligatureprotocol.control.caps",
+        "org.ligatureprotocol.control.grants",
         "org.ligatureprotocol.control.revoke",
         "org.ligatureprotocol.control.pair.introduce",
         "org.ligatureprotocol.control.pair.join",

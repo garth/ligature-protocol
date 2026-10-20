@@ -7,6 +7,7 @@
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use lp_core::{Error, PublicKey};
 use lp_crypto::session::{SessionConfig, peer_key};
@@ -17,6 +18,38 @@ use rustls::pki_types::CertificateDer;
 /// The server name sent in the ClientHello. Raw public keys carry no name and
 /// the verifier ignores it, but TLS requires one; it is never a host name.
 const SERVER_NAME: &str = "ligature";
+
+/// Keep-alive and idle timeouts of a connection. A session between two of a
+/// person's devices stays up while both are on the network, so keep-alives
+/// run well inside the idle timeout; without them QUIC closes an idle
+/// connection and the peer vanishes from view until discovery redials it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Timeouts {
+    /// How often a PING keeps the connection alive; `None` disables it.
+    pub keep_alive: Option<Duration>,
+    /// How long without any packet before the connection is closed.
+    pub idle: Duration,
+}
+
+impl Default for Timeouts {
+    fn default() -> Self {
+        Self {
+            keep_alive: Some(Duration::from_secs(15)),
+            idle: Duration::from_secs(60),
+        }
+    }
+}
+
+impl Timeouts {
+    fn transport(self) -> Result<quinn::TransportConfig, Error> {
+        let mut t = quinn::TransportConfig::default();
+        t.keep_alive_interval(self.keep_alive);
+        let idle = quinn::IdleTimeout::try_from(self.idle)
+            .map_err(|e| Error::Transport(format!("idle timeout: {e}")))?;
+        t.max_idle_timeout(Some(idle));
+        Ok(t)
+    }
+}
 
 /// The local QUIC endpoint: listens, dials and owns live connections.
 #[derive(Debug, Clone)]
@@ -34,16 +67,32 @@ impl Endpoint {
     /// Returns [`Error::InvalidKey`] for a TLS configuration problem and
     /// [`Error::Io`] if the socket cannot be bound.
     pub fn bind(addr: SocketAddr, key: &SigningKey) -> Result<Self, Error> {
+        Self::bind_with(addr, key, Timeouts::default())
+    }
+
+    /// As [`Self::bind`] with explicit keep-alive and idle timeouts.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::bind`].
+    pub fn bind_with(
+        addr: SocketAddr,
+        key: &SigningKey,
+        timeouts: Timeouts,
+    ) -> Result<Self, Error> {
         let session = SessionConfig::new(key)?;
         let tls = |e: quinn::crypto::rustls::NoInitialCipherSuite| {
             Error::InvalidKey(format!("quic tls: {e}"))
         };
+        let transport = Arc::new(timeouts.transport()?);
         let server_crypto =
             QuicServerConfig::try_from(session.server.as_ref().clone()).map_err(tls)?;
-        let server = quinn::ServerConfig::with_crypto(Arc::new(server_crypto));
+        let mut server = quinn::ServerConfig::with_crypto(Arc::new(server_crypto));
+        server.transport_config(transport.clone());
         let client_crypto =
             QuicClientConfig::try_from(session.client.as_ref().clone()).map_err(tls)?;
-        let client = quinn::ClientConfig::new(Arc::new(client_crypto));
+        let mut client = quinn::ClientConfig::new(Arc::new(client_crypto));
+        client.transport_config(transport);
         let mut inner = quinn::Endpoint::server(server, addr)
             .map_err(|e| Error::Io(format!("bind {addr}: {e}")))?;
         inner.set_default_client_config(client);

@@ -4,6 +4,7 @@
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use lp_crypto::session::{ALPN, RawKeyVerifier, SessionConfig};
 use lp_crypto::signing::SigningKey;
@@ -192,4 +193,49 @@ async fn dial_with(client: rustls::ClientConfig, addr: SocketAddr) -> Result<(),
         .map_err(|e| e.to_string())?;
     drop(conn);
     Ok(())
+}
+
+/// An idle connection stays up with keep-alives and dies without them.
+#[tokio::test]
+async fn keep_alives_hold_an_idle_connection_open() {
+    use lp_transport::quic::Timeouts;
+    let a_key = SigningKey::generate().unwrap();
+    let b_key = SigningKey::generate().unwrap();
+    let short = Timeouts {
+        keep_alive: Some(Duration::from_millis(200)),
+        idle: Duration::from_millis(1500),
+    };
+    let a = Endpoint::bind_with(loopback(), &a_key, short).unwrap();
+    let b = Endpoint::bind_with(loopback(), &b_key, short).unwrap();
+    let accept = tokio::spawn({
+        let b = b.clone();
+        async move { b.accept().await.unwrap().unwrap() }
+    });
+    let ab = a.connect(b.local_addr().unwrap()).await.unwrap();
+    let ba = accept.await.unwrap();
+    tokio::time::sleep(Duration::from_millis(3500)).await;
+    assert!(
+        ab.raw().close_reason().is_none(),
+        "kept alive: {:?}",
+        ab.raw().close_reason()
+    );
+    assert!(ba.raw().close_reason().is_none());
+
+    let none = Timeouts {
+        keep_alive: None,
+        idle: Duration::from_millis(1000),
+    };
+    let c = Endpoint::bind_with(loopback(), &SigningKey::generate().unwrap(), none).unwrap();
+    let d = Endpoint::bind_with(loopback(), &SigningKey::generate().unwrap(), none).unwrap();
+    let accept = tokio::spawn({
+        let d = d.clone();
+        async move { d.accept().await.unwrap().unwrap() }
+    });
+    let cd = c.connect(d.local_addr().unwrap()).await.unwrap();
+    let _dc = accept.await.unwrap();
+    tokio::time::sleep(Duration::from_millis(3000)).await;
+    assert!(
+        cd.raw().close_reason().is_some(),
+        "idled out without keep-alives"
+    );
 }

@@ -20,10 +20,10 @@ use lp_core::{Error, PublicKey};
 #[command(version, about = "Ligature Protocol command-line tool")]
 struct Options {
     /// The daemon's data directory (default: data/).
-    #[arg(long, env = DATA_DIR_ENV)]
+    #[arg(long, env = DATA_DIR_ENV, global = true)]
     data_dir: Option<PathBuf>,
     /// The daemon's runtime directory (default: the data directory).
-    #[arg(long, env = RUNTIME_DIR_ENV)]
+    #[arg(long, env = RUNTIME_DIR_ENV, global = true)]
     runtime_dir: Option<PathBuf>,
     /// Answer yes to the code comparison without asking (for scripts).
     #[arg(long, global = true)]

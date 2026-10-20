@@ -8,7 +8,9 @@ pub mod clipboard;
 pub mod clipboard_linux;
 #[cfg(target_os = "macos")]
 pub mod clipboard_macos;
+pub mod clipboard_sync;
 pub mod control;
 pub mod daemon;
 pub mod gossip;
+pub mod grants;
 pub mod run;

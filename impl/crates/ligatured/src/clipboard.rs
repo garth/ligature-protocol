@@ -50,9 +50,13 @@ pub struct EchoFilter {
 
 impl EchoFilter {
     /// The daemon is about to set the local clipboard to `text` because a
-    /// peer sent it; the change event that follows must not be sent back.
+    /// peer sent it; the change event that follows must not be sent back, and
+    /// since both sides now hold this text, copying it again later is not
+    /// worth sending either.
     pub fn note_set(&self, text: &str) {
-        *self.lock(&self.last_set) = Some(sha256(text.as_bytes()));
+        let h = sha256(text.as_bytes());
+        *self.lock(&self.last_set) = Some(h);
+        *self.lock(&self.last_sent) = Some(h);
     }
 
     /// A local change happened: whether it is worth sending. False for the
@@ -210,11 +214,16 @@ mod tests {
         f.note_set("c");
         assert!(!f.should_send("c"), "echo of our own set");
         assert!(
-            f.should_send("c"),
-            "but a later real copy of the same text does go out"
+            !f.should_send("c"),
+            "both sides hold it; copying it again is not sent"
         );
-        // The peer echoing what we sent is not applied.
+        // The peer echoing what both sides hold is not applied.
         assert!(!f.should_apply("c"));
         assert!(f.should_apply("d"));
+        assert!(f.should_send("e"), "something new goes out");
+        assert!(
+            !f.should_apply("e"),
+            "the peer echoing what we sent is not applied"
+        );
     }
 }

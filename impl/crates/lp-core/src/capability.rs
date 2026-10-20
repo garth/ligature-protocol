@@ -9,6 +9,59 @@ use crate::wire::{Timestamp, TypeName};
 pub const MANIFEST_TYPE: &str = "org.ligatureprotocol.manifest";
 /// Type name of the clipboard capability.
 pub const CLIPBOARD_TYPE: &str = "org.ligatureprotocol.capability.clipboard";
+/// Type name of the clipboard `set` message.
+pub const CLIPBOARD_SET_TYPE: &str = "org.ligatureprotocol.capability.clipboard.set";
+
+/// `clipboard.set`: the sender's clipboard now holds this text. Spec chapter
+/// 05 section 3b; `schemas/capability.clipboard.schema.json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipboardSet {
+    /// Always [`CLIPBOARD_SET_TYPE`].
+    #[serde(rename = "type")]
+    pub message_type: TypeName,
+    /// Content type; `text/plain` in this version.
+    #[serde(default = "text_plain")]
+    pub mime: String,
+    /// The content.
+    pub text: String,
+    /// When the sender's clipboard took this value; the newest wins.
+    pub set_at: Timestamp,
+}
+
+fn text_plain() -> String {
+    "text/plain".to_owned()
+}
+
+impl ClipboardSet {
+    /// A `set` of `text` taken now.
+    #[must_use]
+    pub fn now(text: &str) -> Self {
+        Self {
+            message_type: TypeName::new(CLIPBOARD_SET_TYPE),
+            mime: text_plain(),
+            text: text.to_owned(),
+            set_at: Timestamp::now(),
+        }
+    }
+}
+
+/// The descriptor this device advertises for its clipboard.
+#[must_use]
+pub fn clipboard_descriptor(max_bytes: u64) -> Descriptor {
+    let mut d = Descriptor::new(CLIPBOARD_TYPE, Scope::User);
+    d.params = Some(ciborium::Value::Map(vec![
+        (
+            ciborium::Value::Text("maxBytes".into()),
+            ciborium::Value::Integer(max_bytes.into()),
+        ),
+        (
+            ciborium::Value::Text("mimeTypes".into()),
+            ciborium::Value::Array(vec![ciborium::Value::Text("text/plain".into())]),
+        ),
+    ]));
+    d
+}
 
 /// A reverse-DNS type name, such as `org.ligatureprotocol.capability.clipboard`
 /// for a capability or `org.ligatureprotocol.device` for a fact.

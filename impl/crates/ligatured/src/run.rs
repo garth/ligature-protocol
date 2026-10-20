@@ -32,6 +32,12 @@ pub async fn run(locations: Locations, device_name: Option<&str>) -> Result<(), 
         "ligatured running"
     );
     let control = control::serve(daemon.clone(), &locations.control_socket())?;
+    match crate::clipboard::platform_clipboard() {
+        Some(clipboard) => {
+            daemon.attach_clipboard(clipboard);
+        }
+        None => tracing::warn!("no clipboard implementation on this platform"),
+    }
 
     // Connection events: recognise, keep or drop.
     let for_events = daemon.clone();

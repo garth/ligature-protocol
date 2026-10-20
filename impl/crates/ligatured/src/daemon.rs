@@ -70,6 +70,7 @@ pub struct Daemon {
     instance_id: InstanceId,
     pairing: Arc<Mutex<Option<mpsc::Sender<PairingStream>>>>,
     registry: Arc<crate::capabilities::Registry>,
+    clipboard: Mutex<Option<Arc<crate::clipboard_sync::ClipboardSync>>>,
 }
 
 impl std::fmt::Debug for Daemon {
@@ -173,6 +174,7 @@ impl Daemon {
             instance_id: InstanceId::random()?,
             pairing,
             registry,
+            clipboard: Mutex::new(None),
         });
         if daemon.is_initialised() {
             daemon.start_advertising()?;
@@ -511,11 +513,39 @@ impl Daemon {
             }
         }
         self.registry.announce_to(conn);
+        if let Some(sync) = self.clipboard_sync() {
+            sync.attach(conn);
+        }
     }
 
     /// A peer disconnected: its capabilities are withdrawn.
     pub fn on_disconnected(&self, peer: &PublicKey) {
         self.registry.forget(peer);
+        if let Some(sync) = self.clipboard_sync() {
+            sync.detach(peer);
+        }
+    }
+
+    /// Starts synchronising the given clipboard. Called once at startup.
+    pub fn attach_clipboard(
+        self: &Arc<Self>,
+        clipboard: Arc<dyn crate::clipboard::Clipboard>,
+    ) -> Arc<crate::clipboard_sync::ClipboardSync> {
+        let sync = crate::clipboard_sync::ClipboardSync::start(self.clone(), clipboard);
+        *self
+            .clipboard
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(sync.clone());
+        sync
+    }
+
+    /// The clipboard synchroniser, if one was attached.
+    #[must_use]
+    pub fn clipboard_sync(&self) -> Option<Arc<crate::clipboard_sync::ClipboardSync>> {
+        self.clipboard
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 
     /// The live capability registry.

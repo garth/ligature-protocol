@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ligatureprotocol.org/schemas/capability.clipboard.schema.json",
+  "title": "org.ligatureprotocol.capability.clipboard",
+  "description": "DRAFT. The clipboard capability (spec chapter 05 section 3b): user-scoped, text only in this version. The descriptor's params say how much text the device accepts. The capability's stream (purpose org.ligatureprotocol.capability.clipboard, ADR 0036) carries set messages in both directions: the sender's clipboard changed to this text at this time. The receiver applies the newest by setAt and ignores a set equal to what it holds. The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "$defs": {
+    "params": {
+      "type": "object",
+      "description": "The descriptor's params for this capability.",
+      "properties": {
+        "maxBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1048576,
+          "description": "The largest text, in UTF-8 bytes, this device accepts in one set. Never more than the frame limit of ADR 0036."
+        },
+        "mimeTypes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "text/plain"
+          ],
+          "description": "The content types this device offers and accepts. Only text/plain in this version."
+        }
+      }
+    },
+    "set": {
+      "type": "object",
+      "description": "The sender's clipboard now holds this text.",
+      "required": [
+        "type",
+        "text",
+        "setAt"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.clipboard.set"
+        },
+        "mime": {
+          "type": "string",
+          "default": "text/plain",
+          "description": "Content type of text; only text/plain in this version."
+        },
+        "text": {
+          "type": "string",
+          "description": "The clipboard content."
+        },
+        "setAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the sender's clipboard took this value; the newest wins."
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/set"
+    }
+  ]
+}

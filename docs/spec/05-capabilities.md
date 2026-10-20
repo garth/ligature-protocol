@@ -47,8 +47,7 @@ flowchart LR
 
 The first families are: notifications, clipboard, files, share, remote input, media
 control, telephony/SMS, displays, sensors. Each will become its own spec section with its
-own schema. Open question: which two or three families the proof of concept should cover
-(clipboard is the current target).
+own schema; clipboard (section 3b) and share (section 3a) are specified so far.
 
 ## 3a. Sharing between people
 
@@ -62,6 +61,20 @@ transferring files among a person's own devices. See
 [ADR 0022](../adr/0022-ad-hoc-sharing-between-people.md). Open question: size limits and
 resumption for large shares, and whether a share may be addressed to several devices at
 once (which is several sessions under chapter 03).
+
+## 3b. Clipboard
+
+`org.ligatureprotocol.capability.clipboard`
+([schema](../../schemas/capability.clipboard.schema.json)) is the first family specified.
+It is user-scoped: a binding offers it, and the same person's other bindings use it
+without a prompt (section 4). A device advertises it only while it can reach its local
+clipboard; the descriptor's `params` carry `maxBytes`, the largest text it accepts, and
+`mimeTypes`, which is `text/plain` only in this version. On the capability's stream each
+side sends a `set` message (the text and `setAt`, when the sender's clipboard took that
+value) whenever its local clipboard changes. The receiver applies a `set` newer than what it
+holds and ignores one equal to its current content, so two devices setting each other never
+loop. Open question: other content types (images, files), and whether a device should be
+able to ask for the current value rather than wait for a change.
 
 ## 4. Requests and grants
 

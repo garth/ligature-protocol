@@ -113,7 +113,8 @@ The reference implementation is Rust and is also the production implementation
   project root during milestone 1, gitignored; no configuration file; `lpctl init --name`
   creates the first identity).
 - `schemas/*.schema.json`: JSON Schema 2020-12 drafts (person, device, capability, grant,
-  group, role, revocation, envelope, message; `control` is implementation-only).
+  group, role, revocation, envelope, message, pairing, capability.clipboard; `control` is
+  implementation-only).
   Spec chapters link to these by relative path.
 - `impl/`: Rust cargo workspace, edition 2024. Crates: `lp-core` (shared types, capability
   model), `lp-identity` (master key, ceremony, roles, trust store, optional publication),

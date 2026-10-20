@@ -57,7 +57,10 @@ pub async fn run(locations: Locations, device_name: Option<&str>) -> Result<(), 
                     }
                     Err(e) => tracing::warn!(%e, "recognition failed"),
                 },
-                Event::Disconnected(peer) => tracing::info!(%peer, "peer disconnected"),
+                Event::Disconnected(peer) => {
+                    tracing::info!(%peer, "peer disconnected");
+                    for_events.on_disconnected(&peer);
+                }
             }
         }
     });

@@ -535,7 +535,13 @@ pub async fn handle(
             )),
         },
         types::DEVICES => devices(daemon).and_then(|d| Response::ok(id, &d)),
-        types::CAPS => Response::ok(id, &Caps { peers: Vec::new() }),
+        types::CAPS => Response::ok(
+            id,
+            &Caps {
+                local: daemon.registry().local(),
+                peers: daemon.registry().peers(),
+            },
+        ),
         types::REVOKE => match request.key {
             Some(key) => revoke_and_push(daemon, &key)
                 .await
@@ -566,11 +572,13 @@ pub struct InitResult {
     pub person: PublicKey,
 }
 
-/// The `caps` result: filled in by D3.
+/// The `caps` result: the live view.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Caps {
-    /// Per connected peer, its live manifest.
-    pub peers: Vec<ciborium::Value>,
+    /// What this device offers.
+    pub local: Vec<lp_core::capability::Descriptor>,
+    /// Per connected peer, its newest manifest.
+    pub peers: Vec<crate::capabilities::PeerCaps>,
 }
 
 /// An empty result.

@@ -168,11 +168,24 @@ async fn run(options: &Options, locations: &Locations) -> Result<(), Error> {
         }
         Command::Caps => {
             let caps: Caps = client.request(Request::new(types::CAPS, 0)).await?;
+            println!("this device offers:");
+            if caps.local.is_empty() {
+                println!("  (nothing)");
+            }
+            for d in &caps.local {
+                println!("  {} ({:?})", d.capability_type.as_str(), d.scope);
+            }
             if caps.peers.is_empty() {
                 println!("no connected peers");
             }
             for p in caps.peers {
-                println!("{p:?}");
+                println!("{} ({}…) offers:", p.peer, p.peer.fingerprint());
+                if p.capabilities.is_empty() {
+                    println!("  (nothing)");
+                }
+                for d in &p.capabilities {
+                    println!("  {} ({:?})", d.capability_type.as_str(), d.scope);
+                }
             }
         }
     }

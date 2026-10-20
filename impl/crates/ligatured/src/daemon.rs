@@ -69,6 +69,7 @@ pub struct Daemon {
     mdns: Mutex<Option<Mdns>>,
     instance_id: InstanceId,
     pairing: Arc<Mutex<Option<mpsc::Sender<PairingStream>>>>,
+    registry: Arc<crate::capabilities::Registry>,
 }
 
 impl std::fmt::Debug for Daemon {
@@ -158,6 +159,8 @@ impl Daemon {
             }),
         );
         crate::gossip::register(&manager, store.clone());
+        let registry = Arc::new(crate::capabilities::Registry::default());
+        registry.register(&manager);
         let daemon = Arc::new(Self {
             locations,
             keys: Mutex::new(keys),
@@ -169,6 +172,7 @@ impl Daemon {
             mdns: Mutex::new(None),
             instance_id: InstanceId::random()?,
             pairing,
+            registry,
         });
         if daemon.is_initialised() {
             daemon.start_advertising()?;
@@ -498,13 +502,26 @@ impl Daemon {
     }
 
     /// A trusted peer connected: if we dialled it, open the gossip stream and
-    /// exchange facts. The acceptor's side runs in the registered handler.
+    /// exchange facts (the acceptor's side runs in the registered handler);
+    /// then, on both sides, announce our manifest.
     pub async fn on_trusted(&self, conn: &Connection) {
         if conn.dialled_by_us() {
             if let Err(e) = crate::gossip::run_dialer(&self.store, conn).await {
                 tracing::warn!(peer = %conn.peer(), %e, "gossip failed");
             }
         }
+        self.registry.announce_to(conn);
+    }
+
+    /// A peer disconnected: its capabilities are withdrawn.
+    pub fn on_disconnected(&self, peer: &PublicKey) {
+        self.registry.forget(peer);
+    }
+
+    /// The live capability registry.
+    #[must_use]
+    pub fn registry(&self) -> &Arc<crate::capabilities::Registry> {
+        &self.registry
     }
 
     /// Runs a gossip exchange with every connected, recognised peer now, so a

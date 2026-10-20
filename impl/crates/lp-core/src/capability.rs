@@ -1,10 +1,28 @@
 //! The capability model: descriptors, manifests and grants. Spec chapter 05
 //! and the `capability` and `grant` schemas under `schemas/`.
 
+use serde::{Deserialize, Serialize};
+
+use crate::wire::{Timestamp, TypeName};
+
+/// Type name of the manifest message on the `manifest` stream (ADR 0036).
+pub const MANIFEST_TYPE: &str = "org.ligatureprotocol.manifest";
+/// Type name of the clipboard capability.
+pub const CLIPBOARD_TYPE: &str = "org.ligatureprotocol.capability.clipboard";
+
 /// A reverse-DNS type name, such as `org.ligatureprotocol.capability.clipboard`
 /// for a capability or `org.ligatureprotocol.device` for a fact.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct CapabilityType(pub String);
+
+impl CapabilityType {
+    /// The string form.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 /// The initial capability families. Each will receive its own schema and
 /// spec section.
@@ -34,7 +52,8 @@ pub enum Family {
 
 /// Whether a capability belongs to a person's session on a device or to the
 /// device itself. Spec chapter 10.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Scope {
     /// Owned by a user-device binding: clipboard, notifications, personal files.
     /// Implicitly available to the same person's other devices.
@@ -45,29 +64,77 @@ pub enum Scope {
     Device,
 }
 
-/// One capability offered by one principal.
-#[derive(Debug, Clone)]
+/// One capability offered by one principal or binding.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Descriptor {
     /// The capability type.
+    #[serde(rename = "type")]
     pub capability_type: CapabilityType,
     /// Whether this is a user-scoped or device-scoped capability.
     pub scope: Scope,
     /// Version of the type's operation set the device implements.
+    #[serde(default = "one")]
     pub version: u32,
     /// Optional human-readable label.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    /// Type-specific parameters, per the capability type's own schema.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub params: Option<ciborium::Value>,
+}
+
+const fn one() -> u32 {
+    1
+}
+
+impl Descriptor {
+    /// A descriptor with no label or parameters.
+    #[must_use]
+    pub fn new(capability_type: &str, scope: Scope) -> Self {
+        Self {
+            capability_type: CapabilityType(capability_type.to_owned()),
+            scope,
+            version: 1,
+            label: None,
+            params: None,
+        }
+    }
 }
 
 /// The full list of capabilities a peer currently offers. Spec chapter 05
 /// section 2a.
 ///
-/// Sent after session authentication and replaced by later manifests from the
-/// same peer. When the session ends every capability in it is withdrawn.
-/// Never persisted.
-#[derive(Debug, Clone, Default)]
+/// Sent after session authentication on the `manifest` stream and replaced by
+/// later manifests from the same peer. When the session ends every capability
+/// in it is withdrawn. Never persisted.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Manifest {
+    /// Always [`MANIFEST_TYPE`].
+    #[serde(rename = "type")]
+    pub message_type: TypeName,
     /// Capabilities offered right now.
     pub capabilities: Vec<Descriptor>,
+    /// When this manifest was made.
+    pub issued_at: Timestamp,
+}
+
+impl Manifest {
+    /// A manifest of `capabilities`, issued now.
+    #[must_use]
+    pub fn new(capabilities: Vec<Descriptor>) -> Self {
+        Self {
+            message_type: TypeName::new(MANIFEST_TYPE),
+            capabilities,
+            issued_at: Timestamp::now(),
+        }
+    }
+
+    /// An empty manifest.
+    #[must_use]
+    pub fn empty() -> Self {
+        Self::new(Vec::new())
+    }
 }
 
 /// How a grant came about. Spec chapter 10 section 5.

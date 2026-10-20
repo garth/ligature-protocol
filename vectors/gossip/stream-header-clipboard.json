@@ -1,0 +1,13 @@
+{
+  "format": "ligature-vector/1",
+  "description": "The first frame on a clipboard capability stream.",
+  "frame": "00000056a26474797065781b6f72672e6c6967617475726570726f746f636f6c2e73747265616d67707572706f736578296f72672e6c6967617475726570726f746f636f6c2e6361706162696c6974792e636c6970626f617264",
+  "message": {
+    "purpose": "org.ligatureprotocol.capability.clipboard",
+    "type": "org.ligatureprotocol.stream"
+  },
+  "max": 1048576,
+  "expect": {
+    "outcome": "valid"
+  }
+}

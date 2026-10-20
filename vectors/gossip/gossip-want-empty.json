@@ -1,0 +1,13 @@
+{
+  "format": "ligature-vector/1",
+  "description": "A want message asking for nothing.",
+  "frame": "0000002fa2647479706578206f72672e6c6967617475726570726f746f636f6c2e676f737369702e77616e7465666163747380",
+  "message": {
+    "facts": [],
+    "type": "org.ligatureprotocol.gossip.want"
+  },
+  "max": 1048576,
+  "expect": {
+    "outcome": "valid"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "format": "ligature-vector/1",
+  "description": "A have message listing two fact identifiers (32-byte strings in CBOR, hex in JSON).",
+  "frame": "00000073a2647479706578206f72672e6c6967617475726570726f746f636f6c2e676f737369702e6861766565666163747382582077d48b62206ddd813bbdf82855c9c00fe1b24fc27ea33f555759b77121eb78eb58201111111111111111111111111111111111111111111111111111111111111111",
+  "message": {
+    "facts": [
+      "77d48b62206ddd813bbdf82855c9c00fe1b24fc27ea33f555759b77121eb78eb",
+      "1111111111111111111111111111111111111111111111111111111111111111"
+    ],
+    "type": "org.ligatureprotocol.gossip.have"
+  },
+  "max": 1048576,
+  "expect": {
+    "outcome": "valid"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "format": "ligature-vector/1",
+  "description": "A length prefix above the limit: refused before any decoding.",
+  "frame": "00100001a0",
+  "max": 1048576,
+  "expect": {
+    "outcome": "invalid",
+    "reason": "frame exceeds the receiver's limit"
+  }
+}

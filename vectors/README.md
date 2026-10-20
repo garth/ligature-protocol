@@ -35,7 +35,7 @@ implementations need not match it.
 | --- | --- |
 | `keys.json` | The test keys: name, 32-byte Ed25519 seed, public key as multibase. **Test material only.** |
 | `keys/` | Subordinate-key signatures (`"ligature/subkey/1"`) and multibase rendering |
-| `facts/` | Person, role and revocation envelopes with their fact identifiers |
+| `facts/` | Person, role, device and revocation envelopes with their fact identifiers |
 | `ceremony/` | Six-digit codes derived from TLS exporter output ([ADR 0029](../docs/adr/0029-ceremony-code-from-tls-exporter.md)) |
 | `gossip/` | Stream header and gossip message frames ([ADR 0036](../docs/adr/0036-stream-framing-and-message-typing.md)) |
 
@@ -70,6 +70,12 @@ A fact vector:
 
 A subordinate-key vector (`keys/`) has `master`, `purpose`, `key` and `signature`, and asks
 that `signature` verify as the master's endorsement of `key` for `purpose`.
+
+A frame vector (`gossip/`) has `frame` (the bytes as transmitted, length prefix included),
+`max` (the receiver's limit) and, for a valid case, `message`: the JSON the frame's body must
+decode to. An implementation checks the prefix against `max` before decoding, decodes the
+body as the message type its `type` names, and compares; an invalid case must be refused.
+Device records (`facts/device-*.json`) are checked as self-signed by the key they describe.
 
 ## Adding a vector
 

@@ -135,6 +135,26 @@ pub struct FactVector {
     pub expect: Expect,
 }
 
+/// A frame vector (`vectors/gossip/*.json`): one message on a stream as the
+/// bytes of its frame (4-byte big-endian length plus CBOR) and as JSON.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrameVector {
+    /// Always [`FORMAT`].
+    pub format: String,
+    /// What the case shows.
+    pub description: String,
+    /// The frame bytes as transmitted, prefix included.
+    pub frame: Hex,
+    /// The message as JSON, which the frame's body decodes to (valid cases).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<serde_json::Value>,
+    /// The size limit the receiver applies, in bytes of body.
+    pub max: u64,
+    /// Expected outcome.
+    pub expect: Expect,
+}
+
 /// An envelope with its byte fields as hex, as vectors carry it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

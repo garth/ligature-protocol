@@ -1,0 +1,23 @@
+{
+  "format": "ligature-vector/1",
+  "description": "laptop-principal's own record, signed by itself.",
+  "keys": [
+    "laptop-principal"
+  ],
+  "input": {
+    "createdAt": "2025-10-09T08:53:20Z",
+    "displayName": "laptop",
+    "key": "z6Mkrsywhbec8VHRpkiSSrjRZtLNwERq3EDbRRr7PNuLcaLt",
+    "kind": "principal",
+    "platform": "linux",
+    "registration": "personal"
+  },
+  "type": "org.ligatureprotocol.device",
+  "payload": "a6636b657978307a364d6b727379776862656338564852706b695353726a525a744c4e774552713345446252527237504e754c63614c74646b696e64697072696e636970616c6b646973706c61794e616d65666c6170746f7068706c6174666f726d656c696e75786c726567697374726174696f6e68706572736f6e616c6963726561746564417474323032352d31302d30395430383a35333a32305a",
+  "signer": "z6Mkrsywhbec8VHRpkiSSrjRZtLNwERq3EDbRRr7PNuLcaLt",
+  "signature": "26d4be760a02f2ee35fe61690e28923fa9b45e9f8b3c519e19d4754aed00eb074102628a9940cff62390c3d2a4a568547cb383955721b9e90eecc92e797c920f",
+  "factId": "5070253c284a13ce8af69bac4090eb625d049e447c4a9bb67ea2cee48d3bf17c",
+  "expect": {
+    "outcome": "valid"
+  }
+}

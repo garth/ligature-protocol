@@ -1,0 +1,13 @@
+{
+  "format": "ligature-vector/1",
+  "description": "The first frame on a gossip stream.",
+  "frame": "00000032a26474797065781b6f72672e6c6967617475726570726f746f636f6c2e73747265616d67707572706f736566676f73736970",
+  "message": {
+    "purpose": "gossip",
+    "type": "org.ligatureprotocol.stream"
+  },
+  "max": 1048576,
+  "expect": {
+    "outcome": "valid"
+  }
+}

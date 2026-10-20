@@ -1,0 +1,27 @@
+{
+  "format": "ligature-vector/1",
+  "description": "laptop-binding's own record, signed by itself.",
+  "keys": [
+    "laptop-binding",
+    "laptop-principal",
+    "alice-master"
+  ],
+  "input": {
+    "createdAt": "2025-10-09T08:53:20Z",
+    "displayName": "laptop",
+    "introducer": true,
+    "key": "z6MkjWBfkopWAz8pKibUhKhy6ZVHcHfjWBNEYEbNNT8WQJbG",
+    "kind": "binding",
+    "person": "z6MkjDFtUBRdWTZuJW5Dzc2gnbAt3vXFp38AVYMDhjaACtkd",
+    "platform": "linux",
+    "principal": "z6Mkrsywhbec8VHRpkiSSrjRZtLNwERq3EDbRRr7PNuLcaLt"
+  },
+  "type": "org.ligatureprotocol.device",
+  "payload": "a8636b657978307a364d6b6a5742666b6f7057417a38704b696255684b6879365a56486348666a57424e455945624e4e543857514a6247646b696e646762696e64696e676b646973706c61794e616d65666c6170746f7068706c6174666f726d656c696e757866706572736f6e78307a364d6b6a4446745542526457545a754a5735447a6332676e624174337658467033384156594d44686a614143746b64697072696e636970616c78307a364d6b727379776862656338564852706b695353726a525a744c4e774552713345446252527237504e754c63614c746a696e74726f6475636572f56963726561746564417474323032352d31302d30395430383a35333a32305a",
+  "signer": "z6MkjWBfkopWAz8pKibUhKhy6ZVHcHfjWBNEYEbNNT8WQJbG",
+  "signature": "e931217c692dbdaf79fbbcf65d9c28d9dcef6d80e591e45c2d32dc3b0af63832ad86c46095a317182a181d3c1467034a3ed4a75d0b17ea7e4b5b242d156a3400",
+  "factId": "88b6733f23cf3c0d93df707aa8b431ece5dd2eaa4bb9c120828d82fc0680327f",
+  "expect": {
+    "outcome": "valid"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "format": "ligature-vector/1",
+  "description": "A manifest offering the clipboard and one device-scoped capability.",
+  "frame": "000000fba36474797065781d6f72672e6c6967617475726570726f746f636f6c2e6d616e69666573746c6361706162696c697469657382a4647479706578296f72672e6c6967617475726570726f746f636f6c2e6361706162696c6974792e636c6970626f6172646573636f706564757365726776657273696f6e0166706172616d73a2686d617842797465731a000ffc00696d696d655479706573816a746578742f706c61696ea36474797065781b6f72672e6578616d706c652e6361706162696c6974792e6c616d706573636f7065666465766963656776657273696f6e0168697373756564417474323032352d31302d30395430383a35333a32305a",
+  "message": {
+    "capabilities": [
+      {
+        "params": {
+          "maxBytes": 1047552,
+          "mimeTypes": [
+            "text/plain"
+          ]
+        },
+        "scope": "user",
+        "type": "org.ligatureprotocol.capability.clipboard",
+        "version": 1
+      },
+      {
+        "scope": "device",
+        "type": "org.example.capability.lamp",
+        "version": 1
+      }
+    ],
+    "issuedAt": "2025-10-09T08:53:20Z",
+    "type": "org.ligatureprotocol.manifest"
+  },
+  "max": 1048576,
+  "expect": {
+    "outcome": "valid"
+  }
+}

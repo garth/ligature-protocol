@@ -6,8 +6,8 @@ use std::path::Path;
 
 use lp_core::envelope::Envelope;
 use lp_core::facts::{
-    PERSON_TYPE, PersonFact, REVOCATION_TYPE, ROLE_TYPE, RevocationFact, RevocationKind, Role,
-    RoleFact,
+    DEVICE_TYPE, DeviceFact, DeviceKind, PERSON_TYPE, PersonFact, REVOCATION_TYPE, ROLE_TYPE,
+    Registration, RevocationFact, RevocationKind, Role, RoleFact,
 };
 use lp_core::wire::{Bytes, Timestamp, TypeName};
 use lp_core::{Error, PublicKey};
@@ -16,8 +16,8 @@ use lp_identity::cross_signing::{PersonKeys, Purpose, sign_subkey, verify_subkey
 use lp_identity::facts;
 use lp_identity::pairing::short_code;
 use lp_vectors::{
-    CodeVector, EnvelopeHex, Expect, FORMAT, FactVector, Hex, KeyFile, SubkeyVector, load_dir,
-    load_file, may_write, vectors_dir, write_file,
+    CodeVector, EnvelopeHex, Expect, FORMAT, FactVector, FrameVector, Hex, KeyFile, SubkeyVector,
+    load_dir, load_file, may_write, vectors_dir, write_file,
 };
 
 struct Keys {
@@ -328,6 +328,72 @@ fn generate_vectors_on_demand() {
             invalid("chain: wrong subordinate key for a revocation"),
         )
     });
+    write_if_missing(&facts_dir, "device-binding.json", || {
+        let fact = DeviceFact {
+            key: *laptop.public(),
+            kind: DeviceKind::Binding,
+            display_name: "laptop".to_owned(),
+            platform: "linux".to_owned(),
+            registration: None,
+            person: Some(*alice.person()),
+            principal: Some(*principal.public()),
+            introducer: true,
+            created_at: at(),
+        };
+        let env = facts::device_fact(laptop, &fact).unwrap();
+        fact_vector(
+            "laptop-binding's own record, signed by itself.",
+            &["laptop-binding", "laptop-principal", "alice-master"],
+            &fact,
+            &env,
+            None,
+            Expect::Valid,
+        )
+    });
+    write_if_missing(&facts_dir, "device-principal.json", || {
+        let fact = DeviceFact {
+            key: *principal.public(),
+            kind: DeviceKind::Principal,
+            display_name: "laptop".to_owned(),
+            platform: "linux".to_owned(),
+            registration: Some(Registration::Personal),
+            person: None,
+            principal: None,
+            introducer: false,
+            created_at: at(),
+        };
+        let env = facts::device_fact(principal, &fact).unwrap();
+        fact_vector(
+            "laptop-principal's own record, signed by itself.",
+            &["laptop-principal"],
+            &fact,
+            &env,
+            None,
+            Expect::Valid,
+        )
+    });
+    write_if_missing(&facts_dir, "device-signed-by-another-key.json", || {
+        let fact = DeviceFact {
+            key: *laptop.public(),
+            kind: DeviceKind::Binding,
+            display_name: "laptop".to_owned(),
+            platform: "linux".to_owned(),
+            registration: None,
+            person: None,
+            principal: Some(*principal.public()),
+            introducer: false,
+            created_at: at(),
+        };
+        let env = facts::sign(keys.get("mallory"), &fact).unwrap();
+        fact_vector(
+            "A device record signed by a key other than the one it describes: records are self-signed.",
+            &["laptop-binding", "laptop-principal", "mallory"],
+            &fact,
+            &env,
+            None,
+            invalid("chain: device record not signed by its own key"),
+        )
+    });
     write_if_missing(&facts_dir, "role-binding-by-user-signing-key.json", || {
         let env = facts::sign(&alice.user_signing, &binding).unwrap();
         fact_vector(
@@ -362,6 +428,10 @@ fn check_fact(v: &FactVector) -> Result<serde_json::Value, Error> {
                 .expect("role vectors carry the person fact");
             let person = facts::verify_person(&envelope(chain))?;
             let fact = facts::verify_role(&env, &person)?;
+            Ok(serde_json::to_value(fact).unwrap())
+        }
+        DEVICE_TYPE => {
+            let fact = facts::verify_device(&env)?;
             Ok(serde_json::to_value(fact).unwrap())
         }
         REVOCATION_TYPE if v.chain.is_some() => {
@@ -454,6 +524,9 @@ fn every_fact_vector_behaves_as_expected() {
                     REVOCATION_TYPE => {
                         encode(&serde_json::from_value::<RevocationFact>(v.input.clone()).unwrap())
                     }
+                    DEVICE_TYPE => {
+                        encode(&serde_json::from_value::<DeviceFact>(v.input.clone()).unwrap())
+                    }
                     _ => encode(&serde_json::from_value::<RoleFact>(v.input.clone()).unwrap()),
                 };
                 assert_eq!(
@@ -532,5 +605,179 @@ fn every_ceremony_vector_behaves_as_expected() {
             "{}",
             path.display()
         );
+    }
+}
+
+fn frame_vector<T: serde::Serialize>(description: &str, message: &T, max: usize) -> FrameVector {
+    let frame = lp_core::frame::encode(message, max).unwrap();
+    FrameVector {
+        format: FORMAT.to_owned(),
+        description: description.to_owned(),
+        frame: Hex(frame),
+        message: Some(serde_json::to_value(message).unwrap()),
+        max: max as u64,
+        expect: Expect::Valid,
+    }
+}
+
+#[test]
+fn generate_frame_vectors_on_demand() {
+    use lp_core::capability::{CLIPBOARD_TYPE, Descriptor, Manifest, Scope, clipboard_descriptor};
+    use lp_core::frame::{GossipFact, GossipHave, GossipWant, MAX_FRAME, StreamHeader};
+    if !may_write() {
+        return;
+    }
+    let keys = Keys::load();
+    let alice = keys.alice();
+    let dir = vectors_dir().join("gossip");
+    let person_env = facts::person_fact(&alice, "Alice", 1, at()).unwrap();
+    write_if_missing(&dir, "stream-header-gossip.json", || {
+        frame_vector(
+            "The first frame on a gossip stream.",
+            &StreamHeader::new(StreamHeader::GOSSIP),
+            MAX_FRAME,
+        )
+    });
+    write_if_missing(&dir, "stream-header-clipboard.json", || {
+        frame_vector(
+            "The first frame on a clipboard capability stream.",
+            &StreamHeader::new(CLIPBOARD_TYPE),
+            MAX_FRAME,
+        )
+    });
+    write_if_missing(&dir, "gossip-have.json", || {
+        frame_vector(
+            "A have message listing two fact identifiers (32-byte strings in CBOR, hex in JSON).",
+            &GossipHave::new(vec![
+                facts::id(&person_env),
+                lp_core::envelope::FactId([0x11; 32]),
+            ]),
+            MAX_FRAME,
+        )
+    });
+    write_if_missing(&dir, "gossip-want-empty.json", || {
+        frame_vector(
+            "A want message asking for nothing.",
+            &GossipWant::new(vec![]),
+            MAX_FRAME,
+        )
+    });
+    write_if_missing(&dir, "gossip-fact-person.json", || {
+        frame_vector(
+            "Alice's person fact carried in a gossip.fact message; envelopes never travel bare.",
+            &GossipFact::new(person_env.clone()),
+            MAX_FRAME,
+        )
+    });
+    write_if_missing(&dir, "manifest-clipboard.json", || {
+        let mut m = Manifest::new(vec![
+            clipboard_descriptor(1_047_552),
+            Descriptor::new("org.example.capability.lamp", Scope::Device),
+        ]);
+        m.issued_at = at();
+        frame_vector(
+            "A manifest offering the clipboard and one device-scoped capability.",
+            &m,
+            MAX_FRAME,
+        )
+    });
+    write_if_missing(&dir, "frame-oversize-length.json", || {
+        let mut frame = (MAX_FRAME as u32 + 1).to_be_bytes().to_vec();
+        frame.extend_from_slice(&[0xa0]);
+        FrameVector {
+            format: FORMAT.to_owned(),
+            description: "A length prefix above the limit: refused before any decoding.".to_owned(),
+            frame: Hex(frame),
+            message: None,
+            max: MAX_FRAME as u64,
+            expect: Expect::Invalid {
+                reason: "frame exceeds the receiver's limit".to_owned(),
+            },
+        }
+    });
+    write_if_missing(&dir, "frame-truncated.json", || {
+        let mut frame =
+            lp_core::frame::encode(&StreamHeader::new(StreamHeader::MANIFEST), MAX_FRAME).unwrap();
+        frame.truncate(frame.len() - 5);
+        FrameVector {
+            format: FORMAT.to_owned(),
+            description: "A frame whose body is shorter than its length prefix says.".to_owned(),
+            frame: Hex(frame),
+            message: None,
+            max: MAX_FRAME as u64,
+            expect: Expect::Invalid {
+                reason: "body shorter than the length prefix".to_owned(),
+            },
+        }
+    });
+}
+
+/// Decodes a frame as a receiver would: length checked against the limit,
+/// then the body as a generic CBOR value turned into JSON by our conventions
+/// (byte strings become base64url, except 32-byte fact identifiers in have and
+/// want lists, which become hex).
+fn decode_frame(frame: &[u8], max: usize) -> Result<serde_json::Value, Error> {
+    use lp_core::frame::{GossipFact, GossipHave, GossipWant, StreamHeader};
+    let prefix: [u8; 4] = frame
+        .get(..4)
+        .and_then(|p| p.try_into().ok())
+        .ok_or_else(|| Error::Decode("no prefix".into()))?;
+    let len = lp_core::frame::body_len(prefix, max)?;
+    let body = frame
+        .get(4..)
+        .ok_or_else(|| Error::Decode("no body".into()))?;
+    if body.len() != len {
+        return Err(Error::Decode("body length mismatch".into()));
+    }
+    let t = lp_core::frame::peek_type(body)?;
+    let v = match t.as_str() {
+        lp_core::frame::STREAM_TYPE => {
+            serde_json::to_value(lp_core::frame::decode::<StreamHeader>(body)?).unwrap()
+        }
+        lp_core::frame::GOSSIP_HAVE_TYPE => {
+            serde_json::to_value(lp_core::frame::decode::<GossipHave>(body)?).unwrap()
+        }
+        lp_core::frame::GOSSIP_WANT_TYPE => {
+            serde_json::to_value(lp_core::frame::decode::<GossipWant>(body)?).unwrap()
+        }
+        lp_core::frame::GOSSIP_FACT_TYPE => {
+            serde_json::to_value(lp_core::frame::decode::<GossipFact>(body)?).unwrap()
+        }
+        lp_core::capability::MANIFEST_TYPE => serde_json::to_value(lp_core::frame::decode::<
+            lp_core::capability::Manifest,
+        >(body)?)
+        .unwrap(),
+        other => return Err(Error::Decode(format!("unknown message type {other}"))),
+    };
+    Ok(v)
+}
+
+#[test]
+fn every_frame_vector_behaves_as_expected() {
+    if may_write() {
+        return;
+    }
+    let vectors: Vec<(_, FrameVector)> = load_dir(&vectors_dir().join("gossip")).expect("gossip/");
+    assert!(
+        !vectors.is_empty(),
+        "no frame vectors; run with LP_WRITE_VECTORS=1"
+    );
+    for (path, v) in vectors {
+        let name = path.display();
+        assert_eq!(v.format, FORMAT, "{name}");
+        let outcome = decode_frame(&v.frame.0, v.max as usize);
+        match &v.expect {
+            Expect::Valid => {
+                let decoded = outcome.unwrap_or_else(|e| panic!("{name}: {e}"));
+                assert_eq!(
+                    Some(decoded),
+                    v.message,
+                    "{name}: frame decodes to the message"
+                );
+            }
+            Expect::Invalid { reason } => {
+                assert!(outcome.is_err(), "{name}: expected invalid ({reason})")
+            }
+        }
     }
 }

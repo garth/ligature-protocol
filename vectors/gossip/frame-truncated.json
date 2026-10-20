@@ -1,0 +1,10 @@
+{
+  "format": "ligature-vector/1",
+  "description": "A frame whose body is shorter than its length prefix says.",
+  "frame": "00000034a26474797065781b6f72672e6c6967617475726570726f746f636f6c2e73747265616d67707572706f7365686d616e",
+  "max": 1048576,
+  "expect": {
+    "outcome": "invalid",
+    "reason": "body shorter than the length prefix"
+  }
+}

@@ -20,6 +20,7 @@ getrandom.workspace = true
 lp-vectors.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
+jsonschema.workspace = true
 
 [lints]
 workspace = true

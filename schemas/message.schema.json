@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ligatureprotocol.org/schemas/message.schema.json",
   "title": "org.ligatureprotocol.message",
-  "description": "DRAFT. Messages on a QUIC stream (ADR 0036). A frame is a 4-byte big-endian length followed by one CBOR map carrying a reverse-DNS type. The first frame on every stream is the stream header; the gossip stream then carries have, want and fact messages. Decoders ignore unknown fields. The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "description": "DRAFT. Messages on a QUIC stream (ADR 0036). A frame is a 4-byte big-endian length followed by one CBOR map carrying a reverse-DNS type. The first frame on every stream is the stream header; the gossip stream then carries have, want and fact messages; the manifest stream carries manifests, each a full replacement of the sender's offer (spec chapter 05 section 2a). Decoders ignore unknown fields. The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
   "$defs": {
     "typeName": {
       "type": "string",
@@ -94,6 +94,31 @@
           "$ref": "envelope.schema.json"
         }
       }
+    },
+    "manifest": {
+      "type": "object",
+      "description": "The sender's current capabilities, in full. A later manifest from the same peer replaces this one; when the session ends every capability is withdrawn. The descriptor shape is capability.schema.json.",
+      "required": [
+        "type",
+        "capabilities",
+        "issuedAt"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.manifest"
+        },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "capability.schema.json#/$defs/descriptor"
+          }
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
     }
   },
   "oneOf": [
@@ -108,6 +133,9 @@
     },
     {
       "$ref": "#/$defs/gossipFact"
+    },
+    {
+      "$ref": "#/$defs/manifest"
     }
   ]
 }

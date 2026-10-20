@@ -26,7 +26,9 @@
         "org.ligatureprotocol.control.pair.introduce",
         "org.ligatureprotocol.control.pair.join",
         "org.ligatureprotocol.control.pair.confirm",
-        "org.ligatureprotocol.control.pair.abort"
+        "org.ligatureprotocol.control.pair.abort",
+        "org.ligatureprotocol.control.clipboard.get",
+        "org.ligatureprotocol.control.clipboard.set"
       ]
     },
     "eventType": {
@@ -74,6 +76,10 @@
           "type": "string",
           "minLength": 1,
           "description": "init: this device's display name; defaults to the host name (ADR 0034)."
+        },
+        "text": {
+          "type": "string",
+          "description": "clipboard.set: the text to put on the local clipboard (diagnostics and the loopback run)."
         }
       }
     },

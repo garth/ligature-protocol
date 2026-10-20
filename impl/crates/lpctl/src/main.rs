@@ -7,7 +7,9 @@ use std::io::{BufRead as _, Write as _};
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use ligatured::control::{Caps, Client, Devices, Empty, Event, InitResult, Request, types};
+use ligatured::control::{
+    Caps, Client, ClipboardText, Devices, Empty, Event, InitResult, Request, types,
+};
 use ligatured::daemon::Status;
 use ligatured::grants::Grants;
 use lp_core::paths::{DATA_DIR_ENV, Locations, RUNTIME_DIR_ENV};
@@ -64,6 +66,23 @@ enum Command {
     Caps,
     /// List the grants this device has issued.
     Grants,
+    /// Read or set the local clipboard through the daemon (diagnostics).
+    Clipboard {
+        #[command(subcommand)]
+        action: ClipboardAction,
+    },
+}
+
+/// `lpctl clipboard` actions.
+#[derive(Debug, Subcommand)]
+enum ClipboardAction {
+    /// Print the clipboard text.
+    Get,
+    /// Put text on the clipboard.
+    Set {
+        /// The text.
+        text: String,
+    },
 }
 
 #[tokio::main]
@@ -186,6 +205,24 @@ async fn run(options: &Options, locations: &Locations) -> Result<(), Error> {
                 );
             }
         }
+        Command::Clipboard { action } => match action {
+            ClipboardAction::Get => {
+                let c: ClipboardText = client
+                    .request(Request::new(types::CLIPBOARD_GET, 0))
+                    .await?;
+                if !c.available {
+                    eprintln!("(clipboard unavailable)");
+                }
+                if let Some(t) = c.text {
+                    println!("{t}");
+                }
+            }
+            ClipboardAction::Set { text } => {
+                let mut req = Request::new(types::CLIPBOARD_SET, 0);
+                req.text = Some(text.clone());
+                let _: Empty = client.request(req).await?;
+            }
+        },
         Command::Caps => {
             let caps: Caps = client.request(Request::new(types::CAPS, 0)).await?;
             println!("this device offers:");

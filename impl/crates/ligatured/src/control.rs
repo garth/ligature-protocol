@@ -38,6 +38,10 @@ pub mod types {
     pub const REVOKE: &str = "org.ligatureprotocol.control.revoke";
     /// The grants this device issued.
     pub const GRANTS: &str = "org.ligatureprotocol.control.grants";
+    /// The local clipboard's text (diagnostics and the loopback run).
+    pub const CLIPBOARD_GET: &str = "org.ligatureprotocol.control.clipboard.get";
+    /// Set the local clipboard's text (diagnostics and the loopback run).
+    pub const CLIPBOARD_SET: &str = "org.ligatureprotocol.control.clipboard.set";
     /// Start a ceremony as the introducer.
     pub const PAIR_INTRODUCE: &str = "org.ligatureprotocol.control.pair.introduce";
     /// Start a ceremony as the newcomer.
@@ -79,6 +83,9 @@ pub struct Request {
     /// `init`: this device's display name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub device_name: Option<String>,
+    /// `clipboard.set`: the text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
 }
 
 impl Request {
@@ -538,6 +545,32 @@ pub async fn handle(
         },
         types::DEVICES => devices(daemon).and_then(|d| Response::ok(id, &d)),
         types::GRANTS => crate::grants::list(daemon).and_then(|g| Response::ok(id, &g)),
+        types::CLIPBOARD_GET => match daemon.clipboard() {
+            Some(c) => c.read_text().and_then(|text| {
+                Response::ok(
+                    id,
+                    &ClipboardText {
+                        available: c.available(),
+                        text,
+                    },
+                )
+            }),
+            None => Ok(Response::error(
+                id,
+                ErrorBody::new("not-found", "no clipboard on this daemon"),
+            )),
+        },
+        types::CLIPBOARD_SET => match (daemon.clipboard(), request.text.as_deref()) {
+            (Some(c), Some(text)) => c.set_text(text).and_then(|()| Response::ok(id, &Empty {})),
+            (None, _) => Ok(Response::error(
+                id,
+                ErrorBody::new("not-found", "no clipboard on this daemon"),
+            )),
+            (_, None) => Ok(Response::error(
+                id,
+                ErrorBody::new("bad-request", "clipboard.set needs text"),
+            )),
+        },
         types::CAPS => Response::ok(
             id,
             &Caps {
@@ -582,6 +615,16 @@ pub struct Caps {
     pub local: Vec<lp_core::capability::Descriptor>,
     /// Per connected peer, its newest manifest.
     pub peers: Vec<crate::capabilities::PeerCaps>,
+}
+
+/// The `clipboard.get` result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClipboardText {
+    /// Whether the clipboard is reachable.
+    pub available: bool,
+    /// Its text, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
 }
 
 /// An empty result.

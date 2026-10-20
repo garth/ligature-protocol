@@ -12,6 +12,10 @@ use lp_transport::mdns::{DialPolicy, Discovered};
 use crate::control;
 use crate::daemon::Daemon;
 
+/// Set to `1` to use the in-memory fake clipboard instead of the platform's:
+/// for the loopback end-to-end run and for machines without a compositor.
+pub const FAKE_CLIPBOARD_ENV: &str = "LIGATURE_FAKE_CLIPBOARD";
+
 /// The address the QUIC endpoint binds: every interface, assigned port.
 #[must_use]
 pub fn default_bind() -> SocketAddr {
@@ -32,7 +36,14 @@ pub async fn run(locations: Locations, device_name: Option<&str>) -> Result<(), 
         "ligatured running"
     );
     let control = control::serve(daemon.clone(), &locations.control_socket())?;
-    match crate::clipboard::platform_clipboard() {
+    let clipboard: Option<Arc<dyn crate::clipboard::Clipboard>> =
+        if std::env::var_os(FAKE_CLIPBOARD_ENV).is_some_and(|v| v == "1") {
+            tracing::warn!("using the in-memory fake clipboard ({FAKE_CLIPBOARD_ENV}=1)");
+            Some(crate::clipboard::FakeClipboard::new())
+        } else {
+            crate::clipboard::platform_clipboard()
+        };
+    match clipboard {
         Some(clipboard) => {
             daemon.attach_clipboard(clipboard);
         }

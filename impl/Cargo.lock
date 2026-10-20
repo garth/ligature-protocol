@@ -944,6 +944,7 @@ dependencies = [
  "ligatured",
  "lp-core",
  "qrcode",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",

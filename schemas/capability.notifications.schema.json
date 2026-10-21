@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ligatureprotocol.org/schemas/capability.notifications.schema.json",
+  "title": "org.ligatureprotocol.capability.notifications",
+  "description": "DRAFT. The notifications capability (spec chapter 05 section 3c): user-scoped, two directions. The descriptor's params say whether the device emits (forwards what its apps post), displays (shows what it is sent), and how large an icon it accepts. The capability's stream (purpose org.ligatureprotocol.capability.notifications, ADR 0036) carries post, icon and dismiss messages in both directions. The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "$defs": {
+    "publicKey": {
+      "type": "string",
+      "description": "A public key as a multibase string with a multicodec prefix (an Ed25519 key renders as z6Mk…).",
+      "pattern": "^z[1-9A-HJ-NP-Za-km-z]+$"
+    },
+    "params": {
+      "type": "object",
+      "description": "The descriptor's params for this capability.",
+      "properties": {
+        "emits": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether this device forwards the notifications its apps post. False on a platform that cannot read them, or while the user has not granted access."
+        },
+        "displays": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether this device shows the notifications it is sent."
+        },
+        "maxIconBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 65536,
+          "description": "The largest icon, in bytes, this device accepts in one icon message; 0 means it wants none."
+        }
+      }
+    },
+    "app": {
+      "type": "object",
+      "description": "The application that posted the notification, as the emitting platform identifies it.",
+      "required": [
+        "id",
+        "name"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "The platform's identifier for the app: a package name on Android, the app name given to the notification service on Linux."
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "The app's display name."
+        }
+      }
+    },
+    "post": {
+      "type": "object",
+      "description": "An app on the sender posted, or updated, this notification. A post whose id is already shown replaces it in place.",
+      "required": [
+        "type",
+        "id",
+        "app",
+        "postedAt"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.notifications.post"
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "Chosen by the emitting device, unique among its notifications and stable for this notification's life."
+        },
+        "app": {
+          "$ref": "#/$defs/app"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "postedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the app posted it on the emitting device."
+        },
+        "icon": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$",
+          "description": "The hash (SHA-256, base64url, unpadded) of the app's icon, sent earlier in this session as an icon message; absent when there is no icon or the receiver wants none."
+        }
+      }
+    },
+    "icon": {
+      "type": "object",
+      "description": "An app's icon, sent once per app per session before the first post that names it. The receiver keeps it for the session only.",
+      "required": [
+        "type",
+        "hash",
+        "mime",
+        "bytes"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.notifications.icon"
+        },
+        "hash": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$",
+          "description": "SHA-256 of bytes, base64url, unpadded."
+        },
+        "mime": {
+          "type": "string",
+          "enum": [
+            "image/png"
+          ]
+        },
+        "bytes": {
+          "type": "string",
+          "contentEncoding": "base64url",
+          "description": "The image; a byte string in CBOR. Never larger than the receiver's maxIconBytes."
+        }
+      }
+    },
+    "dismiss": {
+      "type": "object",
+      "description": "The user dismissed this notification on the sender, which may be its origin or a device that displayed a copy. Sent in one hop to the origin and to every displaying peer; the origin cancels the real notification, the others clear their copies. Never forwarded by a receiver.",
+      "required": [
+        "type",
+        "origin",
+        "id",
+        "dismissedAt"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.notifications.dismiss"
+        },
+        "origin": {
+          "$ref": "#/$defs/publicKey",
+          "description": "The binding key of the device that emitted the notification, whose id space the id belongs to."
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "dismissedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/post"
+    },
+    {
+      "$ref": "#/$defs/icon"
+    },
+    {
+      "$ref": "#/$defs/dismiss"
+    }
+  ]
+}

@@ -124,8 +124,8 @@ The reference implementation is Rust and is also the production implementation
   one family with two directions, dismissal fanned out directly, Linux emitting by monitoring the
   session bus, macOS display-only).
 - `schemas/*.schema.json`: JSON Schema 2020-12 drafts (person, device, capability, grant,
-  group, role, revocation, envelope, message, pairing, capability.clipboard; `control` is
-  implementation-only).
+  group, role, revocation, envelope, message, pairing, capability.clipboard,
+  capability.notifications; `control` is implementation-only).
   Spec chapters link to these by relative path.
 - `impl/`: Rust cargo workspace, edition 2024. Crates: `lp-core` (shared types, capability
   model), `lp-identity` (master key, ceremony, roles, trust store, optional publication),

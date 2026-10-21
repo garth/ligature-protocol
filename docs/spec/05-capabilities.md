@@ -18,6 +18,13 @@ chapter 10), and type-specific parameters. The principal that offers it is the s
 the manifest it arrives in. See
 [`org.ligatureprotocol.capability`](../../schemas/capability.schema.json).
 
+A family with two directions declares in its `params` which of them the device offers:
+`emits` and `displays` for notifications (section 3c), and the same shape for `files`
+(send, receive) and media control (control, be controlled) when they are specified. A
+device advertises the family if it offers either direction; the peer reads the flags to
+know what it may send and what it will receive. One stream per session carries both
+directions, as for every family.
+
 ## 2a. Manifests and the live registry
 
 After a session is authenticated and gossip has run (chapter 04, chapter 06) each side
@@ -78,6 +85,35 @@ value) whenever its local clipboard changes. The receiver applies a `set` newer 
 holds and ignores one equal to its current content, so two devices setting each other never
 loop. Open question: other content types (images, files), and whether a device should be
 able to ask for the current value rather than wait for a change.
+
+## 3c. Notifications
+
+`org.ligatureprotocol.capability.notifications`
+([schema](../../schemas/capability.notifications.schema.json)) carries what an app on one
+device posts to every other device of the person that shows notifications. It is
+user-scoped and needs no prompt between a person's own devices (section 4). The
+descriptor's `params` say `emits` (this device forwards what its apps post), `displays`
+(this device shows what it is sent) and `maxIconBytes`; a device that does one but not the
+other, such as a Mac that may post but not read other applications' notifications
+(chapter 08), advertises with one flag false. By default every notification a device
+emits goes to every connected peer that displays; shaping that is a later configuration
+matter and not part of the capability.
+
+On the stream, `post` carries an `id` chosen by the emitting device and stable for the
+notification's life, the app's identifier and display name, a title, a body, when it was
+posted, and the hash of the app's icon; a `post` whose `id` is already shown replaces it.
+`icon` carries that hash, a MIME type and the bytes, sent once per app per session before
+the first `post` that names it and cached by the receiver for the session only. `dismiss`
+names the emitting device (`origin`) and the `id`, since ids are per device, and goes in
+one hop from the device where the user dismissed to the origin and to every displaying
+peer: the origin cancels the real notification, the others clear their copies. Only a
+dismissal the user makes on a device is ever sent; a received `dismiss` is acted on and
+never forwarded, and a notification shown on behalf of another device is never emitted
+again, so nothing cycles. An emitting device does not forward ongoing, silent or summary
+notifications, nor those of apps the user excluded; what a receiver shows is what it is
+sent. Nothing about a notification is stored: the receiver's copies, icon cache and id map
+live for the session (chapter 09). Open question: replies and actions carried back to the
+origin, and whether presence should ever narrow where a notification is shown.
 
 ## 4. Requests and grants
 

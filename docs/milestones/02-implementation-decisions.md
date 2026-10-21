@@ -41,15 +41,18 @@ implementation must be safe to call from any thread. `setPrimaryClip` is.
 ## LP-78: the app
 
 **Clipboard on Android 10 and later.** An app may read the clipboard only while it has
-window focus or is the default keyboard; `OnPrimaryClipChangedListener` fires only when a
-read would be allowed. Writing is unrestricted. The app therefore:
+window focus or is the default keyboard; the platform documents that
+`OnPrimaryClipChangedListener` fires only when a read would be allowed, though LineageOS 24
+(Android 17) fires it in the background and refuses the read that follows. Writing is
+unrestricted. The app therefore:
 
 - **receives** by setting the primary clip from the foreground service: always works;
 - **sends automatically** only when it holds `android.permission.READ_CLIPBOARD_IN_BACKGROUND`,
   a `signature` permission the manifest declares and that Android grants only to an APK
-  signed with the platform certificate. A self-built LineageOS has that key; the README
-  gives the `apksigner` command. The service registers the clip listener unconditionally
-  and it simply does not fire without the permission;
+  signed with the platform certificate. A LineageOS built from source has that key; the
+  project's own builds are signed with keys it keeps, so on them this path is closed
+  (LP-74). The README gives the `apksigner` command. The service registers the clip
+  listener unconditionally and reads only when the permission is held;
 - **sends on request** otherwise, through a transparent activity
   (`SendClipboardActivity`) that reads the clip the moment its window has focus and
   finishes, reached from a quick-settings tile, the notification's action and the main
@@ -59,7 +62,8 @@ read would be allowed. Writing is unrestricted. The app therefore:
 
 An input method (a keyboard that may read in the background) was passed over as too
 intrusive; an accessibility service cannot read the clipboard; root is not something the
-app may assume.
+app may assume. The permission's protection level is `signature|role`, and the one role
+that grants it is system-only, so no sideloaded app reaches it on an official ROM.
 
 **Service.** `NodeService` is a foreground service of type `connectedDevice` (declared
 from API 29; required from API 34, where `CHANGE_WIFI_MULTICAST_STATE` is its
@@ -85,7 +89,8 @@ committed. `mise.toml` in `impl/android` names the JDK and Rust; the SDK is foun
 
 **Signing.** Debug builds use the debug key. Release builds are unsigned; the README signs
 them with `apksigner`, with a debug key for an ordinary sideload or the platform key for
-automatic clipboard sending. No keystore is in the repository.
+automatic clipboard sending, which only a ROM built from source can provide. No keystore
+is in the repository.
 
 **Not minified.** R8 is off for now; JNA and the generated bindings rely on reflection and
 the rules in `proguard-rules.pro` are kept ready for when it is turned on.

@@ -11,9 +11,11 @@ Continuity-like ecosystem for Linux users. Principles: local-first, self-hostabl
 required central server, end-to-end encrypted, built on existing open standards,
 interoperate rather than replace.
 
-Status is pre-alpha. The spec is a draft, the Rust workspace implements milestone 1 (pairing
-and the text clipboard between a Linux machine and a Mac on one LAN) and nothing beyond it,
-and the `org.ligatureprotocol` type names use a placeholder domain.
+Status is pre-alpha. The spec is a draft, the Rust workspace implements milestones 1 and 2
+(pairing and the text clipboard between a Linux machine, a Mac and an Android phone on one
+LAN; the phone receives automatically and sends on a tap, since Android lets only a focused
+app read the clipboard) and nothing beyond them, and the `org.ligatureprotocol` type names
+use a placeholder domain.
 
 ## Architecture decisions
 
@@ -112,11 +114,12 @@ The reference implementation is Rust and is also the production implementation
   clipboard) and `01-implementation-decisions.md` records its non-protocol choices (store is
   SQLite via rusqlite bundled; keys in a separate 0600 file; state under `data/` in the
   project root during milestone 1, gitignored; no configuration file; `lpctl init --name`
-  creates the first identity). `02-android-clipboard.md` is the current one (an Android
-  phone, LineageOS first, joins the two desktops) and `02-implementation-decisions.md`
+  creates the first identity). `02-android-clipboard.md` is done on a LineageOS phone
+  (revoke and reboot are still to be recorded on LP-74) and `02-implementation-decisions.md`
   records the Android choices (the daemon as a library behind UniFFI; the clipboard read by
-  the app when Android allows and automatic only with `READ_CLIPBOARD_IN_BACKGROUND` on a
-  platform-signed build; a `connectedDevice` foreground service with the multicast lock).
+  the app when Android allows and automatic only with `READ_CLIPBOARD_IN_BACKGROUND`, which
+  only a platform-signed build holds and an official LineageOS build cannot be; a
+  `connectedDevice` foreground service with the multicast lock).
 - `schemas/*.schema.json`: JSON Schema 2020-12 drafts (person, device, capability, grant,
   group, role, revocation, envelope, message, pairing, capability.clipboard; `control` is
   implementation-only).

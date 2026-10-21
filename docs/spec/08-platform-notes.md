@@ -19,7 +19,10 @@ on the OS's account isolation to keep one account's keys and clipboard from anot
 daemon does not depend on the session's environment: it finds the compositor socket in the runtime
 directory and runs the Wayland side in a small helper process whose environment names that socket,
 advertises the clipboard only while a compositor is reachable, and keeps running (gossip,
-revocations) when none is. Open question: the minimum set of compositors and portals to support
+revocations) when none is. The QUIC endpoint takes a port the system assigns unless one is
+fixed (`--port`); behind a host firewall the fixed port and one rule let peers dial in,
+otherwise the machine connects only when it dials. Open question: the minimum set of
+compositors and portals to support
 (Hyprland is the first target), and how the system service drives audio and display without a
 session of its own.
 
@@ -68,11 +71,12 @@ protocol of its own. LineageOS is the first target (no Google services, sideload
   be allowed. Writing is unrestricted. A phone therefore always receives (the daemon sets
   the primary clip from the background) and sends in one of two ways: automatically, when
   the app holds `READ_CLIPBOARD_IN_BACKGROUND`, a signature-level permission granted only
-  to a build signed with the platform key (a self-built LineageOS); or on the user's
-  request, from a quick-settings tile, a notification action, the app's own screen or the
-  share sheet, each of which gives the app a moment of focus or hands it the text
-  directly. The capability is advertised in both cases: what differs is when a `set` goes
-  out, not whether the peer may send one.
+  to a build signed with the platform key, which means a ROM built from source, since the
+  LineageOS project's own builds are signed with keys it keeps; or on the user's request,
+  from a quick-settings tile, a notification action, the app's own screen or the share
+  sheet, each of which gives the app a moment of focus or hands it the text directly. The
+  capability is advertised in both cases: what differs is when a `set` goes out, not
+  whether the peer may send one.
 - **Pairing.** The phone has a screen and a camera, so it shows its offer as a QR code
   and as text (the newcomer role); introducing another device from a pasted offer works
   too. A camera-based scanner is a later addition.
@@ -83,9 +87,10 @@ protocol of its own. LineageOS is the first target (no Google services, sideload
 - **Keys.** The Android Keystore holds no Ed25519 keys on most devices (section 3a); the
   key file is software-held under the app's private directory.
 
-Open question: whether a platform-signed build should be the documented LineageOS path
-(an app in the ROM's `priv-app`) or stay a developer's option, and whether an input
-method is ever worth offering as the automatic path on unmodified ROMs.
+Open question: how an unmodified ROM gets the automatic path, since a platform-signed
+build needs a self-built ROM: an app allowed to display over other apps may start its send
+activity from the clip listener, which fires in the background on LineageOS 24; a
+notification on every copy is the tap-once fallback; an input method is the last resort.
 
 ## 4. iOS
 

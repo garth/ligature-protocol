@@ -4,8 +4,9 @@ The Android app of milestone 2: the Rust daemon (`ligatured`) built as a library
 (`crates/ligature-android`) and wrapped in a Kotlin app that supplies what Android keeps
 from a library: the clipboard, a foreground service, the Wi-Fi multicast lock, the device
 name and a screen for the pairing ceremony. LineageOS is the first target: no Google
-services, installed by sideloading, and optionally signed with the ROM's platform key so
-clipboard sync is automatic in both directions (below).
+services, installed by sideloading. Signed with the platform key of a ROM you built
+yourself, clipboard sync is automatic in both directions (below); on an official LineageOS
+build the phone sends with a tap.
 
 ## Build
 
@@ -65,9 +66,11 @@ while the node runs. Sending depends on what Android allows:
   Opening the app also sends what is on the clipboard.
 - **Platform-signed build** (a LineageOS you build yourself, or any ROM whose platform key
   you hold): the app declares `android.permission.READ_CLIPBOARD_IN_BACKGROUND`, which is
-  granted only to apps signed with the platform certificate. With it the primary-clip
-  listener fires in the background and every copy is sent as it happens. Build the
-  unsigned release APK and sign it with the ROM's key:
+  granted only to apps signed with the platform certificate. With it every copy is sent as
+  it happens. The official LineageOS builds are signed with keys the project keeps, so this
+  is not available on them, and no root-free route exists: the permission's only other
+  grant is a system-only role. Build the unsigned release APK and sign it with the ROM's
+  key:
 
   ```sh
   ./gradlew assembleRelease

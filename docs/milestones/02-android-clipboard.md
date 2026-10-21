@@ -1,12 +1,11 @@
 # Milestone 2: an Android phone shares the clipboard with Linux and macOS
 
-**Status:** Running on a phone. The library, the app and the host-side tests are done
-(LP-76, LP-77, LP-78), and on 2026-10-20 a Pixel 8 Pro on LineageOS 24.0 (Android 17) paired
-with the Linux daemon from the phone's offer and `lpctl pair`, received the Linux clipboard
-and sent its own through the app's button, the quick-settings tile, the notification action
-and the share sheet (LP-74). The run found that a peer already in session with the
-introducer never learnt the newcomer (LP-80, fixed). Still to record on LP-74: the Mac's
-link to the phone, `lpctl revoke`, the reboot and a platform-signed build.
+**Status:** Done on a phone, two checks outstanding. The library, the app and the host-side
+tests are done (LP-76, LP-77, LP-78), and on 2026-10-20 a Pixel 8 Pro on LineageOS 24.0
+(Android 17) joined the Linux machine and the Mac (LP-74; section 4 says what was seen).
+Still to record on LP-74: `lpctl revoke` of the phone and the reboot. The platform-signed
+build turned out to be impossible on an official LineageOS build (section 6), so the
+automatic send on an unmodified ROM is an open item for the next milestone (section 7).
 
 ## 1. Goal
 
@@ -18,9 +17,10 @@ where it does not. Revoke the phone from a desktop and show it can no longer con
 Reboot the phone and show it reconnects without a new ceremony.
 
 LineageOS is the first target because the app must work without Google services, because
-sideloading is the normal way to install there, and because a self-built LineageOS can
-sign the app with the platform key, which is the one way Android lets an app read the
-clipboard in the background (section 3).
+sideloading is the normal way to install there, and because a LineageOS built from source
+can sign the app with the platform key, which is the one way Android lets an app read the
+clipboard in the background (section 3). The project's own builds are signed with keys it
+keeps, so that path needs a self-built ROM.
 
 ## 2. Non-goals for this milestone
 
@@ -69,6 +69,15 @@ Protocol decisions are unchanged: Android is platform 3 of
 - CI cross-builds the library for `aarch64-linux-android` and `x86_64-linux-android`,
   generates the Kotlin bindings and assembles the debug APK on Linux.
 
+Seen on 2026-10-20 with a Pixel 8 Pro on LineageOS 24.0 (Android 17), the Linux machine
+and the Mac on one Wi-Fi: the ceremony from the phone's offer with the same code on both
+sides, and the phone listed on both desktops; Linux to phone in under a second; phone to
+Linux through the app's button, the tile, the notification action and the share sheet;
+the Mac in session with the phone once the introducer pushed the phone's facts (LP-80);
+a reinstall and an app restart keeping the identity and reconnecting. Not yet seen:
+revoke, reboot, and a copy observed on the Mac itself. The automatic send needs a
+platform-signed build, which the phone's official nightly cannot have.
+
 ## 5. Work breakdown
 
 ```mermaid
@@ -102,15 +111,28 @@ flowchart LR
 - **Clipboard read.** The transparent-activity trick (a focused window may read) is what
   other clipboard tools use on Android 10 and later; a future Android may close it. The
   share sheet and the platform-signed path do not depend on it.
+- **Platform signing.** `READ_CLIPBOARD_IN_BACKGROUND` is `signature|role`; the one role
+  that carries it (`SYSTEM_TEXT_INTELLIGENCE`) is system-only and named in the ROM's
+  config. An official LineageOS build is signed with keys the project keeps, so a
+  sideloaded app on one never gets the permission: automatic sending needs a ROM built
+  from source with one's own keys. Seen on the Pixel 8 Pro nightly (LP-74).
+- **Firewalls.** A desktop behind a host firewall cannot be dialled by the phone; it
+  connects only when it dials, on an mDNS event, which after a restart of the phone's node
+  took about two minutes. `ligatured --port` plus one firewall rule fixes it (LP-81).
+- **Facts for live peers.** A device in session with the introducer learnt the newcomer
+  only on its next session; the introducer now pushes the new facts at once (LP-80).
 - **Toolchain drift.** The Gradle, Kotlin and Compose versions are pinned in
   `gradle/libs.versions.toml`; the Android Gradle plugin is held on the 8.x line.
-- **No device in CI.** The exit criteria on a phone are a manual run recorded on LP-78;
+- **No device in CI.** The exit criteria on a phone are a manual run recorded on LP-74;
   the two-node host test is the automated stand-in.
 
 ## 7. After this milestone
 
-Candidates, in no order: a QR scanner in the app so the phone can introduce a desktop
-without typing; `lpctl pair --scan` with a webcam for the other direction; notifications
+Candidates, in no order: automatic sending on an unmodified ROM, either by starting the
+send activity from the clip listener under the "display over other apps" permission (the
+listener fires in the background on LineageOS 24 even though the read is refused) or by a
+notification on every copy whose action sends; a QR scanner in the app so the phone can
+introduce a desktop without typing; `lpctl pair --scan` with a webcam for the other direction; notifications
 from the phone to the desktops (the first capability Android offers that desktops cannot
 return); the platform locations for the desktops' data directories; and the milestone 1
 carry-overs (offline master keys, D-Bus, the `share` family, groups, relays).

@@ -76,7 +76,8 @@ multiple versions of one crate warn. MSRV stays 1.85 (raised to 1.88 in LP-73, b
 RUSTSEC-2026-0009 (stack exhaustion while parsing) is fixed in `time` 0.3.47, and every
 release from 0.3.47 on needs Rust 1.88. `lp-core` parses RFC 3339 timestamps that arrive
 from peers, so the fix is taken rather than the advisory ignored, and the workspace
-`rust-version` becomes 1.88. CI builds with stable, so nothing else changes. The same
+`rust-version` becomes 1.88 (and 1.89 under LP-91, for `zbus` 6, whose predecessors cargo-deny
+reports as unmaintained). CI builds with stable, so nothing else changes. The same
 ticket gave the workspace path dependencies (`lp-core = { path = …, version = "0.0.1" }`)
 a version: without one cargo-deny reports them as wildcards, and `cargo publish` would
 refuse them. Raising the floor let clippy ask for let chains (`if let … && …`, stable since

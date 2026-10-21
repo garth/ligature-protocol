@@ -3,7 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::wire::{Timestamp, TypeName};
+use crate::PublicKey;
+use crate::wire::{Bytes, Timestamp, TypeName};
 
 /// Type name of the manifest message on the `manifest` stream (ADR 0036).
 pub const MANIFEST_TYPE: &str = "org.ligatureprotocol.manifest";
@@ -61,6 +62,153 @@ pub fn clipboard_descriptor(max_bytes: u64) -> Descriptor {
         ),
     ]));
     d
+}
+
+/// Type name of the notifications capability.
+pub const NOTIFICATIONS_TYPE: &str = "org.ligatureprotocol.capability.notifications";
+/// Type name of the notifications `post` message.
+pub const NOTIFICATIONS_POST_TYPE: &str = "org.ligatureprotocol.capability.notifications.post";
+/// Type name of the notifications `icon` message.
+pub const NOTIFICATIONS_ICON_TYPE: &str = "org.ligatureprotocol.capability.notifications.icon";
+/// Type name of the notifications `dismiss` message.
+pub const NOTIFICATIONS_DISMISS_TYPE: &str =
+    "org.ligatureprotocol.capability.notifications.dismiss";
+
+/// The notifications descriptor's `params`: which directions the device
+/// offers and how large an icon it accepts. Spec chapter 05 section 3c;
+/// `schemas/capability.notifications.schema.json`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NotificationsParams {
+    /// The device forwards what its apps post.
+    pub emits: bool,
+    /// The device shows what it is sent.
+    pub displays: bool,
+    /// The largest icon, in bytes, accepted in one `icon`; 0 wants none.
+    pub max_icon_bytes: u64,
+}
+
+impl NotificationsParams {
+    /// The default icon bound: 64 KiB.
+    pub const DEFAULT_MAX_ICON_BYTES: u64 = 65536;
+
+    /// Reads the params of a notifications descriptor; `None` if it is not
+    /// one. Missing fields take the schema's defaults.
+    #[must_use]
+    pub fn from_descriptor(descriptor: &Descriptor) -> Option<Self> {
+        if descriptor.capability_type.as_str() != NOTIFICATIONS_TYPE {
+            return None;
+        }
+        let mut params = Self {
+            emits: false,
+            displays: true,
+            max_icon_bytes: Self::DEFAULT_MAX_ICON_BYTES,
+        };
+        if let Some(ciborium::Value::Map(entries)) = &descriptor.params {
+            for (k, v) in entries {
+                match (k.as_text(), v) {
+                    (Some("emits"), ciborium::Value::Bool(b)) => params.emits = *b,
+                    (Some("displays"), ciborium::Value::Bool(b)) => params.displays = *b,
+                    (Some("maxIconBytes"), ciborium::Value::Integer(i)) => {
+                        params.max_icon_bytes = u64::try_from(*i).unwrap_or(0);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Some(params)
+    }
+}
+
+/// The descriptor a device advertises for notifications.
+#[must_use]
+pub fn notifications_descriptor(params: NotificationsParams) -> Descriptor {
+    let mut d = Descriptor::new(NOTIFICATIONS_TYPE, Scope::User);
+    d.params = Some(ciborium::Value::Map(vec![
+        (
+            ciborium::Value::Text("emits".into()),
+            ciborium::Value::Bool(params.emits),
+        ),
+        (
+            ciborium::Value::Text("displays".into()),
+            ciborium::Value::Bool(params.displays),
+        ),
+        (
+            ciborium::Value::Text("maxIconBytes".into()),
+            ciborium::Value::Integer(params.max_icon_bytes.into()),
+        ),
+    ]));
+    d
+}
+
+/// The app that posted a notification, as its platform names it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NotificationApp {
+    /// The platform's identifier: a package name on Android, the app name
+    /// given to the notification service on Linux.
+    pub id: String,
+    /// The display name.
+    pub name: String,
+}
+
+/// `notifications.post`: an app on the sender posted or updated this
+/// notification. Spec chapter 05 section 3c.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationPost {
+    /// Chosen by the emitting device, stable for the notification's life.
+    pub id: String,
+    /// The app.
+    pub app: NotificationApp,
+    /// The title, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// The body, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    /// When the app posted it on the emitting device.
+    pub posted_at: Timestamp,
+    /// The hash of the app's icon, sent earlier in this session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+}
+
+/// `notifications.icon`: an app's icon, once per app per session.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NotificationIcon {
+    /// SHA-256 of `bytes`, base64url without padding.
+    pub hash: String,
+    /// `image/png` in this version.
+    pub mime: String,
+    /// The image.
+    pub bytes: Bytes,
+}
+
+/// `notifications.dismiss`: the user dismissed this notification on the
+/// sender. Sent to the origin and every displaying peer, never forwarded.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationDismiss {
+    /// The binding key of the device that emitted the notification.
+    pub origin: PublicKey,
+    /// Its id in that device's id space.
+    pub id: String,
+    /// When the user dismissed it.
+    pub dismissed_at: Timestamp,
+}
+
+/// One message on the notifications stream, told apart by `type`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum NotificationMessage {
+    /// A post.
+    #[serde(rename = "org.ligatureprotocol.capability.notifications.post")]
+    Post(NotificationPost),
+    /// An icon.
+    #[serde(rename = "org.ligatureprotocol.capability.notifications.icon")]
+    Icon(NotificationIcon),
+    /// A dismissal.
+    #[serde(rename = "org.ligatureprotocol.capability.notifications.dismiss")]
+    Dismiss(NotificationDismiss),
 }
 
 /// A reverse-DNS type name, such as `org.ligatureprotocol.capability.clipboard`

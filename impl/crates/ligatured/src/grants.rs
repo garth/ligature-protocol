@@ -128,7 +128,13 @@ pub fn grant_implicit(
 /// A binding of the same person set our clipboard: record the implicit grant,
 /// logging rather than failing if the store refuses.
 pub fn record_implicit(daemon: &Arc<Daemon>, peer: &PublicKey) {
-    if let Err(e) = grant_implicit(daemon, peer, CLIPBOARD_TYPE) {
-        tracing::warn!(%peer, %e, "could not record the implicit grant");
+    record_implicit_for(daemon, peer, CLIPBOARD_TYPE);
+}
+
+/// Records the implicit same-person grant of `capability` to `peer` once it
+/// has been used, logging rather than failing if the store refuses.
+pub fn record_implicit_for(daemon: &Arc<Daemon>, peer: &PublicKey, capability: &str) {
+    if let Err(e) = grant_implicit(daemon, peer, capability) {
+        tracing::warn!(%peer, %e, capability, "could not record the implicit grant");
     }
 }

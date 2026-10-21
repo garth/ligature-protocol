@@ -28,7 +28,8 @@
         "org.ligatureprotocol.control.pair.confirm",
         "org.ligatureprotocol.control.pair.abort",
         "org.ligatureprotocol.control.clipboard.get",
-        "org.ligatureprotocol.control.clipboard.set"
+        "org.ligatureprotocol.control.clipboard.set",
+        "org.ligatureprotocol.control.notify"
       ]
     },
     "eventType": {
@@ -80,6 +81,14 @@
         "text": {
           "type": "string",
           "description": "clipboard.set: the text to put on the local clipboard (diagnostics and the loopback run)."
+        },
+        "title": {
+          "type": "string",
+          "description": "notify: the title of a test notification posted from this device to every displaying peer."
+        },
+        "body": {
+          "type": "string",
+          "description": "notify: the body of the test notification."
         }
       }
     },

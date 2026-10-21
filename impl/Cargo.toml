@@ -18,7 +18,7 @@ version = "0.0.1"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/ligature-protocol/ligature-protocol"
-rust-version = "1.88"
+rust-version = "1.89"
 
 [workspace.dependencies]
 lp-core = { path = "crates/lp-core", version = "0.0.1" }
@@ -60,6 +60,9 @@ qrcode = { version = "0.14", default-features = false }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 wl-clipboard-rs = "0.9"
+# Linux notifications over the session bus (milestone 3, LP-91).
+zbus = { version = "6", default-features = false, features = ["tokio", "proxy"] }
+futures-util = { version = "0.3", default-features = false }
 objc2 = "0.6"
 objc2-foundation = "0.3"
 objc2-app-kit = "0.3"

@@ -122,7 +122,9 @@ The reference implementation is Rust and is also the production implementation
   `connectedDevice` foreground service with the multicast lock). `03-notifications.md` is
   the current one (notifications flow between every device that emits or displays them:
   one family with two directions, dismissal fanned out directly, Linux emitting by monitoring the
-  session bus, macOS display-only).
+  session bus, macOS display-only) and `03-implementation-decisions.md` records its
+  non-protocol choices (the `Notifications` trait and `NotificationSync`, `zbus` 6 over the
+  session bus with a monitor connection, `lpctl notify`).
 - `schemas/*.schema.json`: JSON Schema 2020-12 drafts (person, device, capability, grant,
   group, role, revocation, envelope, message, pairing, capability.clipboard,
   capability.notifications; `control` is implementation-only).

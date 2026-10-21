@@ -42,6 +42,8 @@ pub mod types {
     pub const CLIPBOARD_GET: &str = "org.ligatureprotocol.control.clipboard.get";
     /// Set the local clipboard's text (diagnostics and the loopback run).
     pub const CLIPBOARD_SET: &str = "org.ligatureprotocol.control.clipboard.set";
+    /// Post a test notification from this device to every displaying peer.
+    pub const NOTIFY: &str = "org.ligatureprotocol.control.notify";
     /// Start a ceremony as the introducer.
     pub const PAIR_INTRODUCE: &str = "org.ligatureprotocol.control.pair.introduce";
     /// Start a ceremony as the newcomer.
@@ -86,6 +88,12 @@ pub struct Request {
     /// `clipboard.set`: the text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    /// `notify`: the title.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// `notify`: the body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
 }
 
 impl Request {
@@ -667,6 +675,29 @@ pub async fn handle(
             (_, None) => Ok(Response::error(
                 id,
                 ErrorBody::new("bad-request", "clipboard.set needs text"),
+            )),
+        },
+        types::NOTIFY => match (daemon.notification_sync(), request.title.as_deref()) {
+            (Some(sync), Some(title)) => {
+                let notification = crate::notifications::Notification {
+                    id: format!("lpctl-{}", lp_core::wire::Timestamp::now().unix()),
+                    app_id: crate::notification_sync::LPCTL_APP.to_owned(),
+                    app_name: "lpctl".to_owned(),
+                    title: Some(title.to_owned()),
+                    body: request.body.clone(),
+                    posted_at: lp_core::wire::Timestamp::now(),
+                    icon: None,
+                };
+                sync.local_posted(&notification).await;
+                Response::ok(id, &Empty {})
+            }
+            (None, _) => Ok(Response::error(
+                id,
+                ErrorBody::new("not-found", "no notifications on this daemon"),
+            )),
+            (_, None) => Ok(Response::error(
+                id,
+                ErrorBody::new("bad-request", "notify needs a title"),
             )),
         },
         types::CAPS => Response::ok(

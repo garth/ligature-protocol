@@ -78,6 +78,7 @@ pub struct Daemon {
     registry: Arc<crate::capabilities::Registry>,
     clipboard: Mutex<Option<Arc<crate::clipboard_sync::ClipboardSync>>>,
     clipboard_impl: Mutex<Option<Arc<dyn crate::clipboard::Clipboard>>>,
+    notifications: Mutex<Option<Arc<crate::notification_sync::NotificationSync>>>,
     ceremonies: Arc<std::sync::atomic::AtomicUsize>,
 }
 
@@ -199,6 +200,7 @@ impl Daemon {
             registry,
             clipboard: Mutex::new(None),
             clipboard_impl: Mutex::new(None),
+            notifications: Mutex::new(None),
             ceremonies: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         });
         if daemon.is_initialised() {
@@ -608,6 +610,9 @@ impl Daemon {
         if let Some(sync) = self.clipboard_sync() {
             sync.attach(conn);
         }
+        if let Some(sync) = self.notification_sync() {
+            sync.attach(conn);
+        }
     }
 
     /// A peer disconnected: its capabilities are withdrawn.
@@ -616,6 +621,38 @@ impl Daemon {
         if let Some(sync) = self.clipboard_sync() {
             sync.detach(peer);
         }
+        if let Some(sync) = self.notification_sync() {
+            sync.detach(peer);
+        }
+    }
+
+    /// Starts carrying notifications through the given backend. Called once
+    /// at startup.
+    pub fn attach_notifications(
+        self: &Arc<Self>,
+        backend: Arc<dyn crate::notifications::Notifications>,
+    ) -> Arc<crate::notification_sync::NotificationSync> {
+        let sync = crate::notification_sync::NotificationSync::start(self.clone(), backend);
+        *self
+            .notifications
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(sync.clone());
+        sync
+    }
+
+    /// The notification synchroniser, if a backend was attached.
+    #[must_use]
+    pub fn notification_sync(&self) -> Option<Arc<crate::notification_sync::NotificationSync>> {
+        self.notifications
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    /// A device's display name from its device record, if known.
+    #[must_use]
+    pub fn device_display_name(&self, key: &PublicKey) -> Option<String> {
+        stored_device_name(&self.store, key).ok().flatten()
     }
 
     /// Starts synchronising the given clipboard. Called once at startup.

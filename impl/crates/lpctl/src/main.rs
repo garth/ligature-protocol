@@ -71,6 +71,13 @@ enum Command {
         #[command(subcommand)]
         action: ClipboardAction,
     },
+    /// Post a test notification from this device to every device that displays them.
+    Notify {
+        /// The title.
+        title: String,
+        /// The body.
+        body: Option<String>,
+    },
 }
 
 /// `lpctl clipboard` actions.
@@ -237,6 +244,13 @@ async fn run(options: &Options, locations: &Locations) -> Result<(), Error> {
                 let _: Empty = client.request(req).await?;
             }
         },
+        Command::Notify { title, body } => {
+            let mut req = Request::new(types::NOTIFY, 0);
+            req.title = Some(title.clone());
+            req.body = body.clone();
+            let _: Empty = client.request(req).await?;
+            println!("posted.");
+        }
         Command::Caps => {
             let caps: Caps = client.request(Request::new(types::CAPS, 0)).await?;
             println!("this device offers:");

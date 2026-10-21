@@ -16,6 +16,24 @@ use crate::daemon::Daemon;
 /// for the loopback end-to-end run and for machines without a compositor.
 pub const FAKE_CLIPBOARD_ENV: &str = "LIGATURE_FAKE_CLIPBOARD";
 
+/// Set to `1` to use the in-memory fake notification backend instead of the
+/// platform's: for the loopback end-to-end run.
+pub const FAKE_NOTIFICATIONS_ENV: &str = "LIGATURE_FAKE_NOTIFICATIONS";
+
+/// The platform's notification backend, if this platform has one.
+#[must_use]
+pub fn platform_notifications() -> Option<Arc<dyn crate::notifications::Notifications>> {
+    #[cfg(target_os = "linux")]
+    {
+        crate::notifications_linux::LinuxNotifications::start()
+            .map(|n| n as Arc<dyn crate::notifications::Notifications>)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        None
+    }
+}
+
 /// The address the QUIC endpoint binds: every interface, assigned port.
 #[must_use]
 pub fn default_bind() -> SocketAddr {
@@ -64,6 +82,19 @@ pub async fn run(
             daemon.attach_clipboard(clipboard);
         }
         None => tracing::warn!("no clipboard implementation on this platform"),
+    }
+    let notifications: Option<Arc<dyn crate::notifications::Notifications>> =
+        if std::env::var_os(FAKE_NOTIFICATIONS_ENV).is_some_and(|v| v == "1") {
+            tracing::warn!("using the in-memory fake notifications ({FAKE_NOTIFICATIONS_ENV}=1)");
+            Some(crate::notifications::FakeNotifications::new(true, true))
+        } else {
+            platform_notifications()
+        };
+    match notifications {
+        Some(backend) => {
+            daemon.attach_notifications(backend);
+        }
+        None => tracing::info!("no notification backend on this platform"),
     }
 
     spawn_connection_events(daemon.clone(), events);

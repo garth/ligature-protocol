@@ -13,4 +13,8 @@ pub mod control;
 pub mod daemon;
 pub mod gossip;
 pub mod grants;
+pub mod notification_sync;
+pub mod notifications;
+#[cfg(target_os = "linux")]
+pub mod notifications_linux;
 pub mod run;

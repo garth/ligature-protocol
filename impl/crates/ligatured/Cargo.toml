@@ -28,6 +28,8 @@ jsonschema.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 wl-clipboard-rs.workspace = true
+zbus.workspace = true
+futures-util.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2.workspace = true

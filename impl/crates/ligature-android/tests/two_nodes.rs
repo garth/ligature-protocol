@@ -79,7 +79,9 @@ impl Host for FakeHost {
 }
 
 fn until(what: &str, mut check: impl FnMut() -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    // The two nodes find each other over real mDNS, which is slow when the
+    // whole workspace's daemons are advertising at once.
+    let deadline = Instant::now() + Duration::from_secs(30);
     while !check() {
         assert!(Instant::now() < deadline, "timed out waiting for: {what}");
         std::thread::sleep(Duration::from_millis(25));

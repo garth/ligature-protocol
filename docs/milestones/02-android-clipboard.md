@@ -1,8 +1,12 @@
 # Milestone 2: an Android phone shares the clipboard with Linux and macOS
 
-**Status:** Built, not yet run on a phone. The library, the app and the host-side tests are
-done (LP-76, LP-77, LP-78); the APK assembles. What remains is the run on a LineageOS
-phone against the Linux machine and the Mac of milestone 1, recorded on LP-78.
+**Status:** Running on a phone. The library, the app and the host-side tests are done
+(LP-76, LP-77, LP-78), and on 2026-10-20 a Pixel 8 Pro on LineageOS 24.0 (Android 17) paired
+with the Linux daemon from the phone's offer and `lpctl pair`, received the Linux clipboard
+and sent its own through the app's button, the quick-settings tile, the notification action
+and the share sheet (LP-74). The run found that a peer already in session with the
+introducer never learnt the newcomer (LP-80, fixed). Still to record on LP-74: the Mac's
+link to the phone, `lpctl revoke`, the reboot and a platform-signed build.
 
 ## 1. Goal
 

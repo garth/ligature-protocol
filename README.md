@@ -139,8 +139,9 @@ cargo test
 ```
 
 The daemon keeps its state in `data/` under the project root for now (ignored by git);
-`--data-dir` or `LIGATURE_DATA_DIR` moves it. The Android app builds from `impl/android`
-(see its [README](impl/android/README.md)).
+`--data-dir` or `LIGATURE_DATA_DIR` moves it. The daemon listens on a UDP port the system
+assigns; `--port` or `LIGATURE_PORT` fixes it so a firewall rule can let other devices dial
+in. The Android app builds from `impl/android` (see its [README](impl/android/README.md)).
 
 ## Documentation
 

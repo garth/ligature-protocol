@@ -25,6 +25,9 @@ Type=simple
 ExecStart=%h/.cargo/bin/ligatured
 Environment=LIGATURE_DATA_DIR=%h/.local/share/ligature
 Environment=RUST_LOG=info
+# Fix the UDP port when a firewall must allow peers to dial in (then, for
+# example, ufw allow 47471/udp):
+#Environment=LIGATURE_PORT=47471
 Restart=on-failure
 RestartSec=2
 

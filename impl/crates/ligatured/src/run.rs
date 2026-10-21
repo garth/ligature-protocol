@@ -19,7 +19,18 @@ pub const FAKE_CLIPBOARD_ENV: &str = "LIGATURE_FAKE_CLIPBOARD";
 /// The address the QUIC endpoint binds: every interface, assigned port.
 #[must_use]
 pub fn default_bind() -> SocketAddr {
-    "0.0.0.0:0".parse().expect("literal")
+    bind_on(None)
+}
+
+/// Environment variable naming the UDP port, the default for `--port`.
+pub const PORT_ENV: &str = "LIGATURE_PORT";
+
+/// All IPv4 interfaces on `port`, or on one the operating system assigns.
+/// A fixed port is for machines whose firewall must allow peers to dial in
+/// (LP-81); the advertised SRV record carries whichever port was bound.
+#[must_use]
+pub fn bind_on(port: Option<u16>) -> SocketAddr {
+    SocketAddr::from((std::net::Ipv4Addr::UNSPECIFIED, port.unwrap_or(0)))
 }
 
 /// Opens the daemon and runs it until the control socket fails.
@@ -27,8 +38,12 @@ pub fn default_bind() -> SocketAddr {
 /// # Errors
 ///
 /// Returns the error that stopped it.
-pub async fn run(locations: Locations, device_name: Option<&str>) -> Result<(), Error> {
-    let (daemon, events) = Daemon::open(locations.clone(), default_bind(), device_name)?;
+pub async fn run(
+    locations: Locations,
+    device_name: Option<&str>,
+    port: Option<u16>,
+) -> Result<(), Error> {
+    let (daemon, events) = Daemon::open(locations.clone(), bind_on(port), device_name)?;
     tracing::info!(
         binding = %daemon.binding().public(),
         initialised = daemon.is_initialised(),

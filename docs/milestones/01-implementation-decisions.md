@@ -106,9 +106,10 @@ advertises.
 
 **UDP port.** The QUIC endpoint binds port 0 and the operating system assigns one; the
 daemon advertises the assigned port in the DNS-SD SRV record. Two daemons on one machine
-therefore never collide (G2) and nothing is configured. A fixed `--port` for strict
-firewalls is not a milestone 1 need; the flag is reserved and documented under LP-32 when
-it is added.
+therefore never collide (G2) and nothing is configured. `--port` (`LIGATURE_PORT`) fixes
+the port instead, for a machine whose firewall must be told what to allow: the milestone 2
+phone run found a Linux machine behind ufw unreachable for the phone's dials, so its peers
+only connected when it dialled them (LP-81). One `ufw allow <port>/udp` then lets them in.
 
 **Pinning.** The crates are in the workspace now so `Cargo.lock` carries them before B1 and
 B3 start. Nothing in the scaffold uses them yet.

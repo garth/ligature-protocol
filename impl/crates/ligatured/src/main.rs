@@ -14,6 +14,7 @@
 use std::path::PathBuf;
 
 use clap::Parser;
+use ligatured::run::PORT_ENV;
 use lp_core::paths::{DATA_DIR_ENV, Locations, RUNTIME_DIR_ENV};
 use tracing_subscriber::EnvFilter;
 
@@ -30,6 +31,10 @@ struct Options {
     /// This device's display name on first start (default: the host name).
     #[arg(long)]
     device_name: Option<String>,
+    /// UDP port for QUIC (default: one the operating system assigns). Fix it
+    /// where a firewall must allow peers to dial in.
+    #[arg(long, env = PORT_ENV)]
+    port: Option<u16>,
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -73,7 +78,9 @@ async fn main() {
         control_socket = %locations.control_socket().display(),
         "ligatured starting"
     );
-    if let Err(e) = ligatured::run::run(locations, options.device_name.as_deref()).await {
+    if let Err(e) =
+        ligatured::run::run(locations, options.device_name.as_deref(), options.port).await
+    {
         tracing::error!(%e, "ligatured stopped");
         std::process::exit(1);
     }

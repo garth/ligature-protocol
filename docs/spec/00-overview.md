@@ -4,12 +4,13 @@
 
 ## 1. Introduction
 
-Ligature Protocol (LP) binds the devices belonging to one person into a single trusted
-group so that any device can discover and use the capabilities of the others. It is
-designed for Linux desktops first, with macOS desktops, Android phones and tablets, home
-hubs and (within platform limits) iPhones as peers ([ADR 0033](../adr/0033-supported-
-platforms.md)). This chapter sets out the goals, the layering, and how the remaining
-chapters fit together.
+Ligature Protocol (LP) binds the devices belonging to one person, and the devices a
+household shares, into a single trusted group so that any device can discover and use the
+capabilities of the others, whoever made them. Linux desktops are the reference platform,
+with macOS desktops, Android phones and tablets and home hubs as full peers
+([ADR 0033](../adr/0033-supported-platforms.md)); what Apple phones and tablets could offer
+is recorded in chapter 08 section 4 and none is planned. This chapter sets out the goals,
+the layering, and how the remaining chapters fit together.
 
 ## 2. Goals and non-goals
 

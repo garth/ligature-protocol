@@ -5,10 +5,13 @@
 > Android phone (milestones 1 and 2), and the `org.ligatureprotocol` type names use a
 > placeholder domain.
 
-Ligature Protocol binds a person's devices (Linux and macOS desktops and laptops, Android
-phones and tablets, home hubs, and iPhones where the platform allows) into one trusted
-group, so any device can discover and use the capabilities of the others. Think of it as an open,
-Apple-Continuity-like ecosystem for Linux users, built on existing open standards.
+Ligature Protocol binds the devices a person owns, and the devices a household shares,
+into one trusted group, whatever they run: Linux and macOS desktops and laptops, Android
+phones and tablets, home hubs. Any device can discover and use the capabilities of the
+others: paste on the laptop what was copied on the phone, see the phone's notifications on
+the desktop, send a file to the tablet, put a photo on the living-room TV. It is an open
+protocol with no vendor, account or server behind it, built on existing open standards, so
+that devices from different makers work together the way one maker's devices do.
 
 ## Principles
 

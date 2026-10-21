@@ -27,6 +27,9 @@ use tokio::sync::mpsc;
 use crate::daemon::Daemon;
 use crate::notifications::{Event, Icon, Notification, Notifications};
 
+/// How often the backend's directions are re-read.
+const ADVERTISE_POLL: std::time::Duration = std::time::Duration::from_secs(1);
+
 /// The notification synchroniser for one daemon.
 pub struct NotificationSync {
     daemon: Arc<Daemon>,
@@ -81,8 +84,17 @@ impl NotificationSync {
             .on_stream(NOTIFICATIONS_TYPE, this.handler());
         let local = this.clone();
         tokio::spawn(async move { local.watch_local().await });
+        // The backend's directions can change after start (a bus monitor
+        // coming up, access granted on a phone): re-check them every second
+        // and tell peers only when they differ, as the clipboard does for
+        // its availability.
         let advertise = this.clone();
-        tokio::spawn(async move { advertise.advertise().await });
+        tokio::spawn(async move {
+            loop {
+                advertise.advertise().await;
+                tokio::time::sleep(ADVERTISE_POLL).await;
+            }
+        });
         this
     }
 

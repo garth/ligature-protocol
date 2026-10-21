@@ -258,7 +258,12 @@ async fn run(options: &Options, locations: &Locations) -> Result<(), Error> {
                 println!("  (nothing)");
             }
             for d in &caps.local {
-                println!("  {} ({:?})", d.capability_type.as_str(), d.scope);
+                println!(
+                    "  {} ({:?}){}",
+                    d.capability_type.as_str(),
+                    d.scope,
+                    directions(d)
+                );
             }
             if caps.peers.is_empty() {
                 println!("no connected peers");
@@ -269,7 +274,12 @@ async fn run(options: &Options, locations: &Locations) -> Result<(), Error> {
                     println!("  (nothing)");
                 }
                 for d in &p.capabilities {
-                    println!("  {} ({:?})", d.capability_type.as_str(), d.scope);
+                    println!(
+                        "  {} ({:?}){}",
+                        d.capability_type.as_str(),
+                        d.scope,
+                        directions(d)
+                    );
                 }
             }
         }
@@ -322,4 +332,15 @@ fn ask(question: &str) -> bool {
     let mut line = String::new();
     let _ = std::io::stdin().lock().read_line(&mut line);
     matches!(line.trim(), "y" | "Y" | "yes" | "YES")
+}
+
+/// The directions a notifications descriptor declares, for `caps`.
+fn directions(d: &lp_core::capability::Descriptor) -> String {
+    match lp_core::capability::NotificationsParams::from_descriptor(d) {
+        Some(p) => format!(
+            "  emits={} displays={} maxIconBytes={}",
+            p.emits, p.displays, p.max_icon_bytes
+        ),
+        None => String::new(),
+    }
 }

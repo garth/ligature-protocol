@@ -114,8 +114,8 @@ The reference implementation is Rust and is also the production implementation
   clipboard) and `01-implementation-decisions.md` records its non-protocol choices (store is
   SQLite via rusqlite bundled; keys in a separate 0600 file; state under `data/` in the
   project root during milestone 1, gitignored; no configuration file; `lpctl init --name`
-  creates the first identity). `02-android-clipboard.md` is done on a LineageOS phone
-  (revoke and reboot are still to be recorded on LP-74) and `02-implementation-decisions.md`
+  creates the first identity). `02-android-clipboard.md` is done, every exit criterion run
+  on a LineageOS phone with the two desktops, and `02-implementation-decisions.md`
   records the Android choices (the daemon as a library behind UniFFI; the clipboard read by
   the app when Android allows and automatic only with `READ_CLIPBOARD_IN_BACKGROUND`, which
   only a platform-signed build holds and an official LineageOS build cannot be; a

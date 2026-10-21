@@ -1,11 +1,11 @@
 # Milestone 2: an Android phone shares the clipboard with Linux and macOS
 
-**Status:** Done on a phone, two checks outstanding. The library, the app and the host-side
-tests are done (LP-76, LP-77, LP-78), and on 2026-10-20 a Pixel 8 Pro on LineageOS 24.0
-(Android 17) joined the Linux machine and the Mac (LP-74; section 4 says what was seen).
-Still to record on LP-74: `lpctl revoke` of the phone and the reboot. The platform-signed
-build turned out to be impossible on an official LineageOS build (section 6), so the
-automatic send on an unmodified ROM is an open item for the next milestone (section 7).
+**Status:** Done. The library, the app and the host-side tests are done (LP-76, LP-77,
+LP-78), and on 2026-10-20 a Pixel 8 Pro on LineageOS 24.0 (Android 17) joined the Linux
+machine and the Mac and ran every exit criterion (LP-74; section 4 says what was seen). The
+run produced four fixes (LP-80, LP-81, LP-83, LP-84). The platform-signed build turned out
+to be impossible on an official LineageOS build (section 6), so the automatic send on an
+unmodified ROM is the first item for the next milestone (section 7).
 
 ## 1. Goal
 
@@ -74,9 +74,15 @@ and the Mac on one Wi-Fi: the ceremony from the phone's offer with the same code
 sides, and the phone listed on both desktops; Linux to phone in under a second; phone to
 Linux through the app's button, the tile, the notification action and the share sheet;
 the Mac in session with the phone once the introducer pushed the phone's facts (LP-80);
-a reinstall and an app restart keeping the identity and reconnecting. Not yet seen:
-revoke, reboot, and a copy observed on the Mac itself. The automatic send needs a
-platform-signed build, which the phone's official nightly cannot have.
+a reinstall and an app restart keeping the identity and reconnecting; after `lpctl revoke`
+of the binding and the principal, both desktops listing them as revoked and refusing the
+phone on its next start, then a re-pair with fresh keys in one ceremony; a reboot after
+which the node waited for the network and had both desktops within two seconds, with no
+tap (LP-83). Two things differ from the criteria as written: the phone never learns of
+its own revocation, since a revoked peer is dropped before any gossip, and a fully
+revoked device stays in the lists; both are presentation choices for a follow-up. Not
+seen: a copy observed on the Mac itself. The automatic send needs a platform-signed
+build, which the phone's official nightly cannot have.
 
 ## 5. Work breakdown
 

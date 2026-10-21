@@ -79,6 +79,10 @@ jobs:
           workspaces: impl
       - name: cargo-ndk
         run: cargo install cargo-ndk --locked
+      - name: The NDK the app pins (the runner's own is another version)
+        run: |
+          version=$(sed -n 's/.*ndkVersion = "\(.*\)".*/\1/p' app/build.gradle.kts)
+          echo y | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$version"
       - uses: gradle/actions/setup-gradle@v4
       - name: Assemble the debug APK (builds the Rust library and the bindings on the way)
         run: ./gradlew assembleDebug --no-daemon

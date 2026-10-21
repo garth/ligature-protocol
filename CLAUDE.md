@@ -119,7 +119,10 @@ The reference implementation is Rust and is also the production implementation
   records the Android choices (the daemon as a library behind UniFFI; the clipboard read by
   the app when Android allows and automatic only with `READ_CLIPBOARD_IN_BACKGROUND`, which
   only a platform-signed build holds and an official LineageOS build cannot be; a
-  `connectedDevice` foreground service with the multicast lock).
+  `connectedDevice` foreground service with the multicast lock). `03-notifications.md` is
+  the current one (notifications flow between every device that emits or displays them:
+  one family with two directions, origin-as-hub dismissal, Linux emitting by monitoring the
+  session bus, macOS display-only).
 - `schemas/*.schema.json`: JSON Schema 2020-12 drafts (person, device, capability, grant,
   group, role, revocation, envelope, message, pairing, capability.clipboard; `control` is
   implementation-only).

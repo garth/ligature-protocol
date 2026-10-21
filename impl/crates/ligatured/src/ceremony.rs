@@ -388,6 +388,9 @@ pub async fn introduce(
     introduced.persist(daemon.store())?;
     // The newcomer is now one of ours on this very connection.
     daemon.on_trusted(&conn).await;
+    // Facts otherwise travel only at the start of a session, so push the
+    // newcomer's to every peer already connected (LP-80).
+    daemon.gossip_all().await;
     Ok(())
 }
 

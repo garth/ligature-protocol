@@ -55,10 +55,18 @@ class MainActivity : ComponentActivity() {
                         onShare = ::share,
                         onBatterySettings = ::batterySettings,
                         batteryUnrestricted = batteryUnrestricted(),
+                        onNotificationSettings = ::notificationSettings,
+                        onToggleApp = NodeHolder::setAppEnabled,
                     )
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Back from Settings: notification access may have changed.
+        if (NodeHolder.isRunning) NodeHolder.refreshNotificationAccess(this)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -97,6 +105,10 @@ class MainActivity : ComponentActivity() {
 
     private fun batteryUnrestricted(): Boolean =
         getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
+
+    private fun notificationSettings() {
+        startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+    }
 
     private fun batterySettings() {
         startActivity(

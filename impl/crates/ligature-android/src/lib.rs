@@ -18,10 +18,12 @@
 mod clipboard;
 mod logging;
 mod node;
+mod notifications;
 mod pairing;
 
 pub use clipboard::HostClipboard;
 pub use node::{Config, Device, Node, Status};
+pub use notifications::HostNotifications;
 pub use pairing::Pairing;
 
 use std::sync::Arc;
@@ -68,6 +70,49 @@ pub enum LogLevel {
     Trace,
 }
 
+/// A notification an app on this device posted, as the host's listener saw
+/// it (milestone 3).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct LocalNotification {
+    /// Stable for the notification's life: the listener's key.
+    pub id: String,
+    /// The package name.
+    pub app_id: String,
+    /// The app's label.
+    pub app_name: String,
+    /// The title, if any.
+    pub title: Option<String>,
+    /// The text, if any.
+    pub body: Option<String>,
+    /// When it was posted, in seconds since the epoch.
+    pub posted_at_unix: i64,
+    /// The app's icon as PNG, if the host could render one.
+    pub icon_png: Option<Vec<u8>>,
+}
+
+/// A copy of another device's notification for the host to show.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct NotificationCopy {
+    /// The emitting device's binding key.
+    pub origin: String,
+    /// That device's display name.
+    pub origin_name: String,
+    /// The id in the origin's id space; the same id again is an update.
+    pub id: String,
+    /// The app's identifier on the origin.
+    pub app_id: String,
+    /// The app's name.
+    pub app_name: String,
+    /// The title, if any.
+    pub title: Option<String>,
+    /// The text, if any.
+    pub body: Option<String>,
+    /// When it was posted on the origin, in seconds since the epoch.
+    pub posted_at_unix: i64,
+    /// The app's icon as PNG, if one travelled.
+    pub icon_png: Option<Vec<u8>>,
+}
+
 /// What the app supplies to the node. Implemented in Kotlin; every method may
 /// be called from any of the node's threads.
 #[uniffi::export(with_foreign)]
@@ -75,6 +120,14 @@ pub trait Host: Send + Sync {
     /// Puts `text` on the system clipboard. Returns whether the platform
     /// accepted it.
     fn set_clipboard(&self, text: String) -> bool;
+    /// Shows, or updates, a copy of another device's notification. Returns
+    /// whether the platform accepted it.
+    fn show_notification(&self, copy: NotificationCopy) -> bool;
+    /// Clears the copy of `origin`'s notification `id`, if shown.
+    fn dismiss_notification_copy(&self, origin: String, id: String) -> bool;
+    /// Cancels this device's own notification `id`: another device dismissed
+    /// its copy. Returns whether the listener could.
+    fn dismiss_own_notification(&self, id: String) -> bool;
     /// Something happened that the user interface may want to show.
     fn on_event(&self, event: Event);
     /// A log line from the node, for logcat.

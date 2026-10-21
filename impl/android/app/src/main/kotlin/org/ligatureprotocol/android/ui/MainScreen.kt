@@ -18,6 +18,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -30,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import org.ligatureprotocol.android.AppSwitch
 import org.ligatureprotocol.android.PairingState
 import org.ligatureprotocol.android.UiState
 import org.ligatureprotocol.core.Device
@@ -50,6 +52,8 @@ fun MainScreen(
     onShare: (String) -> Unit,
     onBatterySettings: () -> Unit,
     batteryUnrestricted: Boolean,
+    onNotificationSettings: () -> Unit,
+    onToggleApp: (String, Boolean) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -68,7 +72,7 @@ fun MainScreen(
             Text("Starting the node…")
             return@Column
         }
-        StatusCard(status, state.backgroundRead)
+        StatusCard(status, state.backgroundRead, state.notificationAccess)
         state.pairing?.let { pairing ->
             PairingCard(pairing, onConfirmPairing, onAbortPairing, onDismissPairing, onCopy, onShare)
         }
@@ -76,6 +80,7 @@ fun MainScreen(
             if (state.pairing == null) SetupCard(onCreatePerson, onStartJoin)
         } else {
             ClipboardCard(status, onSendClipboard, state.backgroundRead, state.lastClipboard)
+            NotificationsCard(state.notificationAccess, state.apps, onNotificationSettings, onToggleApp)
             if (state.pairing == null) IntroduceCard(onStartIntroduce)
             DevicesCard(state.devices, onRevoke)
         }
@@ -95,7 +100,7 @@ fun MainScreen(
 }
 
 @Composable
-private fun StatusCard(status: Status, backgroundRead: Boolean) {
+private fun StatusCard(status: Status, backgroundRead: Boolean, notificationAccess: Boolean) {
     Card {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (status.initialised) {
@@ -113,6 +118,11 @@ private fun StatusCard(status: Status, backgroundRead: Boolean) {
             Text(
                 if (backgroundRead) "Clipboard: automatic (background read allowed)"
                 else "Clipboard: receives automatically, sends on request",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                if (notificationAccess) "Notifications: forwarding and displaying"
+                else "Notifications: displaying only (no notification access)",
                 style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -230,6 +240,45 @@ private fun ClipboardCard(
                     "Last synced: " + it.take(80).replace('\n', ' '),
                     style = MaterialTheme.typography.bodySmall,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NotificationsCard(
+    access: Boolean,
+    apps: List<AppSwitch>,
+    onSettings: () -> Unit,
+    onToggle: (String, Boolean) -> Unit,
+) {
+    Card {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Notifications", style = MaterialTheme.typography.titleMedium)
+            if (!access) {
+                Text(
+                    "Your other devices' notifications appear here. To send this phone's to them, " +
+                        "allow Ligature notification access in Settings.",
+                )
+                OutlinedButton(onClick = onSettings) { Text("Notification access") }
+            } else {
+                Text("What your apps post goes to your other devices, and theirs arrive here.")
+                if (apps.isEmpty()) {
+                    Text("Apps appear below as they post.", style = MaterialTheme.typography.bodySmall)
+                }
+                apps.forEach { app ->
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(app.label)
+                            Text(app.packageName, style = MaterialTheme.typography.bodySmall)
+                        }
+                        Switch(checked = app.enabled, onCheckedChange = { onToggle(app.packageName, it) })
+                    }
+                }
+                TextButton(onClick = onSettings) { Text("Notification access settings") }
             }
         }
     }

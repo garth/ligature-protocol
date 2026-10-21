@@ -89,6 +89,7 @@ pub struct Node {
     runtime: Mutex<Option<tokio::runtime::Runtime>>,
     daemon: Arc<Daemon>,
     clipboard: Arc<HostClipboard>,
+    notifications: Arc<crate::HostNotifications>,
     host: SharedHost,
 }
 
@@ -132,15 +133,18 @@ impl Node {
             "node running"
         );
         let clipboard = HostClipboard::new(host.clone());
+        let notifications = crate::HostNotifications::new(host.clone());
         let node = Arc::new(Self {
             runtime: Mutex::new(Some(runtime)),
             daemon,
             clipboard: clipboard.clone(),
+            notifications: notifications.clone(),
             host,
         });
         node.with_runtime(|rt| {
             let _guard = rt.enter();
             node.daemon.attach_clipboard(clipboard);
+            node.daemon.attach_notifications(notifications);
             // Tee the connection events: the host learns of every change,
             // the daemon's own loop handles them.
             let (tx, rx) = mpsc::channel::<ConnectionEvent>(32);
@@ -278,6 +282,39 @@ impl Node {
     #[must_use]
     pub fn clipboard_text(&self) -> Option<String> {
         self.clipboard.read_text().ok().flatten()
+    }
+
+    /// The listener saw an app post or update `notification`: send it to
+    /// every device of the person that displays notifications.
+    pub fn notification_posted(&self, notification: crate::LocalNotification) {
+        self.notifications.posted(notification);
+    }
+
+    /// One of this device's own notifications went away (the user dismissed
+    /// it or the app withdrew it): its copies elsewhere go too.
+    pub fn notification_removed(&self, id: String) {
+        self.notifications.removed(id);
+    }
+
+    /// The user dismissed the copy of `origin`'s notification `id` on this
+    /// device: the origin cancels its own and every other display clears.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LpError::BadRequest`] if `origin` is not a key.
+    pub fn notification_copy_dismissed(&self, origin: String, id: String) -> Result<(), LpError> {
+        let origin = PublicKey::parse(origin.trim())?;
+        self.notifications.copy_dismissed(origin, id);
+        Ok(())
+    }
+
+    /// The notification listener connected (`true`) or disconnected: the
+    /// capability's `emits` follows it and peers are told.
+    pub fn set_notifications_emitting(&self, emitting: bool) {
+        self.notifications.set_emits(emitting);
+        if let Some(sync) = self.daemon.notification_sync() {
+            self.with_runtime(|rt| rt.block_on(sync.advertise()));
+        }
     }
 
     /// Starts the mDNS responder and browser again: for the host to call when

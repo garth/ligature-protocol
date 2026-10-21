@@ -36,7 +36,9 @@ pub struct NotificationSync {
     icons_sent: Mutex<HashMap<PublicKey, HashSet<String>>>,
     /// Icons received from each peer this session, by hash.
     icons_received: Mutex<HashMap<(PublicKey, String), Arc<Icon>>>,
-    offered: Mutex<Option<NotificationsParams>>,
+    /// What is advertised right now; held across the registry update so two
+    /// concurrent advertisers cannot leave a stale descriptor behind.
+    offered: tokio::sync::Mutex<Option<NotificationsParams>>,
     counters: Mutex<Counters>,
 }
 
@@ -71,7 +73,7 @@ impl NotificationSync {
             senders: Mutex::new(HashMap::new()),
             icons_sent: Mutex::new(HashMap::new()),
             icons_received: Mutex::new(HashMap::new()),
-            offered: Mutex::new(None),
+            offered: tokio::sync::Mutex::new(None),
             counters: Mutex::new(Counters::default()),
         });
         daemon
@@ -103,20 +105,19 @@ impl NotificationSync {
     /// Re-reads the backend's directions and tells peers if they changed:
     /// for a host whose notification access was granted or revoked.
     pub async fn advertise(&self) {
+        let mut offered = self.offered.lock().await;
         let params = self.params();
-        if *self.lock(&self.offered) == Some(params) {
+        if *offered == Some(params) {
             return;
         }
-        if !params.emits && !params.displays {
-            self.daemon.registry().withdraw(NOTIFICATIONS_TYPE).await;
-        } else {
-            self.daemon.registry().withdraw(NOTIFICATIONS_TYPE).await;
+        self.daemon.registry().withdraw(NOTIFICATIONS_TYPE).await;
+        if params.emits || params.displays {
             self.daemon
                 .registry()
                 .offer(notifications_descriptor(params))
                 .await;
         }
-        *self.lock(&self.offered) = Some(params);
+        *offered = Some(params);
         tracing::info!(
             emits = params.emits,
             displays = params.displays,

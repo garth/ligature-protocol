@@ -6,12 +6,15 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use ligature_android::{Config, Event, Host, LogLevel, Node};
+use ligature_android::{Config, Event, Host, LocalNotification, LogLevel, Node, NotificationCopy};
 
 #[derive(Default)]
 struct FakeHost {
     clipboard: Mutex<Option<String>>,
     events: Mutex<Vec<Event>>,
+    shown: Mutex<Vec<NotificationCopy>>,
+    dismissed_copies: Mutex<Vec<(String, String)>>,
+    dismissed_own: Mutex<Vec<String>>,
 }
 
 impl FakeHost {
@@ -42,6 +45,27 @@ impl FakeHost {
 impl Host for FakeHost {
     fn set_clipboard(&self, text: String) -> bool {
         *self.clipboard.lock().unwrap() = Some(text);
+        true
+    }
+
+    fn show_notification(&self, copy: NotificationCopy) -> bool {
+        let mut shown = self.shown.lock().unwrap();
+        shown.retain(|c| !(c.origin == copy.origin && c.id == copy.id));
+        shown.push(copy);
+        true
+    }
+
+    fn dismiss_notification_copy(&self, origin: String, id: String) -> bool {
+        self.shown
+            .lock()
+            .unwrap()
+            .retain(|c| !(c.origin == origin && c.id == id));
+        self.dismissed_copies.lock().unwrap().push((origin, id));
+        true
+    }
+
+    fn dismiss_own_notification(&self, id: String) -> bool {
+        self.dismissed_own.lock().unwrap().push(id);
         true
     }
 
@@ -159,6 +183,90 @@ fn a_phone_joins_and_the_clipboard_flows_both_ways() {
             .unwrap()
             .contains(&Event::ClipboardReceived)
     );
+
+    // Notifications: the phone's listener connects and an app posts; the
+    // laptop's host shows a copy with the icon and the phone's name.
+    phone.set_notifications_emitting(true);
+    until("laptop sees the phone emits", || {
+        laptop.daemon().registry().peers().iter().any(|p| {
+            p.capabilities.iter().any(|d| {
+                lp_core::capability::NotificationsParams::from_descriptor(d)
+                    .is_some_and(|params| params.emits)
+            })
+        })
+    });
+    phone.notification_posted(LocalNotification {
+        id: "0|org.example.chat|1".to_owned(),
+        app_id: "org.example.chat".to_owned(),
+        app_name: "Chat".to_owned(),
+        title: Some("Bob".to_owned()),
+        body: Some("lunch?".to_owned()),
+        posted_at_unix: 1_760_000_000,
+        icon_png: Some(vec![0x89, b'P', b'N', b'G', 9, 9]),
+    });
+    until("laptop shows the copy", || {
+        !laptop_host.shown.lock().unwrap().is_empty()
+    });
+    let copy = laptop_host.shown.lock().unwrap()[0].clone();
+    assert_eq!(copy.origin, phone_key);
+    assert_eq!(copy.origin_name, "phone");
+    assert_eq!(copy.app_name, "Chat");
+    assert_eq!(copy.body.as_deref(), Some("lunch?"));
+    assert_eq!(
+        copy.icon_png.as_deref(),
+        Some(&[0x89, b'P', b'N', b'G', 9, 9][..])
+    );
+    assert!(
+        phone_host.shown.lock().unwrap().is_empty(),
+        "no copy of its own"
+    );
+
+    // The laptop's user dismisses the copy: the phone cancels its own.
+    laptop
+        .notification_copy_dismissed(phone_key.clone(), copy.id.clone())
+        .unwrap();
+    until("phone cancels its own", || {
+        phone_host.dismissed_own.lock().unwrap().as_slice() == [copy.id.clone()]
+    });
+    assert!(
+        laptop
+            .notification_copy_dismissed("junk".to_owned(), "1".to_owned())
+            .is_err()
+    );
+
+    // And the other way: the laptop emits, the phone shows, the laptop's
+    // notification is withdrawn and the phone's copy clears.
+    laptop.set_notifications_emitting(true);
+    until("phone sees the laptop emits", || {
+        phone.daemon().registry().peers().iter().any(|p| {
+            p.capabilities.iter().any(|d| {
+                lp_core::capability::NotificationsParams::from_descriptor(d)
+                    .is_some_and(|params| params.emits)
+            })
+        })
+    });
+    laptop.notification_posted(LocalNotification {
+        id: "77".to_owned(),
+        app_id: "mail".to_owned(),
+        app_name: "Mail".to_owned(),
+        title: Some("Invoice".to_owned()),
+        body: None,
+        posted_at_unix: 1_760_000_001,
+        icon_png: None,
+    });
+    until("phone shows the laptop's", || {
+        phone_host
+            .shown
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|c| c.id == "77" && c.origin == laptop_key && c.icon_png.is_none())
+    });
+    laptop.notification_removed("77".to_owned());
+    until("phone clears the copy", || {
+        phone_host.dismissed_copies.lock().unwrap().as_slice()
+            == [(laptop_key.clone(), "77".to_owned())]
+    });
 
     // Revoking the phone from the laptop drops it.
     laptop.revoke(phone_key.clone()).unwrap();

@@ -66,3 +66,39 @@ path. The bus id of every copy is kept per origin and id so a repeated post repl
 dismiss closes; the map is shared with the monitor, so a `NotificationClosed` with reason
 2 for one of our copies becomes a `CopyDismissed` naming the origin and id it was shown
 for.
+
+## LP-92: Android
+
+**The listener is the emitter.** `NotificationListener` is a `NotificationListenerService`
+the user enables under notification access; `emits` in the phone's descriptor follows
+whether it is connected (`Node::set_notifications_emitting`), so the desktops see the
+direction appear and disappear rather than a silent stop. The `Host` trait gained
+`show_notification`, `dismiss_notification_copy` and `dismiss_own_notification`, and the
+node gained `notification_posted`, `notification_removed` and
+`notification_copy_dismissed`; `HostNotifications` is the backend behind them, as
+`HostClipboard` is for the clipboard.
+
+**What leaves the phone.** A posted notification with a title or text, unless it is
+ongoing, a foreground service's, a group summary, below default importance in the
+ranking, Ligature's own, or from an app the user switched off. Its id is the listener's
+key, which is stable for the notification's life and what `cancelNotification` wants
+back. The icon is the app's launcher icon rendered to a 96-pixel PNG, cached per app,
+since small icons are monochrome masks that look wrong on a desktop; anything over the
+64 KiB bound is sent without an icon.
+
+**Removals.** A removal reaches the other devices when the user dismissed or tapped the
+notification or the app cancelled it (`REASON_CLICK`, `REASON_CANCEL`,
+`REASON_CANCEL_ALL`, `REASON_APP_CANCEL`, `REASON_APP_CANCEL_ALL`); a cancel the listener
+made itself on another device's behalf (`REASON_LISTENER_CANCEL`) does not, which is the
+loop rule on this platform, and a timeout clears nothing elsewhere.
+
+**Copies.** Shown through the notification manager in a channel per origin device, named
+after it, with the app name and the device in the sub-text line, the app's icon as the
+large icon, the origin's key as the tag and the id's hash as the number, so a repeat
+replaces and a dismiss cancels. The origin and id ride in the notification's extras, and
+the listener reads them back when a copy is removed by the user's hand to send the
+dismissal on.
+
+**Per-app switches.** The app list is the set of packages the listener has seen post,
+kept in the app's preferences with their labels, each on unless switched off; the
+exclusion set is checked at the listener. Nothing else is configurable yet (LP-88).

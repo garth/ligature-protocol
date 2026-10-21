@@ -1,9 +1,14 @@
 package org.ligatureprotocol.android
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
+import android.graphics.BitmapFactory
+import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.PersistableBundle
 import android.provider.Settings
@@ -15,9 +20,11 @@ import org.ligatureprotocol.core.Config
 import org.ligatureprotocol.core.Device
 import org.ligatureprotocol.core.Event
 import org.ligatureprotocol.core.Host
+import org.ligatureprotocol.core.LocalNotification
 import org.ligatureprotocol.core.LogLevel
 import org.ligatureprotocol.core.LpException
 import org.ligatureprotocol.core.Node
+import org.ligatureprotocol.core.NotificationCopy
 import org.ligatureprotocol.core.Pairing
 import org.ligatureprotocol.core.Status
 import java.io.File
@@ -30,6 +37,9 @@ data class PairingState(
     val error: String? = null,
 )
 
+/** An app the listener has seen post, and whether its notifications leave the phone. */
+data class AppSwitch(val packageName: String, val label: String, val enabled: Boolean)
+
 /** Everything the screen needs, refreshed on every event from the node. */
 data class UiState(
     val running: Boolean = false,
@@ -40,6 +50,10 @@ data class UiState(
     val backgroundRead: Boolean = false,
     /** The last text the node set here or sent from here. */
     val lastClipboard: String? = null,
+    /** Whether the user granted notification access. */
+    val notificationAccess: Boolean = false,
+    /** The apps seen posting, with their switches. */
+    val apps: List<AppSwitch> = emptyList(),
 )
 
 /**
@@ -60,6 +74,9 @@ object NodeHolder : Host {
 
     private lateinit var appContext: Context
 
+    @Volatile
+    private var listenerConnected = false
+
     val isRunning: Boolean get() = node != null
 
     @Synchronized
@@ -73,11 +90,14 @@ object NodeHolder : Host {
             debugLogging = BuildConfig.DEBUG,
         )
         node = Node.start(config, this)
+        if (listenerConnected) node?.setNotificationsEmitting(true)
         _state.update {
             it.copy(
                 running = true,
                 backgroundRead = hasBackgroundRead(appContext),
                 lastError = null,
+                notificationAccess = NotificationListener.hasAccess(appContext),
+                apps = apps(appContext),
             )
         }
         refresh()
@@ -157,6 +177,75 @@ object NodeHolder : Host {
         return clipboardChanged(text)
     }
 
+    // Notifications (milestone 3).
+
+    /** The listener connected or disconnected: the capability's `emits` follows. */
+    fun setNotificationsEmitting(emitting: Boolean) {
+        listenerConnected = emitting
+        node?.setNotificationsEmitting(emitting)
+        if (::appContext.isInitialized) refreshNotificationAccess(appContext)
+    }
+
+    fun notificationPosted(notification: LocalNotification) {
+        node?.notificationPosted(notification)
+    }
+
+    fun notificationRemoved(id: String) {
+        node?.notificationRemoved(id)
+    }
+
+    fun notificationCopyDismissed(origin: String, id: String) = call {
+        it.notificationCopyDismissed(origin, id)
+    }
+
+    /** Re-reads whether access is granted and the app list, for the screen. */
+    fun refreshNotificationAccess(context: Context) {
+        _state.update {
+            it.copy(notificationAccess = NotificationListener.hasAccess(context), apps = apps(context))
+        }
+    }
+
+    /** The listener saw [packageName] post: remember it for the app list. */
+    fun appSeen(context: Context, packageName: String, label: String) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val seen = prefs.getStringSet(KEY_SEEN, emptySet()).orEmpty()
+        val entry = "$packageName\u0000$label"
+        if (seen.none { it.startsWith("$packageName\u0000") }) {
+            prefs.edit().putStringSet(KEY_SEEN, seen + entry).apply()
+            refreshNotificationAccess(context)
+        }
+    }
+
+    fun isExcluded(context: Context, packageName: String): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getStringSet(KEY_EXCLUDED, emptySet()).orEmpty().contains(packageName)
+
+    /** Turns an app's notifications on or off for the other devices. */
+    fun setAppEnabled(packageName: String, enabled: Boolean) {
+        val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val excluded = prefs.getStringSet(KEY_EXCLUDED, emptySet()).orEmpty()
+        prefs.edit()
+            .putStringSet(KEY_EXCLUDED, if (enabled) excluded - packageName else excluded + packageName)
+            .apply()
+        refreshNotificationAccess(appContext)
+    }
+
+    private fun apps(context: Context): List<AppSwitch> {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val excluded = prefs.getStringSet(KEY_EXCLUDED, emptySet()).orEmpty()
+        return prefs.getStringSet(KEY_SEEN, emptySet()).orEmpty()
+            .map { entry ->
+                val parts = entry.split('\u0000', limit = 2)
+                val pkg = parts[0]
+                AppSwitch(pkg, parts.getOrElse(1) { pkg }, pkg !in excluded)
+            }
+            .sortedBy { it.label.lowercase() }
+    }
+
+    private const val PREFS = "ligature"
+    private const val KEY_SEEN = "notifications.seen"
+    private const val KEY_EXCLUDED = "notifications.excluded"
+
     /** Reads the primary clip if Android lets us (focused, or the background permission). */
     fun readClipboard(context: Context): String? {
         val manager = context.getSystemService(ClipboardManager::class.java)
@@ -181,6 +270,40 @@ object NodeHolder : Host {
         }
         return runCatching { manager.setPrimaryClip(clip) }.isSuccess
     }
+
+    override fun showNotification(copy: NotificationCopy): Boolean = runCatching {
+        val manager = appContext.getSystemService(NotificationManager::class.java)
+        val channelId = "origin:" + copy.origin
+        manager.createNotificationChannel(
+            NotificationChannel(
+                channelId,
+                appContext.getString(R.string.notifications_channel_prefix) + " " + copy.originName,
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ),
+        )
+        val builder = Notification.Builder(appContext, channelId)
+            .setSmallIcon(R.drawable.ic_ligature)
+            .setContentTitle(copy.title ?: copy.appName)
+            .setContentText(copy.body ?: "")
+            .setSubText(copy.appName + " · " + copy.originName)
+            .setWhen(copy.postedAtUnix * 1000)
+            .setShowWhen(true)
+            .setAutoCancel(true)
+            .setGroup(copy.origin)
+        copy.body?.let { builder.setStyle(Notification.BigTextStyle().bigText(it)) }
+        copy.iconPng?.let { png ->
+            BitmapFactory.decodeByteArray(png, 0, png.size)?.let { builder.setLargeIcon(Icon.createWithBitmap(it)) }
+        }
+        builder.extras.putString(NotificationListener.EXTRA_ORIGIN, copy.origin)
+        builder.extras.putString(NotificationListener.EXTRA_ID, copy.id)
+        manager.notify(copy.origin, copy.id.hashCode(), builder.build())
+    }.isSuccess
+
+    override fun dismissNotificationCopy(origin: String, id: String): Boolean = runCatching {
+        appContext.getSystemService(NotificationManager::class.java).cancel(origin, id.hashCode())
+    }.isSuccess
+
+    override fun dismissOwnNotification(id: String): Boolean = NotificationListener.cancelOwn(id)
 
     override fun onEvent(event: Event) {
         when (event) {

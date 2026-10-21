@@ -9,4 +9,5 @@
     <string name="sent_to">Sent to %1$d device(s)</string>
     <string name="sent_to_none">No device is connected</string>
     <string name="clipboard_empty">The clipboard holds no text</string>
+    <string name="notifications_channel_prefix">Notifications from</string>
 </resources>

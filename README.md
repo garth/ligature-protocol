@@ -136,7 +136,9 @@ because Android lets only a focused app read the clipboard. Revoking a device st
 connecting, and pairings survive a restart. This is the scope of
 [milestone 1](docs/milestones/01-clipboard-poc.md) and
 [milestone 2](docs/milestones/02-android-clipboard.md); everything else in the
-specification is unimplemented.
+specification is unimplemented. Apple phones and tablets are off the roadmap for now; what
+the platform would allow is recorded in the
+[platform notes](docs/spec/08-platform-notes.md#4-ios-and-ipados).
 
 ```sh
 cd impl

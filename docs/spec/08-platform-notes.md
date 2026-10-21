@@ -94,13 +94,73 @@ build needs a self-built ROM: an app allowed to display over other apps may star
 activity from the clip listener, which fires in the background on LineageOS 24; a
 notification on every copy is the tap-once fallback; an input method is the last resort.
 
-## 4. iOS
+## 4. iOS and iPadOS
 
-Third-party apps cannot run a general background daemon. LP's iPhone support relies on
-BLE accessory profiles (ANCS for notifications, AMS for media, HFP/MAP/PBAP for telephony
-and contacts via a Linux device acting as an accessory) and on EU Digital Markets Act
-interoperability APIs where they exist. Open question: which features are realistic with
-no app installed versus with a companion app.
+Apple's phones and tablets are a closed platform: a third-party app runs only while the
+user has it open or for the few background modes Apple grants, may not read other
+applications' notifications or, without a prompt, their clipboard, and gets no daemon of any
+kind. An iPhone or iPad can therefore never be the always-on peer that Android is. This
+section records what is possible, in three tiers, so a later milestone can start from it.
+**No milestone is planned for Apple phones and tablets**: they stay last in
+[ADR 0033](../adr/0033-supported-platforms.md) and are off the roadmap until the project
+chooses to take them up. iPadOS has the same restrictions as iOS, and an iPad is a group
+device like any tablet (chapter 10).
+
+**No app on the device.** Two paths exist today, neither of which gives the device an LP
+identity: the phone is identified by Bluetooth pairing or by Apple's own account, not by
+the ceremony.
+
+- **BLE accessory profiles to a Linux device or hub**, a bridge under
+  [ADR 0010](../adr/0010-interop-bridges.md) that advertises the phone's capabilities on
+  its behalf. ANCS gives the phone's notifications with dismiss and the positive and
+  negative actions (most of `notifications` emit), AMS gives now-playing and transport
+  control (`media`), and HFP, MAP and PBAP give call audio, SMS and contacts (`telephony`),
+  with BlueZ, oFono and obexd in the accessory role. A Mac cannot fill the accessory role
+  for most of these profiles.
+- **A Mac as a Continuity bridge.** A Mac binding daemon that sets its pasteboard makes the
+  text available to the person's iPhone through Universal Clipboard, and text copied on
+  the iPhone reaches the Mac's daemon when something is pasted on the Mac. Text only, and
+  whether the Mac's daemon sees the phone's copy before a paste or only after is untested.
+
+**A companion app, in the foreground.** The reference library builds for iOS as it does
+for Android, with Swift bindings from UniFFI, and an app may use QUIC over UDP, Bonjour
+and the local network (after the local-network permission), so the app runs the whole
+protocol: the same identity, ceremony, gossip, manifests and streams. What the platform
+bounds:
+
+- **Clipboard.** Writing is unrestricted. Reading what another application copied shows
+  the system paste prompt (since iOS 16) unless the user presses the system paste control,
+  so sending is on the user's request, as on Android: the app's screen, a share-sheet
+  extension, or a Shortcuts action that the Action Button or Back Tap can trigger.
+- **Notifications.** The app displays other devices' notifications as local
+  notifications; it can never read other applications', so emit stays with ANCS above.
+- **Files.** Sent from the share sheet, received into the app's folder in the Files app.
+  A transfer gets about thirty seconds once the app leaves the foreground.
+- **Remote input, camera, sensors, display.** Usable while the device is held and the app
+  open, which is when they are wanted; an iPad can be a `display` for a desktop this way.
+- **Keys.** The Keychain stores the local store's keys; the Secure Enclave holds only P-256
+  keys, as on macOS (section 2b).
+
+**The companion app in the background.** A suspended app has no QUIC connection, so the
+device drops out of the device set until the user opens the app again. Two things survive
+suspension: the Bluetooth background modes, which let the app keep scanning for LP's
+service and be relaunched when a known peer appears, enough for clipboard text and
+notification display over a low-rate channel but not for files or images, and which would
+need the BLE transport specified (chapter 04); and scheduled background tasks, good for a
+reconnect and gossip sweep a few times a day, not for live sync.
+
+**EU interoperability.** Under the Digital Markets Act Apple has published a schedule of
+interoperability features for the EU: notification forwarding to third-party devices,
+proximity pairing, automatic audio switching and background execution for accessory apps
+in iOS 26, with peer-to-peer Wi-Fi, close-range file transfer and media casting due in the
+following release. If they ship as described, a hub gets notifications without ANCS and a
+companion app gets the background execution the previous tier lacks, in that region only.
+Timing and scope are to be verified when a milestone is planned.
+
+A realistic first Apple milestone would be the first two tiers: a Linux hub bridging
+notifications, media and telephony from the phone, and a Swift app over the shared library
+for pairing, clipboard receive, clipboard send on request, file send from the share sheet,
+and the device as a controller, camera or display while open.
 
 ## 3a. Local store protection
 

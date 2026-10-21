@@ -121,8 +121,16 @@ async fn run(options: &Options, locations: &Locations) -> Result<(), Error> {
             println!("principal:   {}", s.principal);
             println!("port:        {}", s.port);
             println!("peers:       {}", s.peers.len());
-            for p in s.peers {
-                println!("  {p}");
+            if !s.peers.is_empty() {
+                let known: Devices = client.request(Request::new(types::DEVICES, 1)).await?;
+                for p in s.peers {
+                    let entry = known.devices.iter().find(|d| d.key == p);
+                    let name = entry
+                        .and_then(|d| d.display_name.clone())
+                        .unwrap_or_else(|| "?".to_owned());
+                    let platform = entry.and_then(|d| d.platform.clone()).unwrap_or_default();
+                    println!("  {:<20} {:<8} {}…  {}", name, platform, p.fingerprint(), p);
+                }
             }
         }
         Command::Devices => {
@@ -130,18 +138,18 @@ async fn run(options: &Options, locations: &Locations) -> Result<(), Error> {
             if d.devices.is_empty() {
                 println!("no devices");
             }
-            for dev in d.devices {
+            for group in ligatured::control::group_devices(&d.devices) {
                 let mut flags = Vec::new();
-                if dev.this_device {
+                if group.this_device() {
                     flags.push("this device");
                 }
-                if dev.introducer {
+                if group.introducer() {
                     flags.push("introducer");
                 }
-                if dev.connected {
+                if group.connected() {
                     flags.push("connected");
                 }
-                if dev.revoked {
+                if group.revoked() {
                     flags.push("REVOKED");
                 }
                 let flags = if flags.is_empty() {
@@ -150,14 +158,20 @@ async fn run(options: &Options, locations: &Locations) -> Result<(), Error> {
                     format!("  [{}]", flags.join(", "))
                 };
                 println!(
-                    "{:<9} {:<8} {:<20} {:<8} {}{}",
-                    dev.role,
-                    dev.key.fingerprint(),
-                    dev.display_name.unwrap_or_else(|| "?".to_owned()),
-                    dev.platform.unwrap_or_default(),
-                    dev.key,
+                    "{:<20} {:<8}{}",
+                    group.display_name.clone().unwrap_or_else(|| "?".to_owned()),
+                    group.platform.clone().unwrap_or_default(),
                     flags,
                 );
+                for key in group.keys() {
+                    println!(
+                        "  {:<9} {}…  {}{}",
+                        key.role,
+                        key.key.fingerprint(),
+                        key.key,
+                        if key.revoked { "  REVOKED" } else { "" },
+                    );
+                }
             }
         }
         Command::Pair {

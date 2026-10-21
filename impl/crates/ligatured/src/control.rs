@@ -267,6 +267,105 @@ pub struct DeviceEntry {
     pub connected: bool,
     /// Whether it is this device.
     pub this_device: bool,
+    /// For a binding: the principal of the device it lives on, from its
+    /// device record, so a list can group the two keys of one device.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub principal: Option<PublicKey>,
+}
+
+/// One device as a person sees it: its binding and its principal together.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeviceGroup {
+    /// From whichever record names it.
+    pub display_name: Option<String>,
+    /// From whichever record names it.
+    pub platform: Option<String>,
+    /// My account on it, if any.
+    pub binding: Option<DeviceEntry>,
+    /// The device's own key, if known.
+    pub principal: Option<DeviceEntry>,
+}
+
+impl DeviceGroup {
+    /// Whether any of its keys is this device's.
+    #[must_use]
+    pub fn this_device(&self) -> bool {
+        self.keys().any(|e| e.this_device)
+    }
+
+    /// Whether the binding is connected.
+    #[must_use]
+    pub fn connected(&self) -> bool {
+        self.binding.as_ref().is_some_and(|b| b.connected)
+    }
+
+    /// Whether the binding is an introducer.
+    #[must_use]
+    pub fn introducer(&self) -> bool {
+        self.binding.as_ref().is_some_and(|b| b.introducer)
+    }
+
+    /// Whether any of its keys is revoked.
+    #[must_use]
+    pub fn revoked(&self) -> bool {
+        self.keys().any(|e| e.revoked)
+    }
+
+    /// Its keys, binding first.
+    pub fn keys(&self) -> impl Iterator<Item = &DeviceEntry> {
+        self.binding.iter().chain(self.principal.iter())
+    }
+}
+
+/// Groups the entries of [`devices`] into one group per device: a binding
+/// joins the principal its record names; a principal nobody binds to, or a
+/// binding whose record names no principal, stands alone. Order follows the
+/// entries.
+#[must_use]
+pub fn group_devices(entries: &[DeviceEntry]) -> Vec<DeviceGroup> {
+    let mut groups: Vec<DeviceGroup> = Vec::new();
+    for entry in entries {
+        match entry.role.as_str() {
+            "binding" => {
+                let joined = entry.principal.and_then(|p| {
+                    groups.iter_mut().find(|g| {
+                        g.binding.is_none() && g.principal.as_ref().is_some_and(|e| e.key == p)
+                    })
+                });
+                match joined {
+                    Some(g) => {
+                        g.binding = Some(entry.clone());
+                        if g.display_name.is_none() {
+                            g.display_name.clone_from(&entry.display_name);
+                            g.platform.clone_from(&entry.platform);
+                        }
+                    }
+                    None => groups.push(DeviceGroup {
+                        display_name: entry.display_name.clone(),
+                        platform: entry.platform.clone(),
+                        binding: Some(entry.clone()),
+                        principal: None,
+                    }),
+                }
+            }
+            _ => {
+                let joined = groups.iter_mut().find(|g| {
+                    g.principal.is_none()
+                        && g.binding.as_ref().and_then(|b| b.principal) == Some(entry.key)
+                });
+                match joined {
+                    Some(g) => g.principal = Some(entry.clone()),
+                    None => groups.push(DeviceGroup {
+                        display_name: entry.display_name.clone(),
+                        platform: entry.platform.clone(),
+                        binding: None,
+                        principal: Some(entry.clone()),
+                    }),
+                }
+            }
+        }
+    }
+    groups
 }
 
 /// The `devices` result.
@@ -328,6 +427,7 @@ pub fn devices(daemon: &Daemon) -> Result<Devices, Error> {
             connected: connected.contains(&role.subject),
             this_device: role.subject == *daemon.binding().public()
                 || role.subject == *daemon.principal().public(),
+            principal: record.as_ref().and_then(|d| d.principal),
         });
     }
     out.reverse();

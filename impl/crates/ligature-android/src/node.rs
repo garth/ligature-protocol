@@ -78,6 +78,9 @@ pub struct Device {
     pub connected: bool,
     /// Whether it is this device.
     pub this_device: bool,
+    /// For a binding: the principal key of the device it lives on, if its
+    /// record names one, so the screen can show one row per device.
+    pub principal: Option<String>,
 }
 
 /// A running daemon. One per process at a time; [`Node::stop`] ends it.
@@ -243,6 +246,7 @@ impl Node {
                 revoked: d.revoked,
                 connected: d.connected,
                 this_device: d.this_device,
+                principal: d.principal.map(|p| p.to_string()),
             })
             .collect())
     }

@@ -256,6 +256,36 @@ private fun IntroduceCard(onStartIntroduce: (String) -> Unit) {
     }
 }
 
+/** One device as the person sees it: its binding and principal together. */
+private class DeviceRow(val name: String?, val platform: String?, keys: List<Device>) {
+    /** Binding first, as the desktops print them. */
+    val keys = keys.sortedBy { if (it.role == "binding") 0 else 1 }
+    val binding get() = keys.firstOrNull { it.role == "binding" }
+    val connected get() = binding?.connected == true
+    val introducer get() = binding?.introducer == true
+    val thisDevice get() = keys.any { it.thisDevice }
+    val revoked get() = keys.any { it.revoked }
+}
+
+/** Groups one entry per key into one row per device, in the order given. */
+private fun groupDevices(devices: List<Device>): List<DeviceRow> {
+    val rows = mutableListOf<DeviceRow>()
+    for (d in devices) {
+        val partner = if (d.role == "binding") {
+            rows.indexOfFirst { r -> r.binding == null && r.keys.any { it.key == d.principal } }
+        } else {
+            rows.indexOfFirst { r -> r.keys.none { it.role == "principal" } && r.binding?.principal == d.key }
+        }
+        if (partner >= 0) {
+            val r = rows[partner]
+            rows[partner] = DeviceRow(r.name ?: d.displayName, r.platform ?: d.platform, r.keys + d)
+        } else {
+            rows += DeviceRow(d.displayName, d.platform, listOf(d))
+        }
+    }
+    return rows
+}
+
 @Composable
 private fun DevicesCard(devices: List<Device>, onRevoke: (String) -> Unit) {
     var toRevoke by remember { mutableStateOf<Device?>(null) }
@@ -263,7 +293,7 @@ private fun DevicesCard(devices: List<Device>, onRevoke: (String) -> Unit) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Devices", style = MaterialTheme.typography.titleMedium)
             if (devices.isEmpty()) Text("None known.")
-            devices.forEach { device ->
+            groupDevices(devices).forEach { row ->
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -271,27 +301,31 @@ private fun DevicesCard(devices: List<Device>, onRevoke: (String) -> Unit) {
                     Column(Modifier.weight(1f)) {
                         Text(
                             buildString {
-                                append(device.displayName ?: "?")
-                                device.platform?.let { append("  ·  $it") }
+                                append(row.name ?: "?")
+                                row.platform?.let { append("  ·  $it") }
+                                if (row.thisDevice) append("  ·  this phone")
+                                if (row.introducer) append("  ·  introducer")
+                                if (row.connected) append("  ·  connected")
+                                if (row.revoked) append("  ·  REVOKED")
                             },
-                            fontWeight = if (device.thisDevice) FontWeight.Bold else FontWeight.Normal,
+                            fontWeight = if (row.thisDevice) FontWeight.Bold else FontWeight.Normal,
                         )
-                        Text(
-                            buildString {
-                                append(device.role)
-                                append("  ·  ")
-                                append(device.fingerprint)
-                                append('…')
-                                if (device.introducer) append("  ·  introducer")
-                                if (device.connected) append("  ·  connected")
-                                if (device.revoked) append("  ·  REVOKED")
-                                if (device.thisDevice) append("  ·  this phone")
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                        )
+                        row.keys.forEach { key ->
+                            Text(
+                                buildString {
+                                    append(key.role)
+                                    append("  ·  ")
+                                    append(key.fingerprint)
+                                    append('…')
+                                    if (key.revoked) append("  ·  revoked")
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
                     }
-                    if (!device.thisDevice && !device.revoked) {
-                        TextButton(onClick = { toRevoke = device }) { Text("Revoke") }
+                    val target = row.binding ?: row.keys.first()
+                    if (!row.thisDevice && !target.revoked) {
+                        TextButton(onClick = { toRevoke = target }) { Text("Revoke") }
                     }
                 }
             }

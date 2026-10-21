@@ -145,13 +145,16 @@ fn two_daemons_pair_share_the_clipboard_both_ways_and_revoke() {
     assert!(status.success(), "newcomer side failed: {joined}");
     assert!(joined.contains("paired."), "{joined}");
 
-    // Both list both devices with the right names.
+    // Both list both devices with the right names: one row per device
+    // with its binding and principal beneath (LP-84).
     let devices_a = a.ctl_ok(&["devices"]);
     let devices_b = b.ctl_ok(&["devices"]);
     for d in [&devices_a, &devices_b] {
-        assert!(d.contains("linux-box"), "{d}");
-        assert!(d.contains("mac-box"), "{d}");
-        assert_eq!(d.lines().count(), 4, "{d}");
+        assert_eq!(d.matches("linux-box").count(), 1, "{d}");
+        assert_eq!(d.matches("mac-box").count(), 1, "{d}");
+        assert_eq!(d.lines().count(), 6, "{d}");
+        assert_eq!(d.matches("  binding ").count(), 2, "{d}");
+        assert_eq!(d.matches("  principal ").count(), 2, "{d}");
     }
 
     // They find each other over mDNS and connect.

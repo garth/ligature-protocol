@@ -158,6 +158,29 @@ The daemon keeps its state in `data/` under the project root for now (ignored by
 assigns; `--port` or `LIGATURE_PORT` fixes it so a firewall rule can let other devices dial
 in. The Android app builds from `impl/android` (see its [README](impl/android/README.md)).
 
+## Roadmap
+
+Each milestone has a plan under `docs/milestones/` with its scope, non-goals, decisions, exit
+criteria and task breakdown, written before the work starts. One person's devices on one
+LAN remain the setting until these are done; groups, relays and sharing between people
+follow them.
+
+1. **Clipboard between a Linux machine and a Mac.** Done
+   ([plan](docs/milestones/01-clipboard-poc.md)).
+2. **An Android phone joins them.** Done ([plan](docs/milestones/02-android-clipboard.md)).
+3. **Notifications among all of a person's devices.** In progress: a notification posted
+   on any device that can see its own appears on every device that displays them, dismissed
+   everywhere at once ([plan](docs/milestones/03-notifications.md)).
+4. **File transfer among a person's devices.** Planned: a file chosen on any device lands
+   on another over the LP session itself, with progress and cancel, and a receiver can
+   fetch content a sender has offered. The plan is written when the milestone starts.
+5. **A clipboard that carries rich text, images and files.** Planned, built on milestone
+   4: a `set` carries several representations of one selection, small content is pushed on
+   copy as text is today, and large content is announced and fetched only when pasted.
+
+Not planned: Apple phones and tablets, for the reasons in the
+[platform notes](docs/spec/08-platform-notes.md#4-ios-and-ipados).
+
 ## Documentation
 
 - [Specification overview](docs/spec/00-overview.md)

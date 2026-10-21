@@ -135,10 +135,14 @@ pair with the proximity ceremony, started from `lpctl pair` on the desktops and 
 app on the phone, which shows its offer as a QR code; text copied on any of them can be
 pasted on the others, with no server, account or internet connection. The phone receives
 by itself and sends with a tap (a quick-settings tile, the notification, the share sheet),
-because Android lets only a focused app read the clipboard. Revoking a device stops it
-connecting, and pairings survive a restart. This is the scope of
-[milestone 1](docs/milestones/01-clipboard-poc.md) and
-[milestone 2](docs/milestones/02-android-clipboard.md); everything else in the
+because Android lets only a focused app read the clipboard. A notification posted on the
+phone or the Linux machine appears on the other devices, with the app's name and icon and
+the device it came from, and dismissing it anywhere clears it elsewhere where the platform
+allows; the Mac displays but cannot read its own. Revoking a device stops it connecting,
+and pairings survive a restart. This is the scope of
+[milestone 1](docs/milestones/01-clipboard-poc.md),
+[milestone 2](docs/milestones/02-android-clipboard.md) and
+[milestone 3](docs/milestones/03-notifications.md); everything else in the
 specification is unimplemented. Apple phones and tablets are off the roadmap for now; what
 the platform would allow is recorded in the
 [platform notes](docs/spec/08-platform-notes.md#4-ios-and-ipados).
@@ -161,6 +165,7 @@ in. The Android app builds from `impl/android` (see its [README](impl/android/RE
 - [Milestone 1 plan: a Linux machine and a Mac share the clipboard](docs/milestones/01-clipboard-poc.md)
 - [Milestone 2 plan: an Android phone joins them](docs/milestones/02-android-clipboard.md)
   and [the Android app](impl/android/README.md)
+- [Milestone 3 plan: notifications between all the devices](docs/milestones/03-notifications.md)
 - [Architecture decisions](docs/adr/)
 - [Glossary](docs/glossary.md)
 - [Prior art](docs/prior-art.md)

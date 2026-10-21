@@ -12,10 +12,11 @@ tablets are off the roadmap (chapter 08 section 4). Principles: local-first, sel
 with no required central server, end-to-end encrypted, built on existing open standards,
 interoperate rather than replace.
 
-Status is pre-alpha. The spec is a draft, the Rust workspace implements milestones 1 and 2
-(pairing and the text clipboard between a Linux machine, a Mac and an Android phone on one
-LAN; the phone receives automatically and sends on a tap, since Android lets only a focused
-app read the clipboard) and nothing beyond them, and the `org.ligatureprotocol` type names
+Status is pre-alpha. The spec is a draft, the Rust workspace implements milestones 1 to 3
+(pairing, the text clipboard and notifications between a Linux machine, a Mac and an
+Android phone on one LAN; the phone receives the clipboard automatically and sends on a
+tap, since Android lets only a focused app read it; the Mac displays notifications but
+cannot read its own) and nothing beyond them, and the `org.ligatureprotocol` type names
 use a placeholder domain.
 
 ## Architecture decisions

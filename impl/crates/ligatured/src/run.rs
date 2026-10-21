@@ -28,7 +28,11 @@ pub fn platform_notifications() -> Option<Arc<dyn crate::notifications::Notifica
         crate::notifications_linux::LinuxNotifications::start()
             .map(|n| n as Arc<dyn crate::notifications::Notifications>)
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    {
+        Some(crate::notifications_macos::MacNotifications::new())
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         None
     }

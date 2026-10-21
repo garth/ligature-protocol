@@ -17,4 +17,6 @@ pub mod notification_sync;
 pub mod notifications;
 #[cfg(target_os = "linux")]
 pub mod notifications_linux;
+#[cfg(target_os = "macos")]
+pub mod notifications_macos;
 pub mod run;

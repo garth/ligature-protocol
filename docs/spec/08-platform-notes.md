@@ -21,8 +21,11 @@ directory and runs the Wayland side in a small helper process whose environment 
 advertises the clipboard only while a compositor is reachable, and keeps running (gossip,
 revocations) when none is. The QUIC endpoint takes a port the system assigns unless one is
 fixed (`--port`); behind a host firewall the fixed port and one rule let peers dial in,
-otherwise the machine connects only when it dials. Open question: the minimum set of
-compositors and portals to support
+otherwise the machine connects only when it dials. Notifications both ways: the daemon
+displays other devices' notifications by calling the freedesktop notification service on
+the session bus, and sees what every application posts by being a monitor of that bus,
+whatever notification daemon is in use, so Linux emits and displays (chapter 05 section
+3c). Open question: the minimum set of compositors and portals to support
 (Hyprland is the first target), and how the system service drives audio and display without a
 session of its own.
 
@@ -39,7 +42,11 @@ extra components. What a third-party daemon may offer is bounded by platform per
   process is permitted.
 - **Notifications**: a daemon may post notifications, but may not read other
   applications' notifications, so macOS can display forwarded notifications and cannot
-  forward its own.
+  forward its own. The reference daemon posts them with AppleScript's
+  `display notification`, since the user notification centre takes posts only from a
+  bundled application; such a notification carries no icon and cannot be updated or
+  closed from outside, so a dismissal from another device is dropped there. A signed
+  helper application would lift both limits.
 - **Remote input and displays**: injecting input needs the Accessibility permission and
   capturing or mirroring the screen needs Screen Recording; both are granted per
   application by the user under Transparency, Consent and Control.
@@ -84,8 +91,13 @@ protocol of its own. LineageOS is the first target (no Google services, sideload
   too. A camera-based scanner is a later addition.
 - **Device name.** The name under Settings → About phone, else the model, as the host
   name the device record carries ([ADR 0034](../adr/0034-keys-are-identifiers.md)).
-- **Notifications, SMS, telephony.** Notification access, SMS and telephony need their own
-  permissions and, for SMS, store policy approval; none is offered yet.
+- **Notifications.** A notification listener service, which the user enables under
+  notification access, sees what every app posts and removes and can cancel one, so the
+  phone emits and displays (chapter 05 section 3c); the capability's `emits` follows the
+  grant. Ongoing, silent and summary notifications stay on the phone, and the user can
+  switch any app off.
+- **SMS, telephony.** SMS and telephony need their own permissions and, for SMS, store
+  policy approval; neither is offered yet.
 - **Keys.** The Android Keystore holds no Ed25519 keys on most devices (section 3a); the
   key file is software-held under the app's private directory.
 

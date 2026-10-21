@@ -7,8 +7,12 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
 import android.net.wifi.WifiManager
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import androidx.core.content.ContextCompat
 
@@ -23,6 +27,36 @@ import androidx.core.content.ContextCompat
 class NodeService : Service() {
     private var multicastLock: WifiManager.MulticastLock? = null
     private var clipboard: ClipboardManager? = null
+    private var connectivity: ConnectivityManager? = null
+    private val mainThread = Handler(Looper.getMainLooper())
+
+    /**
+     * The node starts on the first network and restarts discovery on every
+     * later one: at boot the service runs before Wi-Fi has associated, and
+     * an mDNS responder started then never announces or hears anything.
+     */
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            mainThread.post { networkUp() }
+        }
+    }
+
+    private fun networkUp() {
+        if (NodeHolder.isRunning) {
+            NodeHolder.restartDiscovery()
+            return
+        }
+        try {
+            NodeHolder.start(this)
+        } catch (e: Exception) {
+            Log.e("ligature", "node failed to start", e)
+            stopSelf()
+            return
+        }
+        clipboard = getSystemService(ClipboardManager::class.java).also {
+            it.addPrimaryClipChangedListener(clipListener)
+        }
+    }
 
     private val clipListener = ClipboardManager.OnPrimaryClipChangedListener {
         // Fires only when Android lets this app read: in the foreground, or
@@ -42,21 +76,17 @@ class NodeService : Service() {
             setReferenceCounted(false)
             acquire()
         }
-        try {
-            NodeHolder.start(this)
-        } catch (e: Exception) {
-            Log.e("ligature", "node failed to start", e)
-            stopSelf()
-            return
-        }
-        clipboard = getSystemService(ClipboardManager::class.java).also {
-            it.addPrimaryClipChangedListener(clipListener)
+        connectivity = getSystemService(ConnectivityManager::class.java).also {
+            // Reports the current default network at once, if there is one,
+            // and every change after.
+            it.registerDefaultNetworkCallback(networkCallback)
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
 
     override fun onDestroy() {
+        connectivity?.unregisterNetworkCallback(networkCallback)
         clipboard?.removePrimaryClipChangedListener(clipListener)
         NodeHolder.stop()
         multicastLock?.release()

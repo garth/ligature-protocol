@@ -7,6 +7,7 @@
 //! the daemon is uninitialised: it serves its control socket and accepts a
 //! pairing, advertises nothing and dials nobody.
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
@@ -68,6 +69,11 @@ pub struct Daemon {
     manager: Manager,
     mdns: Mutex<Option<Mdns>>,
     instance_id: InstanceId,
+    /// Where each trusted peer was last reached, for redialling (LP-83).
+    last_addrs: Mutex<HashMap<PublicKey, SocketAddr>>,
+    /// Woken when the browser must start again: after `restart_discovery`
+    /// or `requery`.
+    discovery_changed: tokio::sync::Notify,
     pairing: Arc<Mutex<Option<mpsc::Sender<PairingStream>>>>,
     registry: Arc<crate::capabilities::Registry>,
     clipboard: Mutex<Option<Arc<crate::clipboard_sync::ClipboardSync>>>,
@@ -187,6 +193,8 @@ impl Daemon {
             manager,
             mdns: Mutex::new(None),
             instance_id: InstanceId::random()?,
+            last_addrs: Mutex::new(HashMap::new()),
+            discovery_changed: tokio::sync::Notify::new(),
             pairing,
             registry,
             clipboard: Mutex::new(None),
@@ -352,6 +360,64 @@ impl Daemon {
             *slot = Some(Mdns::advertise(self.instance_id.clone(), port)?);
         }
         Ok(())
+    }
+
+    /// Replaces the mDNS responder and browser: for a host whose network
+    /// changed (a phone's Wi-Fi coming up), since a responder started with
+    /// no usable interface may never announce or hear anything. Trusted
+    /// peers' last addresses are redialled by the reconnect loop regardless.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Transport`] if the new responder cannot start.
+    pub fn restart_discovery(&self) -> Result<(), Error> {
+        if !self.is_initialised() {
+            return Ok(());
+        }
+        let port = self.manager.endpoint().local_addr()?.port();
+        let fresh = Mdns::advertise(self.instance_id.clone(), port)?;
+        let old = self
+            .mdns
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .replace(fresh);
+        if let Some(old) = old {
+            old.shutdown();
+        }
+        tracing::info!("discovery restarted");
+        self.discovery_changed.notify_one();
+        Ok(())
+    }
+
+    /// Asks the browser for a fresh round of mDNS queries, for peers that
+    /// restarted (a new instance each time) while their announcement went
+    /// unheard.
+    pub fn requery(&self) {
+        self.discovery_changed.notify_one();
+    }
+
+    /// Woken by [`Self::restart_discovery`] and [`Self::requery`].
+    pub const fn discovery_changed(&self) -> &tokio::sync::Notify {
+        &self.discovery_changed
+    }
+
+    /// Remembers where a trusted peer was reached.
+    pub fn note_reached(&self, peer: &PublicKey, addr: SocketAddr) {
+        self.last_addrs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(*peer, addr);
+    }
+
+    /// The last address of every peer reached in this process.
+    #[must_use]
+    pub fn last_addrs(&self) -> Vec<(PublicKey, SocketAddr)> {
+        self.last_addrs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .map(|(k, a)| (*k, *a))
+            .collect()
     }
 
     /// The mDNS responder, once advertising.

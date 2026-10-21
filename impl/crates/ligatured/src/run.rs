@@ -51,6 +51,7 @@ pub async fn run(
         "ligatured running"
     );
     let control = control::serve(daemon.clone(), &locations.control_socket())?;
+    spawn_reconnect(daemon.clone(), RECONNECT_EVERY);
     let clipboard: Option<Arc<dyn crate::clipboard::Clipboard>> =
         if std::env::var_os(FAKE_CLIPBOARD_ENV).is_some_and(|v| v == "1") {
             tracing::warn!("using the in-memory fake clipboard ({FAKE_CLIPBOARD_ENV}=1)");
@@ -89,6 +90,7 @@ pub fn spawn_connection_events(
                 Event::Connected(conn) => match daemon.recognise(conn.peer()) {
                     Ok(r) if r.is_trusted() => {
                         tracing::info!(peer = %conn.peer(), ?r, "peer connected");
+                        daemon.note_reached(conn.peer(), conn.remote_address());
                         let d = daemon.clone();
                         tokio::spawn(async move { d.on_trusted(&conn).await });
                     }
@@ -114,8 +116,22 @@ pub fn spawn_connection_events(
     })
 }
 
+/// How long a dial may take before it counts as failed: a stale address
+/// must not hold up discovery for the whole handshake timeout.
+pub const DIAL_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// How often the reconnect loop looks for trusted peers that are not
+/// connected.
+pub const RECONNECT_EVERY: Duration = Duration::from_secs(10);
+
+/// How long a disconnected peer waits between fresh mDNS queries.
+const REQUERY_EVERY: Duration = Duration::from_secs(30);
+
 /// Browses mDNS for `daemon` in a task once it is initialised and dials every
-/// instance found; the handshake and the trust store decide what to keep.
+/// instance found; the handshake and the trust store decide what to keep. The
+/// browse starts again whenever the daemon asks ([`Daemon::requery`],
+/// [`Daemon::restart_discovery`]), which also makes the library send a fresh
+/// round of queries.
 pub fn spawn_discovery(daemon: Arc<Daemon>) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move { discovery_loop(daemon).await })
 }
@@ -128,41 +144,103 @@ async fn discovery_loop(daemon: Arc<Daemon>) {
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
-    let Some(Ok(mut found)) = daemon.with_mdns(|m| m.browse()) else {
-        tracing::error!("cannot browse mDNS");
-        return;
-    };
     let mut policy = DialPolicy::new(Duration::from_secs(30), 4);
-    while let Some(event) = found.recv().await {
-        match event {
-            Discovered::Found { id, addrs } => {
-                let Some(addr) = addrs.iter().copied().find(|a| a.is_ipv4()) else {
-                    continue;
-                };
-                if !policy.try_begin(&id, Instant::now()) {
-                    continue;
+    loop {
+        let Some(Ok(mut found)) = daemon.with_mdns(|m| m.browse()) else {
+            tracing::error!("cannot browse mDNS");
+            return;
+        };
+        loop {
+            let event = tokio::select! {
+                event = found.recv() => event,
+                () = daemon.discovery_changed().notified() => {
+                    tracing::debug!("browsing again");
+                    break;
                 }
-                let outcome = daemon.manager().connect(addr).await;
-                let authenticated = match outcome {
-                    Ok(conn) => {
-                        let trusted = daemon
-                            .recognise(conn.peer())
-                            .map(|r| r.is_trusted())
-                            .unwrap_or(false);
-                        if !trusted {
-                            tracing::debug!(peer = %conn.peer(), "dialled a stranger; dropping");
-                            daemon.manager().drop_peer(conn.peer());
-                        }
-                        trusted
+            };
+            let Some(event) = event else {
+                // The browser was replaced under us: start again with the new one.
+                break;
+            };
+            match event {
+                Discovered::Found { id, addrs } => {
+                    let Some(addr) = addrs.iter().copied().find(|a| a.is_ipv4()) else {
+                        continue;
+                    };
+                    if !policy.try_begin(&id, Instant::now()) {
+                        continue;
                     }
-                    Err(e) => {
-                        tracing::debug!(%addr, %e, "dial failed");
-                        false
-                    }
-                };
-                policy.finish(&id, authenticated, Instant::now());
+                    let authenticated = dial(&daemon, addr).await;
+                    policy.finish(&id, authenticated, Instant::now());
+                }
+                Discovered::Gone { id } => policy.forget(&id),
             }
-            Discovered::Gone { id } => policy.forget(&id),
         }
     }
+}
+
+/// Dials `addr` and keeps the connection only if the peer is trusted; returns
+/// whether it was.
+async fn dial(daemon: &Daemon, addr: SocketAddr) -> bool {
+    let outcome = tokio::time::timeout(DIAL_TIMEOUT, daemon.manager().connect(addr))
+        .await
+        .unwrap_or_else(|_| Err(Error::Transport(format!("{addr}: no answer"))));
+    match outcome {
+        Ok(conn) => {
+            let trusted = daemon
+                .recognise(conn.peer())
+                .map(|r| r.is_trusted())
+                .unwrap_or(false);
+            if !trusted {
+                tracing::debug!(peer = %conn.peer(), "dialled a stranger; dropping");
+                daemon.manager().drop_peer(conn.peer());
+            }
+            trusted
+        }
+        Err(e) => {
+            tracing::debug!(%addr, %e, "dial failed");
+            false
+        }
+    }
+}
+
+/// Every `every`, redials each trusted peer that was reached in this process
+/// and is not connected now, at its last address; and, while any of the
+/// person's bindings is not connected, asks for fresh mDNS queries every
+/// [`REQUERY_EVERY`]. A restarted peer keeps its address on a fixed port and
+/// is back on the first tick; one on a new port is found by the queries
+/// without waiting for an announcement that may have gone unheard (LP-83).
+pub fn spawn_reconnect(daemon: Arc<Daemon>, every: Duration) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut last_query = Instant::now();
+        loop {
+            tokio::time::sleep(every).await;
+            if !daemon.is_initialised() {
+                continue;
+            }
+            for (peer, addr) in daemon.last_addrs() {
+                if daemon.manager().peer(&peer).is_some() {
+                    continue;
+                }
+                if !daemon.recognise(&peer).is_ok_and(|r| r.is_trusted()) {
+                    continue;
+                }
+                tracing::debug!(%peer, %addr, "redialling");
+                dial(&daemon, addr).await;
+            }
+            if last_query.elapsed() >= REQUERY_EVERY && a_binding_is_missing(&daemon) {
+                last_query = Instant::now();
+                daemon.requery();
+            }
+        }
+    })
+}
+
+/// Whether one of the person's other bindings, not revoked, is not connected.
+fn a_binding_is_missing(daemon: &Daemon) -> bool {
+    control::devices(daemon).is_ok_and(|d| {
+        d.devices
+            .iter()
+            .any(|e| e.role == "binding" && !e.this_device && !e.revoked && !e.connected)
+    })
 }

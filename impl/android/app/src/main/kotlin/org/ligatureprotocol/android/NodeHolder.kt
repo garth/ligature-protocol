@@ -103,6 +103,9 @@ object NodeHolder : Host {
 
     fun createPerson(name: String) = call { it.init(name) }
 
+    /** The network came up or changed: start discovery again on it. */
+    fun restartDiscovery() = call { it.restartDiscovery() }
+
     fun revoke(key: String) = call { it.revoke(key) }
 
     /** Starts the ceremony with this phone as the newcomer. */

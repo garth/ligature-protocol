@@ -64,8 +64,10 @@ protocol of its own. LineageOS is the first target (no Google services, sideload
 - **Running.** A foreground service of type `connectedDevice` with a persistent
   notification keeps the daemon alive and is restarted at boot; the user may still have
   to exempt the app from battery optimisation. mDNS needs the Wi-Fi multicast lock, which
-  the service holds while it runs. The QUIC endpoint, discovery, gossip and manifests are
-  the same code as on the desktops.
+  the service holds while it runs, and a responder started before Wi-Fi has an address
+  hears nothing, so the node starts on the first available network and restarts discovery
+  on every change of network. The QUIC endpoint, discovery, gossip and manifests are the
+  same code as on the desktops.
 - **Clipboard.** Since Android 10 an app may read the clipboard only while its window has
   focus or it is the default keyboard; the change listener fires only when a read would
   be allowed. Writing is unrestricted. A phone therefore always receives (the daemon sets

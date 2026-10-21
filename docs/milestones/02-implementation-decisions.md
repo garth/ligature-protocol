@@ -94,3 +94,30 @@ is in the repository.
 
 **Not minified.** R8 is off for now; JNA and the generated bindings rely on reflection and
 the rules in `proguard-rules.pro` are kept ready for when it is turned on.
+
+## LP-83: reconnection
+
+**Found.** Discovery dialled only on an mDNS resolution event, and every daemon start is a
+new random instance, so a node that missed a peer's start-up announcement never
+reconnected: after the desktops restarted, the phone sat for minutes with both gone; after
+a phone reboot the node started 25 s before Wi-Fi associated, its responder and browser
+had no usable interface, and nothing retried.
+
+**Decision.** Three things, all in `ligatured` and inherited by the Android node:
+
+- The daemon remembers where each trusted peer was last reached (in memory, for this
+  process). A reconnect loop (`run::spawn_reconnect`, every 10 s) redials any of them that
+  is not connected, with a 5 s cap on every dial so a stale address does not hold the loop
+  for the handshake timeout. A desktop on a fixed `--port` is back on the first tick.
+- While one of the person's bindings is not connected, the loop asks the browser for a
+  fresh round of mDNS queries every 30 s (`Daemon::requery`, which restarts the browse; the
+  library then queries again from a short interval), so a restarted peer on a new port is
+  found without its announcement.
+- `Daemon::restart_discovery` replaces the responder and browser; the app calls it from a
+  default-network callback on every network change, and starts the node itself only when
+  the first network is available. Boot still starts the foreground service at once, as
+  Android requires, with the node waiting inside it.
+
+Not done: persisting last addresses across restarts (the fresh browse at start covers it)
+and a stable instance id across daemon runs, which would let caches refresh a record
+instead of discovering a new one; worth doing if the re-query proves too slow.

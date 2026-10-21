@@ -7,7 +7,9 @@ use std::time::Duration;
 use ligatured::ceremony::{self, Prompt};
 use ligatured::clipboard::Clipboard as _;
 use ligatured::daemon::Daemon;
-use ligatured::run::{default_bind, spawn_connection_events, spawn_discovery};
+use ligatured::run::{
+    RECONNECT_EVERY, default_bind, spawn_connection_events, spawn_discovery, spawn_reconnect,
+};
 use lp_core::PublicKey;
 use lp_core::paths::Locations;
 use lp_transport::manager::Event as ConnectionEvent;
@@ -152,6 +154,7 @@ impl Node {
             });
             spawn_connection_events(node.daemon.clone(), rx);
             spawn_discovery(node.daemon.clone());
+            spawn_reconnect(node.daemon.clone(), RECONNECT_EVERY);
             // Manifests arrive after the connection: tell the host again
             // once they can have, so the clipboard peers show up.
             let host = node.host.clone();
@@ -271,6 +274,22 @@ impl Node {
     #[must_use]
     pub fn clipboard_text(&self) -> Option<String> {
         self.clipboard.read_text().ok().flatten()
+    }
+
+    /// Starts the mDNS responder and browser again: for the host to call when
+    /// the network came up or changed, since a responder started before Wi-Fi
+    /// had an address may never announce or hear anything. Peers reached
+    /// before are redialled by the node on its own.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LpError::Internal`] if the responder cannot start.
+    pub fn restart_discovery(&self) -> Result<(), LpError> {
+        self.with_runtime(|rt| {
+            let _guard = rt.enter();
+            self.daemon.restart_discovery()
+        })
+        .map_err(LpError::from)
     }
 
     /// Whether the host can set the clipboard right now. While it cannot,

@@ -199,14 +199,13 @@ impl LinuxClipboard {
                 let Ok(msg) = frame::decode::<HelperMessage>(&body) else {
                     continue;
                 };
-                if msg.message_type.as_str() == types::CHANGED {
-                    if let Some(text) = msg.text {
-                        *last
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner) =
-                            Some(text.clone());
-                        let _ = changes.send(Change { text });
-                    }
+                if msg.message_type.as_str() == types::CHANGED
+                    && let Some(text) = msg.text
+                {
+                    *last
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(text.clone());
+                    let _ = changes.send(Change { text });
                 }
             }
             tracing::info!("clipboard helper ended; clipboard unavailable until it restarts");
@@ -317,20 +316,20 @@ pub fn run_helper() -> Result<(), Error> {
             let Ok(msg) = frame::decode::<HelperMessage>(&body) else {
                 continue;
             };
-            if msg.message_type.as_str() == types::SET {
-                if let Some(text) = msg.text {
-                    std::thread::spawn(move || {
-                        use wl_clipboard_rs::copy::{MimeType, Options, Source};
-                        let mut options = Options::new();
-                        options.foreground(true);
-                        if let Err(e) = options.copy(
-                            Source::Bytes(text.into_bytes().into_boxed_slice()),
-                            MimeType::Text,
-                        ) {
-                            eprintln!("clipboard helper: copy failed: {e}");
-                        }
-                    });
-                }
+            if msg.message_type.as_str() == types::SET
+                && let Some(text) = msg.text
+            {
+                std::thread::spawn(move || {
+                    use wl_clipboard_rs::copy::{MimeType, Options, Source};
+                    let mut options = Options::new();
+                    options.foreground(true);
+                    if let Err(e) = options.copy(
+                        Source::Bytes(text.into_bytes().into_boxed_slice()),
+                        MimeType::Text,
+                    ) {
+                        eprintln!("clipboard helper: copy failed: {e}");
+                    }
+                });
             }
         }
         cancel.cancel();

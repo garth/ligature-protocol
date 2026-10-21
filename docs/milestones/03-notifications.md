@@ -44,26 +44,29 @@ own stream, and a same-person use needs no prompt (chapter 05, ADR 0008, ADR 001
    which desktop is in use. Shaping that is LP-88's configuration app, later.
 3. **What travels.** `post` carries a stable `id` chosen by the emitting device, the app
    (`id` and display name), `title`, `body`, `postedAt`, and the hash of the app's icon;
-   a `post` with an `id` already shown replaces it in place. `dismiss` carries the `id`
-   and `dismissedAt`. `icon` carries the hash, the MIME type and the PNG bytes, sent once
+   a `post` with an `id` already shown replaces it in place. `dismiss` carries the
+   `origin` (the emitting device's key, since ids are chosen per device), the `id` and
+   `dismissedAt`. `icon` carries the hash, the MIME type and the PNG bytes, sent once
    per app per session before the first `post` that names it and cached by the receiver
    for the session; `maxIconBytes` bounds it, 64 KiB by default. Everything fits the 1 MiB
    message of ADR 0036 with room to spare.
-4. **Origin is the hub for dismissal.** A device that dismisses a copy it displayed sends
-   `dismiss` to the origin only. The origin dismisses its own notification and sends
-   `dismiss` to every other device it posted to. A device that dismisses its own
-   notification does the fan-out directly. One rule, no mesh of acknowledgements, and a
-   device that is away when the dismissal happens simply keeps a stale copy until the
-   user clears it.
+4. **Dismissal fans out directly.** The device on which the user dismisses a
+   notification, whether its own or a copy it displayed, sends `dismiss` in one hop to the
+   origin and to every connected peer that displays. The origin cancels the real one, the
+   others clear their copies. No relay, so clearing a copy on the Linux machine still
+   clears the Mac while the phone is out of range; a device that is away keeps a stale
+   copy until the user clears it.
 5. **The loop rule.** A notification displayed on behalf of another device is never
    emitted as this device's: on Android the listener ignores Ligature's own package; on
    Linux the daemon's own `Notify` calls carry an `x-ligature-origin` hint that its
-   monitor skips; and the daemon never forwards a `post` it received. Dismissals are only
-   ever sent toward the origin or from it, so they cannot cycle either.
+   monitor skips; and the daemon never forwards a `post` it received. Only a dismissal
+   the user makes on this device is sent; a received `dismiss` is acted on and never
+   forwarded, so dismissals cannot cycle either.
 6. **Never forwarded.** Ongoing notifications (foreground services, media players,
    navigation), silent or minimum-importance ones, group summaries, Linux `transient`
    ones, and any from an app the user excluded on the phone. The emitting device decides;
-   a displaying device shows what it is sent.
+   a displaying device shows what it is sent. This list is a first cut and may be
+   revisited once the run shows what people miss or tire of.
 7. **Linux emits by monitoring the session bus.** The daemon becomes a monitor of
    `org.freedesktop.Notifications` on the user's session bus, found at
    `$XDG_RUNTIME_DIR/bus` the way the compositor socket is found, and sees every `Notify`
@@ -76,8 +79,8 @@ own stream, and a same-person use needs no prompt (chapter 05, ADR 0008, ADR 001
    the user notification centre requires, so the Mac displays with
    `osascript -e 'display notification'` and reports `emits: false`. Such a notification
    cannot be dismissed from outside; a dismissal that arrives for it is dropped and
-   chapter 08 says so. A signed helper application that can both display and dismiss is a
-   later improvement, not a protocol matter.
+   chapter 08 says so. A signed helper application that can both display and dismiss is
+   LP-94, a later improvement and not a protocol matter.
 9. **Android emits and displays.** A `NotificationListenerService`, enabled by the user
    under notification access, forwards posts and removals and dismisses a phone
    notification when the origin rule asks; received notifications are shown through the
@@ -103,9 +106,10 @@ sequenceDiagram
     P->>L: post id=42
     P->>M: post id=42
     Note over L: user dismisses the copy
-    L->>P: dismiss id=42
+    L->>P: dismiss origin=P id=42
+    L->>M: dismiss origin=P id=42
     Note over P: cancels its own notification
-    P->>M: dismiss id=42
+    Note over M: clears its copy
 ```
 
 ## 4. Exit criteria
@@ -165,7 +169,7 @@ flowchart LR
   desktop; the large icon or the app icon is sent when there is one. A 64 KiB cap keeps
   a bad actor from stuffing the channel.
 - **macOS dismissal.** Decision 8 leaves copies on the Mac undismissable from elsewhere;
-  acceptable for the milestone, and the first thing a helper application would fix.
+  acceptable for the milestone, and the first thing the helper application of LP-94 fixes.
 - **Privacy.** Notification text is among the most sensitive data a phone holds. It
   travels only on the authenticated pairwise session to the person's own devices, is held
   in memory, and is never stored; the threat model says so and the implementation has no
@@ -174,7 +178,7 @@ flowchart LR
 ## 7. After this milestone
 
 Candidates, in no order: replies and actions carried back to the origin (the natural next
-step once the id map exists); a signed macOS helper that displays and dismisses; the
+step once the id map exists); the signed macOS helper that displays and dismisses (LP-94); the
 configuration app of LP-88, which this family makes necessary; file transfer (milestone 4,
 LP-87); and the milestone 1 carry-overs (offline master keys, D-Bus for `lpctl`, the
 `share` family, groups, relays).

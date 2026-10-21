@@ -22,6 +22,10 @@ pub struct Registry {
     local: Mutex<Vec<Descriptor>>,
     remote: Mutex<HashMap<PublicKey, Manifest>>,
     senders: Mutex<HashMap<PublicKey, mpsc::Sender<Manifest>>>,
+    /// Held across a change to the local list and the manifests it sends, so
+    /// two capabilities offered at once cannot lose each other's entry or
+    /// send their manifests out of order.
+    publishing: tokio::sync::Mutex<()>,
 }
 
 impl std::fmt::Debug for Registry {
@@ -51,32 +55,41 @@ impl Registry {
 
     /// Replaces what this device offers and tells every connected peer.
     pub async fn set_local(&self, capabilities: Vec<Descriptor>) {
+        let _publishing = self.publishing.lock().await;
+        self.publish(capabilities).await;
+    }
+
+    /// Adds one capability unless an equal one is already offered.
+    pub async fn offer(&self, descriptor: Descriptor) {
+        let _publishing = self.publishing.lock().await;
+        let mut local = self.local();
+        if local.contains(&descriptor) {
+            return;
+        }
+        local.push(descriptor);
+        self.publish(local).await;
+    }
+
+    /// Removes every capability of `capability_type`.
+    pub async fn withdraw(&self, capability_type: &str) {
+        let _publishing = self.publishing.lock().await;
+        let local: Vec<Descriptor> = self
+            .local()
+            .into_iter()
+            .filter(|d| d.capability_type.as_str() != capability_type)
+            .collect();
+        self.publish(local).await;
+    }
+
+    /// Stores the new local list and sends it to every peer; the caller holds
+    /// `publishing`.
+    async fn publish(&self, capabilities: Vec<Descriptor>) {
         *self.lock_local() = capabilities.clone();
         let manifest = Manifest::new(capabilities);
         let senders: Vec<mpsc::Sender<Manifest>> = self.lock_senders().values().cloned().collect();
         for tx in senders {
             let _ = tx.send(manifest.clone()).await;
         }
-    }
-
-    /// Adds one capability unless an equal one is already offered.
-    pub async fn offer(&self, descriptor: Descriptor) {
-        let mut local = self.local();
-        if local.contains(&descriptor) {
-            return;
-        }
-        local.push(descriptor);
-        self.set_local(local).await;
-    }
-
-    /// Removes every capability of `capability_type`.
-    pub async fn withdraw(&self, capability_type: &str) {
-        let local: Vec<Descriptor> = self
-            .local()
-            .into_iter()
-            .filter(|d| d.capability_type.as_str() != capability_type)
-            .collect();
-        self.set_local(local).await;
     }
 
     /// Every connected peer's manifest.

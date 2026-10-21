@@ -100,13 +100,16 @@ impl Manager {
         let conn = self.endpoint.connect(addr).await?;
         if let Some(existing) = self.lock().peers.get(conn.peer()).cloned() {
             let alive = existing.raw().close_reason().is_none();
-            if alive && (existing.dialled_by_us() || !self.we_keep_our_dial(conn.peer())) {
+            if alive && !existing.dialled_by_us() && !self.we_keep_our_dial(conn.peer()) {
+                // Both sides dialled at once and the tie-break keeps theirs.
                 tracing::debug!(peer = %conn.peer(), "already connected; dropping duplicate dial");
                 conn.close();
                 return Ok(existing);
             }
-            // Either the old connection is dead, or both sides dialled at once
-            // and the tie-break keeps ours.
+            // Otherwise the new one replaces the old: a dial of ours that
+            // completed is proof the peer is there now, while the old one
+            // may have died without a word, and the peer applies the same
+            // rule on its side (`adopt`).
         }
         self.adopt(conn.clone()).await;
         Ok(conn)
@@ -165,8 +168,9 @@ impl Manager {
     }
 
     /// Records a connection, starts its stream loop and reports it. A new
-    /// connection never displaces a live one for the same peer unless both
-    /// sides dialled at once and the tie-break says so; a dead one is replaced.
+    /// connection displaces a live one for the same peer when the same side
+    /// dialled again, or when dials crossed and the tie-break says so; a dead
+    /// one is always replaced. Both ends reach the same answer.
     async fn adopt(&self, conn: Connection) {
         let peer = *conn.peer();
         {
@@ -176,9 +180,12 @@ impl Manager {
                     return;
                 }
                 let old_alive = old.raw().close_reason().is_none();
-                let simultaneous = conn.dialled_by_us() != old.dialled_by_us();
-                let new_wins =
-                    simultaneous && (conn.dialled_by_us() == self.we_keep_our_dial(&peer));
+                let cross = conn.dialled_by_us() != old.dialled_by_us();
+                // The same side dialled again: it lost the earlier one (a
+                // restart, a silent drop) or is proving the peer is there, so
+                // the new one wins on both sides. Dials that crossed are
+                // settled by the tie-break, the same on both sides.
+                let new_wins = !cross || conn.dialled_by_us() == self.we_keep_our_dial(&peer);
                 if old_alive && !new_wins {
                     tracing::debug!(%peer, "dropping duplicate connection; keeping the live one");
                     drop(st);

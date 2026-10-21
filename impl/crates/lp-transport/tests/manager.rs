@@ -62,11 +62,22 @@ async fn streams_are_dispatched_by_purpose_and_unknown_purposes_are_refused() {
         .unwrap();
     assert!(got.facts.is_empty());
 
-    // One connection per peer: dialling again returns the existing one, since
-    // we dialled it ourselves.
+    // One connection per peer: dialling again replaces the earlier one on
+    // both sides (a completed dial proves the peer is there), still one peer.
     let again = a.connect(b_addr).await.unwrap();
-    assert_eq!(again.raw().stable_id(), conn.raw().stable_id());
+    assert_ne!(again.raw().stable_id(), conn.raw().stable_id());
     assert_eq!(a.peers(), vec![*b_key.public()]);
+    match tokio::time::timeout(Duration::from_secs(5), b_events.recv()).await {
+        Ok(Some(Event::Connected(c))) => assert_eq!(c.peer(), a.endpoint().public()),
+        other => panic!("expected Connected for the replacement, got {other:?}"),
+    }
+    assert!(
+        tokio::time::timeout(Duration::from_secs(1), conn.raw().closed())
+            .await
+            .is_ok(),
+        "the earlier connection was closed"
+    );
+    let _conn = again;
 
     a.drop_peer(b_key.public());
     assert!(a.peer(b_key.public()).is_none());
@@ -85,4 +96,61 @@ async fn streams_are_dispatched_by_purpose_and_unknown_purposes_are_refused() {
     }
     a.shutdown();
     b.shutdown();
+}
+
+/// A peer that restarts keeps its key but loses its connection; its first
+/// dial after that must replace what we still hold, not be refused as a
+/// duplicate (LP-98).
+#[tokio::test]
+async fn a_restarted_peer_replaces_the_connection_we_still_hold() {
+    let (a_ep, _a_key) = endpoint();
+    let (b_ep, b_key) = endpoint();
+    let a_addr = a_ep.local_addr().unwrap();
+    let (a, mut a_events) = Manager::start(a_ep);
+    let (b, _b_events) = Manager::start(b_ep);
+
+    // B dials A; A holds that connection.
+    let first = b.connect(a_addr).await.unwrap();
+    let held = match tokio::time::timeout(Duration::from_secs(5), a_events.recv()).await {
+        Ok(Some(Event::Connected(c))) => c,
+        other => panic!("expected Connected, got {other:?}"),
+    };
+    assert_eq!(held.peer(), b_key.public());
+
+    // B "restarts": a new endpoint with the same key, the old one abandoned
+    // without a close (its process is gone), and dials A again.
+    std::mem::forget(first);
+    std::mem::forget(b);
+    let b2_ep = Endpoint::bind("127.0.0.1:0".parse().unwrap(), &b_key).unwrap();
+    let (b2, _b2_events) = Manager::start(b2_ep);
+    let second = b2.connect(a_addr).await.unwrap();
+    assert_eq!(second.peer(), a.endpoint().public());
+
+    // A now holds the new connection and told about it; a stream from A
+    // reaches B2, not the abandoned endpoint.
+    match tokio::time::timeout(Duration::from_secs(5), a_events.recv()).await {
+        Ok(Some(Event::Connected(c))) => assert_eq!(c.peer(), b_key.public()),
+        other => panic!("expected Connected for the redial, got {other:?}"),
+    }
+    let now_held = a.peer(b_key.public()).unwrap();
+    assert_ne!(now_held.raw().stable_id(), held.raw().stable_id());
+    let (got_tx, mut got_rx) = mpsc::channel::<GossipHave>(1);
+    b2.on_stream(
+        StreamHeader::GOSSIP,
+        Arc::new(move |_conn, mut stream| {
+            let got_tx = got_tx.clone();
+            Box::pin(async move {
+                let msg: GossipHave = stream.recv().await.unwrap().unwrap();
+                got_tx.send(msg).await.unwrap();
+            })
+        }),
+    );
+    let mut gossip = a.open(b_key.public(), StreamHeader::GOSSIP).await.unwrap();
+    gossip.send(&GossipHave::new(vec![])).await.unwrap();
+    gossip.finish();
+    tokio::time::timeout(Duration::from_secs(5), got_rx.recv())
+        .await
+        .expect("in time")
+        .expect("reached the restarted peer");
+    assert_eq!(a.peers(), vec![*b_key.public()]);
 }

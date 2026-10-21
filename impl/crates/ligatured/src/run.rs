@@ -1,11 +1,12 @@
 //! Runs the daemon: control socket, connection events, discovery and dialling.
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use lp_core::Error;
 use lp_core::paths::Locations;
+use lp_core::{Error, PublicKey};
 use lp_transport::manager::Event;
 use lp_transport::mdns::{DialPolicy, Discovered};
 
@@ -180,6 +181,9 @@ async fn discovery_loop(daemon: Arc<Daemon>) {
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
     let mut policy = DialPolicy::new(Duration::from_secs(30), 4);
+    // Which key each instance turned out to be, so an instance we are already
+    // connected to is not dialled again every time the browser reports it.
+    let mut keys: HashMap<lp_transport::mdns::InstanceId, PublicKey> = HashMap::new();
     loop {
         let Some(Ok(mut found)) = daemon.with_mdns(|m| m.browse()) else {
             tracing::error!("cannot browse mDNS");
@@ -202,21 +206,33 @@ async fn discovery_loop(daemon: Arc<Daemon>) {
                     let Some(addr) = addrs.iter().copied().find(|a| a.is_ipv4()) else {
                         continue;
                     };
+                    if keys
+                        .get(&id)
+                        .is_some_and(|key| daemon.manager().peer(key).is_some())
+                    {
+                        continue;
+                    }
                     if !policy.try_begin(&id, Instant::now()) {
                         continue;
                     }
-                    let authenticated = dial(&daemon, addr).await;
-                    policy.finish(&id, authenticated, Instant::now());
+                    let trusted = dial(&daemon, addr).await;
+                    if let Some(key) = trusted {
+                        keys.insert(id.clone(), key);
+                    }
+                    policy.finish(&id, trusted.is_some(), Instant::now());
                 }
-                Discovered::Gone { id } => policy.forget(&id),
+                Discovered::Gone { id } => {
+                    keys.remove(&id);
+                    policy.forget(&id);
+                }
             }
         }
     }
 }
 
 /// Dials `addr` and keeps the connection only if the peer is trusted; returns
-/// whether it was.
-async fn dial(daemon: &Daemon, addr: SocketAddr) -> bool {
+/// the peer's key if it was.
+async fn dial(daemon: &Daemon, addr: SocketAddr) -> Option<PublicKey> {
     let outcome = tokio::time::timeout(DIAL_TIMEOUT, daemon.manager().connect(addr))
         .await
         .unwrap_or_else(|_| Err(Error::Transport(format!("{addr}: no answer"))));
@@ -229,12 +245,13 @@ async fn dial(daemon: &Daemon, addr: SocketAddr) -> bool {
             if !trusted {
                 tracing::debug!(peer = %conn.peer(), "dialled a stranger; dropping");
                 daemon.manager().drop_peer(conn.peer());
+                return None;
             }
-            trusted
+            Some(*conn.peer())
         }
         Err(e) => {
             tracing::debug!(%addr, %e, "dial failed");
-            false
+            None
         }
     }
 }

@@ -102,3 +102,24 @@ dismissal on.
 **Per-app switches.** The app list is the set of packages the listener has seen post,
 kept in the app's preferences with their labels, each on unless switched off; the
 exclusion set is checked at the listener. Nothing else is configurable yet (LP-88).
+
+## LP-98: one connection per pair, agreed by both ends
+
+**Found in the run.** With the reconnect and discovery loops of LP-83 on every device, a
+pair often holds two QUIC connections for a moment, and each end used to settle the
+duplicate on its own ("keep the live one"), so a restarted or silently lost peer was
+refused as a duplicate of a connection the other end still held, for up to the idle
+timeout. The Mac's first dial after its restart was closed by the phone that way.
+
+**Decision.** `lp-transport::Manager` applies one rule at both ends: when the same side
+dials again, the new connection wins (a completed dial is proof the peer is there now,
+and the old one may have died without a word); when the dials crossed, the one dialled
+by the lower binding key wins. The dialler and the acceptor compute the same answer, so
+both close the same connection. Discovery no longer dials an instance whose key is
+already connected, which removes most repeat dials at the source.
+
+**Also found.** Two capabilities offered at the same moment could lose each other's
+entry, since the registry read, changed and wrote its list without holding anything
+across the change; the phone's manifest then lacked the clipboard one run in three.
+`Registry` now holds a lock across a change and the manifests it sends, so offers and
+withdrawals are serialised and never arrive out of order.

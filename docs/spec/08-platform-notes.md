@@ -45,8 +45,12 @@ extra components. What a third-party daemon may offer is bounded by platform per
   forward its own. The reference daemon posts them with AppleScript's
   `display notification`, since the user notification centre takes posts only from a
   bundled application; such a notification carries no icon and cannot be updated or
-  closed from outside, so a dismissal from another device is dropped there. A signed
-  helper application would lift both limits.
+  closed from outside, so a dismissal from another device is dropped there. Such posts
+  count as Script Editor's, and on a Mac where Script Editor has never posted a
+  notification they are dropped silently, since a command-line `osascript` never triggers
+  the permission prompt: the user runs `display notification` once inside Script Editor
+  and allows it, after which the daemon's posts show without a restart. A Focus mode hides
+  them as it hides any other. A signed helper application would lift all of these limits.
 - **Remote input and displays**: injecting input needs the Accessibility permission and
   capturing or mirroring the screen needs Screen Recording; both are granted per
   application by the user under Transparency, Consent and Control.

@@ -1,7 +1,10 @@
 # Milestone 3: notifications flow between all of a person's devices
 
-**Status:** Planned. The design points in section 3 are put to the owner before any code; the
-tasks are LP-90 to LP-93 under the epic LP-86.
+**Status:** Done. The tasks LP-90 to LP-93 under the epic LP-86 are done, and the owner ran
+the exit criteria on the Pixel, the Linux machine and the Mac on 2026-10-21 and 2026-10-22
+(LP-93). The run found two things: a pair could hold two connections for a moment and each
+end kept a different one (LP-98), and a Mac where Script Editor has never posted drops
+`display notification` silently until the user allows it once (chapter 08 section 2b).
 
 ## 1. Goal
 

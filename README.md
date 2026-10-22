@@ -1,9 +1,9 @@
 # Ligature Protocol (LP)
 
 > **Status: pre-alpha.** Nothing here is stable. The specification is a draft, the
-> reference implementation shares the clipboard between a Linux machine, a Mac and an
-> Android phone (milestones 1 and 2), and the `org.ligatureprotocol` type names use a
-> placeholder domain.
+> reference implementation shares the clipboard and notifications between a Linux machine,
+> a Mac and an Android phone (milestones 1 to 3), and the `org.ligatureprotocol` type names
+> use a placeholder domain.
 
 Ligature Protocol binds the devices a person owns, and the devices a household shares,
 into one trusted group, whatever they run: Linux and macOS desktops and laptops, Android
@@ -168,8 +168,8 @@ follow them.
 1. **Clipboard between a Linux machine and a Mac.** Done
    ([plan](docs/milestones/01-clipboard-poc.md)).
 2. **An Android phone joins them.** Done ([plan](docs/milestones/02-android-clipboard.md)).
-3. **Notifications among all of a person's devices.** In progress: a notification posted
-   on any device that can see its own appears on every device that displays them, dismissed
+3. **Notifications among all of a person's devices.** Done: a notification posted on any
+   device that can see its own appears on every device that displays them, dismissed
    everywhere at once ([plan](docs/milestones/03-notifications.md)).
 4. **File transfer among a person's devices.** Planned: a file chosen on any device lands
    on another over the LP session itself, with progress and cancel, and a receiver can

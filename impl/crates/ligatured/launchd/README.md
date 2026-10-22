@@ -25,6 +25,15 @@ tail -f ~/Library/Logs/ligature/ligatured.log
 lpctl --data-dir "$HOME/Library/Application Support/ligature" status
 ```
 
+## Notifications from other devices
+
+The daemon shows them with AppleScript's `display notification`, which posts as Script
+Editor. On a Mac where Script Editor has never posted a notification they are dropped
+silently, because a command-line `osascript` never triggers the permission prompt. Once:
+open Script Editor, run `display notification "Ligature" with title "LP"` and click Allow.
+Script Editor then appears under System Settings → Notifications and the daemon's posts show
+from then on, with no restart.
+
 ## Remove
 
 ```sh

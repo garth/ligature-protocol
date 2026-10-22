@@ -19,11 +19,12 @@ the manifest it arrives in. See
 [`org.ligatureprotocol.capability`](../../schemas/capability.schema.json).
 
 A family with two directions declares in its `params` which of them the device offers:
-`emits` and `displays` for notifications (section 3c), and the same shape for `files`
-(send, receive) and media control (control, be controlled) when they are specified. A
-device advertises the family if it offers either direction; the peer reads the flags to
-know what it may send and what it will receive. One stream per session carries both
-directions, as for every family.
+`emits` and `displays` for notifications (section 3c), `send` and `receive` for files
+(section 3d), and the same shape for media control (control, be controlled) when it is
+specified. A device advertises the family if it offers either direction; the peer reads the
+flags to know what it may send and what it will receive. One stream per session carries
+both directions for the clipboard and notifications; files, whose payloads are large, use
+a stream per transfer and per file (section 3d).
 
 ## 2a. Manifests and the live registry
 
@@ -57,7 +58,8 @@ flowchart LR
 
 The first families are: notifications, clipboard, files, share, remote input, media
 control, telephony/SMS, displays, sensors. Each will become its own spec section with its
-own schema; clipboard (section 3b) and share (section 3a) are specified so far.
+own schema; share (section 3a), clipboard (section 3b), notifications (section 3c) and
+files (section 3d) are specified so far.
 
 ## 3a. Sharing between people
 
@@ -66,8 +68,8 @@ files to a chosen device, usually another person's. It is user-scoped: it belong
 binding, so a share to the family laptop is a share to a particular account on it. The
 receiver accepts or declines each share on the receiving device; acceptance is a one-time
 grant, which the receiver may make standing for a particular sender. The payload travels
-on the `share` stream of the pairwise session. `files` keeps its meaning of browsing and
-transferring files among a person's own devices. See
+on the `share` stream of the pairwise session. `files` (section 3d) is the transfer of
+files among a person's own devices. See
 [ADR 0022](../adr/0022-ad-hoc-sharing-between-people.md). Open question: size limits and
 resumption for large shares, and whether a share may be addressed to several devices at
 once (which is several sessions under chapter 03).
@@ -114,6 +116,57 @@ notifications, nor those of apps the user excluded; what a receiver shows is wha
 sent. Nothing about a notification is stored: the receiver's copies, icon cache and id map
 live for the session (chapter 09). Open question: replies and actions carried back to the
 origin, and whether presence should ever narrow where a notification is shown.
+
+## 3d. Files
+
+`org.ligatureprotocol.capability.files`
+([schema](../../schemas/capability.files.schema.json)) moves files among a person's own
+devices: a file chosen on one lands on another, and a device fetches content another
+device has offered. It is user-scoped and needs no prompt between a person's own devices
+(section 4); anything across people is `share` (section 3a). The descriptor's `params` say
+`send` (this device offers content and answers fetches), `receive` (it accepts pushed
+files), `maxChunkBytes` (the largest chunk it takes, within the frame limit of ADR 0036)
+and `maxStreams` (how many files it takes at once from one peer, so a small device may say
+one and a server many). Nothing here is browsing: a device learns what another offers only
+from an offer or from an announcement on another capability's stream, never by asking for
+a list.
+
+A **file** is described the same way whatever is behind it, a file on disk, bytes in
+memory or a clipboard selection: an `id` the sender chose and keeps unique among what it
+offers, a `name` that is a base name and never a path, the exact `size`, a `mime` type, and
+optionally the `sha256` and the `modified` time. The definition is standalone so that other
+families reference it; the clipboard's announcement of large content does.
+
+A **transfer** is a control stream and one data stream per file, all with the capability
+type as their purpose. Whoever starts the transfer opens the control stream and chooses a
+`transfer` id that every stream of the transfer names: the sender for a push, whose first
+message is an `offer` listing the files; the receiver for a fetch, whose first message is a
+`request` naming the ids it wants, answered by an `offer` of those the sender still holds,
+so an id missing from the offer is gone. The receiver answers an `offer` with an `accept`
+naming the ids it will take, or either side sends a `decline` with a reason (`gone`,
+`refused`, `too-large`, `no-space`, `busy`). For each accepted file the sender opens a data
+stream whose first message is `begin` with the transfer and file id, followed by `chunk`
+messages carrying the bytes in order and an `end` carrying the SHA-256 computed while
+sending; it then finishes its side. The receiver checks the size against the descriptor
+and the hash against what it wrote, answers `received` or `failed` with a reason on the
+same stream, and finishes it. Once every accepted file has its answer both sides finish
+the control stream. The sender keeps no more data streams open to a peer than that peer's
+`maxStreams`, and files on different streams are independent of one another.
+
+Either side cancels one file by resetting its data stream, with application error code 2
+for a cancel the user asked for and 3 for a failure, and the whole transfer by resetting
+the control stream; a stream that ends before `end` is a failure. The receiver removes
+whatever partial file it was writing. There is no cancel message, since it would queue
+behind the chunks it is meant to stop. Progress is each side's own count of bytes against
+`size`; nothing on the wire carries it.
+
+A received file goes where the receiving side decides: by default the platform's download
+folder (chapter 08), or wherever the capability that asked for a fetch wants the bytes. The
+receiver keeps only the base name, drops control characters and a leading dot, and never
+overwrites an existing file. A sender keeps what it offers in memory, by id, and withdraws
+an id when the content is gone; a `request` for a withdrawn id is declined as `gone`.
+Nothing about a transfer is stored beyond the received file itself (chapter 09). Open
+question: resumption of an interrupted file by an offset in `begin`, and folders.
 
 ## 4. Requests and grants
 

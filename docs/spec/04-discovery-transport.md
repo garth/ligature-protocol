@@ -35,8 +35,10 @@ its first frame is a stream header
 dialer opens the gossip stream first. A receiver that does not understand a purpose closes
 that stream and nothing else. A message on a stream is a frame: a 4-byte big-endian length
 and one CBOR map with a `type` field, at most 1 MiB unless the capability says otherwise
-([ADR 0036](../adr/0036-stream-framing-and-message-typing.md)). Open question: whether
-some capabilities need several streams (for example one per file in flight).
+([ADR 0036](../adr/0036-stream-framing-and-message-typing.md)). A capability may use
+several streams of its purpose at once: files (chapter 05 section 3d) opens a control
+stream per transfer and a data stream per file in flight, the receiver's descriptor
+bounding how many, so a large file never stalls a small one or the clipboard.
 
 ### 3.2 Authentication
 

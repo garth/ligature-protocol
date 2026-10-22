@@ -1,0 +1,305 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ligatureprotocol.org/schemas/capability.files.schema.json",
+  "title": "org.ligatureprotocol.capability.files",
+  "description": "DRAFT. The files capability (spec chapter 05 section 3d): user-scoped, two directions. The descriptor's params say whether the device sends (offers content and answers fetches), receives (accepts pushed files), the largest chunk it takes and how many files it takes at once from one peer. A transfer is a control stream (purpose org.ligatureprotocol.capability.files, ADR 0036) carrying request, offer, accept and decline, and one data stream per accepted file, same purpose, carrying begin, chunk and end from the sender and received or failed from the receiver. The file definition is standalone so other capability schemas can reference it. The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "$defs": {
+    "params": {
+      "type": "object",
+      "description": "The descriptor's params for this capability.",
+      "properties": {
+        "send": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether this device offers content and answers fetches."
+        },
+        "receive": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether this device accepts pushed files. False while it has nowhere writable to put them."
+        },
+        "maxChunkBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1047552,
+          "default": 262144,
+          "description": "The largest chunk payload, in bytes, this device accepts in one chunk message. Never more than the frame limit of ADR 0036 less headroom for the rest of the message."
+        },
+        "maxStreams": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1,
+          "description": "How many data streams this device accepts at once from one peer, across all transfers. A sender opens no more than this to the device; 1 means one file at a time."
+        }
+      }
+    },
+    "fileId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Chosen by the sender, opaque, unique among everything that device currently offers; 128 random bits in base64url by default."
+    },
+    "transferId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$",
+      "description": "Chosen by whichever side opened the transfer's control stream: 128 random bits in base64url, unpadded. Every stream of the transfer names it."
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$",
+      "description": "SHA-256, base64url, unpadded."
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "gone",
+        "refused",
+        "too-large",
+        "no-space",
+        "busy",
+        "size-mismatch",
+        "hash-mismatch",
+        "write-failed"
+      ],
+      "description": "Why a transfer was declined or a file failed. gone: the sender no longer offers an id. refused: the receiver does not take it. too-large, no-space: the receiver cannot hold it. busy: too many transfers pending. size-mismatch, hash-mismatch: what arrived does not match the descriptor or end. write-failed: the receiver could not write it."
+      },
+    "file": {
+      "type": "object",
+      "description": "What a sender offers: a file on disk, bytes in memory or a clipboard selection, described the same way. Other capability schemas reference this definition.",
+      "required": [
+        "id",
+        "name",
+        "size"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/fileId"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "description": "A base name for the receiver to use, never a path. The receiver keeps only the last path component, drops control characters and a leading dot, and never overwrites an existing file."
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The exact size in bytes. The receiver checks what arrives against it."
+        },
+        "mime": {
+          "type": "string",
+          "default": "application/octet-stream",
+          "maxLength": 255,
+          "description": "The content type, application/octet-stream when unknown."
+        },
+        "sha256": {
+          "$ref": "#/$defs/hash",
+          "description": "The content's SHA-256 when the sender knows it in advance; end carries it in any case."
+        },
+        "modified": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the content was last modified, applied to the received file where the platform allows."
+        }
+      }
+    },
+    "request": {
+      "type": "object",
+      "description": "On a control stream the receiver opened: the ids, announced earlier by the sender on another stream, that the receiver wants. The sender answers with an offer of those it still holds, or a decline.",
+      "required": [
+        "type",
+        "transfer",
+        "ids"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.files.request"
+        },
+        "transfer": {
+          "$ref": "#/$defs/transferId"
+        },
+        "ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/fileId"
+          }
+        }
+      }
+    },
+    "offer": {
+      "type": "object",
+      "description": "On a control stream: the files the sender offers. The first message of a push, or the answer to a request, listing only the ids the sender still holds, so an id missing from the offer is gone.",
+      "required": [
+        "type",
+        "transfer",
+        "files"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.files.offer"
+        },
+        "transfer": {
+          "$ref": "#/$defs/transferId"
+        },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/file"
+          }
+        }
+      }
+    },
+    "accept": {
+      "type": "object",
+      "description": "On a control stream, from the receiver: the offered ids it will take. The sender then opens a data stream per id, within the receiver's maxStreams.",
+      "required": [
+        "type",
+        "ids"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.files.accept"
+        },
+        "ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/fileId"
+          }
+        }
+      }
+    },
+    "decline": {
+      "type": "object",
+      "description": "On a control stream, from either side: the transfer does not go ahead. Both sides then finish the stream.",
+      "required": [
+        "type",
+        "reason"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.files.decline"
+        },
+        "reason": {
+          "$ref": "#/$defs/reason"
+        }
+      }
+    },
+    "begin": {
+      "type": "object",
+      "description": "The first message on a data stream, from the sender: which accepted file of which transfer follows. A receiver resets a data stream naming a transfer it has not accepted, or an id outside that transfer's accept, with application error code 3.",
+      "required": [
+        "type",
+        "transfer",
+        "id"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.files.begin"
+        },
+        "transfer": {
+          "$ref": "#/$defs/transferId"
+        },
+        "id": {
+          "$ref": "#/$defs/fileId"
+        }
+      }
+    },
+    "chunk": {
+      "type": "object",
+      "description": "On a data stream: the next bytes of the file, in order. Never larger than the receiver's maxChunkBytes.",
+      "required": [
+        "type",
+        "bytes"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.files.chunk"
+        },
+        "bytes": {
+          "type": "string",
+          "contentEncoding": "base64url",
+          "description": "The payload; a byte string in CBOR."
+        }
+      }
+    },
+    "end": {
+      "type": "object",
+      "description": "On a data stream, after the last chunk: the hash of everything sent, computed while sending. The sender then finishes its side of the stream. The receiver checks the size against the descriptor and the hash against what it wrote.",
+      "required": [
+        "type",
+        "sha256"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.files.end"
+        },
+        "sha256": {
+          "$ref": "#/$defs/hash"
+        }
+      }
+    },
+    "received": {
+      "type": "object",
+      "description": "On a data stream, from the receiver: the file checked out and is in place. The receiver then finishes the stream.",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.files.received"
+        }
+      }
+    },
+    "failed": {
+      "type": "object",
+      "description": "On a data stream, from the receiver: the file did not check out or could not be written; nothing of it is kept. The receiver then finishes the stream. Other files of the transfer are unaffected.",
+      "required": [
+        "type",
+        "reason"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.files.failed"
+        },
+        "reason": {
+          "$ref": "#/$defs/reason"
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/request"
+    },
+    {
+      "$ref": "#/$defs/offer"
+    },
+    {
+      "$ref": "#/$defs/accept"
+    },
+    {
+      "$ref": "#/$defs/decline"
+    },
+    {
+      "$ref": "#/$defs/begin"
+    },
+    {
+      "$ref": "#/$defs/chunk"
+    },
+    {
+      "$ref": "#/$defs/end"
+    },
+    {
+      "$ref": "#/$defs/received"
+    },
+    {
+      "$ref": "#/$defs/failed"
+    }
+  ]
+}

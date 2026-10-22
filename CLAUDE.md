@@ -134,7 +134,7 @@ The reference implementation is Rust and is also the production implementation
   milestone 5's clipboard to reference); its tasks are raised when the plan is accepted.
 - `schemas/*.schema.json`: JSON Schema 2020-12 drafts (person, device, capability, grant,
   group, role, revocation, envelope, message, pairing, capability.clipboard,
-  capability.notifications; `control` is implementation-only).
+  capability.notifications, capability.files; `control` is implementation-only).
   Spec chapters link to these by relative path.
 - `impl/`: Rust cargo workspace, edition 2024. Crates: `lp-core` (shared types, capability
   model), `lp-identity` (master key, ceremony, roles, trust store, optional publication),

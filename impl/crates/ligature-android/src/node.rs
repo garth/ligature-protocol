@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ligatured::ceremony::{self, Prompt};
 use ligatured::clipboard::Clipboard as _;
@@ -14,6 +14,10 @@ use lp_core::PublicKey;
 use lp_core::paths::Locations;
 use lp_transport::manager::Event as ConnectionEvent;
 use tokio::sync::{mpsc, oneshot};
+
+use ligatured::files::{Destination, FileSource};
+use ligatured::files_sync::{FileState, FilesConfig, TransferEnd, TransferProgress};
+use lp_core::files::{FILES_TYPE, FileDescriptor, FilesParams};
 
 use crate::clipboard::HostClipboard;
 use crate::pairing::Pairing;
@@ -55,6 +59,96 @@ pub struct Status {
     pub peers: Vec<String>,
     /// Peers whose live manifest offers the clipboard.
     pub clipboard_peers: Vec<String>,
+    /// Peers whose live manifest says they receive files.
+    pub file_peers: Vec<String>,
+}
+
+/// A file the host hands the node to send: content it opened, as a path the
+/// node can read (`/proc/self/fd/N` for a descriptor the host holds open
+/// until the transfer ends, or a copy in the cache).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct OutgoingFile {
+    /// The path to read.
+    pub path: String,
+    /// The name the receiver should use.
+    pub name: String,
+    /// The exact size.
+    pub size: u64,
+    /// The content type, or empty when unknown.
+    pub mime: String,
+}
+
+/// A transfer as the host shows it: one notification's worth.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct TransferInfo {
+    /// The transfer id.
+    pub transfer: String,
+    /// The other device's binding key.
+    pub peer: String,
+    /// The other device's display name.
+    pub peer_name: String,
+    /// Whether this device sends the bytes.
+    pub outgoing: bool,
+    /// Bytes to move over every file.
+    pub total_bytes: u64,
+    /// Bytes moved so far.
+    pub done_bytes: u64,
+    /// How many files the transfer has.
+    pub files_total: u32,
+    /// How many are received, failed or cancelled.
+    pub files_done: u32,
+    /// The first file's name, for a title.
+    pub first_name: String,
+    /// The names of the files moving right now.
+    pub active_names: Vec<String>,
+    /// How it ended, once it has: `complete`, `declined: <reason>`,
+    /// `cancelled` or `failed: <message>`.
+    pub outcome: Option<String>,
+    /// Whether every file was received.
+    pub all_received: bool,
+    /// Where received files landed, for opening them.
+    pub locations: Vec<String>,
+}
+
+impl TransferInfo {
+    fn from_progress(p: &TransferProgress, peer_name: String) -> Self {
+        let done = |f: &ligatured::files_sync::FileProgress| {
+            !matches!(f.state, FileState::Pending | FileState::Active)
+        };
+        Self {
+            transfer: p.transfer.clone(),
+            peer: p.peer.to_string(),
+            peer_name,
+            outgoing: p.outgoing,
+            total_bytes: p.total_bytes(),
+            done_bytes: p.done_bytes(),
+            files_total: u32::try_from(p.files.len()).unwrap_or(u32::MAX),
+            files_done: u32::try_from(p.files.iter().filter(|f| done(f)).count())
+                .unwrap_or(u32::MAX),
+            first_name: p.files.first().map(|f| f.name.clone()).unwrap_or_default(),
+            active_names: p
+                .files
+                .iter()
+                .filter(|f| f.state == FileState::Active)
+                .map(|f| f.name.clone())
+                .collect(),
+            outcome: p.finished.as_ref().map(|end| match end {
+                TransferEnd::Complete => "complete".to_owned(),
+                TransferEnd::Declined { reason } => format!("declined: {reason}"),
+                TransferEnd::Cancelled => "cancelled".to_owned(),
+                TransferEnd::Failed { message } => format!("failed: {message}"),
+            }),
+            all_received: p.all_received(),
+            locations: p
+                .files
+                .iter()
+                .filter_map(|f| match &f.state {
+                    FileState::Received { location } => location.clone(),
+                    _ => None,
+                })
+                .collect(),
+        }
+    }
 }
 
 /// One device of the person, as the trust store knows it.
@@ -90,6 +184,7 @@ pub struct Node {
     daemon: Arc<Daemon>,
     clipboard: Arc<HostClipboard>,
     notifications: Arc<crate::HostNotifications>,
+    files: Arc<ligatured::files_sync::FilesSync>,
     host: SharedHost,
 }
 
@@ -134,17 +229,68 @@ impl Node {
         );
         let clipboard = HostClipboard::new(host.clone());
         let notifications = crate::HostNotifications::new(host.clone());
+        let files = {
+            let _guard = runtime.enter();
+            // One file at a time onto the phone's storage; up to four at a
+            // time off it.
+            daemon.attach_files(
+                crate::HostFiles::new(host.clone()),
+                FilesConfig {
+                    max_streams: 1,
+                    max_chunk_bytes: FilesParams::DEFAULT_MAX_CHUNK_BYTES,
+                    send_streams: 4,
+                },
+            )
+        };
         let node = Arc::new(Self {
             runtime: Mutex::new(Some(runtime)),
             daemon,
             clipboard: clipboard.clone(),
             notifications: notifications.clone(),
+            files: files.clone(),
             host,
         });
         node.with_runtime(|rt| {
             let _guard = rt.enter();
             node.daemon.attach_clipboard(clipboard);
             node.daemon.attach_notifications(notifications);
+            // Every transfer, either direction, is shown by the host as it
+            // moves: at most a few updates a second, and always its end.
+            let host = node.host.clone();
+            let daemon = node.daemon.clone();
+            let mut started = files.subscribe();
+            rt.spawn(async move {
+                loop {
+                    let transfer = match started.recv().await {
+                        Ok(t) => t,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+                    };
+                    let host = host.clone();
+                    let daemon = daemon.clone();
+                    tokio::spawn(async move {
+                        let peer = transfer.progress().peer;
+                        let peer_name = daemon
+                            .device_display_name(&peer)
+                            .unwrap_or_else(|| peer.fingerprint());
+                        let mut rx = transfer.watch();
+                        let mut last = Instant::now() - Duration::from_secs(1);
+                        loop {
+                            let progress = rx.borrow_and_update().clone();
+                            let finished = progress.finished.is_some();
+                            if finished || last.elapsed() >= Duration::from_millis(250) {
+                                last = Instant::now();
+                                host.on_event(Event::TransferChanged {
+                                    info: TransferInfo::from_progress(&progress, peer_name.clone()),
+                                });
+                            }
+                            if finished || rx.changed().await.is_err() {
+                                return;
+                            }
+                        }
+                    });
+                }
+            });
             // Tee the connection events: the host learns of every change,
             // the daemon's own loop handles them.
             let (tx, rx) = mpsc::channel::<ConnectionEvent>(32);
@@ -170,9 +316,10 @@ impl Node {
                 let mut last = Vec::new();
                 loop {
                     tokio::time::sleep(Duration::from_secs(1)).await;
-                    let now = daemon
+                    let mut now = daemon
                         .registry()
                         .peers_offering(lp_core::capability::CLIPBOARD_TYPE);
+                    now.extend(daemon.registry().peers_offering(FILES_TYPE));
                     if now != last {
                         last = now;
                         host.on_event(Event::StatusChanged);
@@ -195,6 +342,20 @@ impl Node {
             .map(ToString::to_string)
             .collect();
         clipboard_peers.sort();
+        let mut file_peers: Vec<String> = self
+            .daemon
+            .registry()
+            .peers()
+            .into_iter()
+            .filter(|c| {
+                c.capabilities
+                    .iter()
+                    .find_map(FilesParams::from_descriptor)
+                    .is_some_and(|p| p.receive)
+            })
+            .map(|c| c.peer.to_string())
+            .collect();
+        file_peers.sort();
         Status {
             initialised: s.initialised,
             version: s.version,
@@ -207,7 +368,77 @@ impl Node {
             port: s.port,
             peers: s.peers.iter().map(ToString::to_string).collect(),
             clipboard_peers,
+            file_peers,
         }
+    }
+
+    /// Sends `files` to `peer`, one of this person's devices that receives
+    /// files. Returns the transfer id; progress arrives as
+    /// [`Event::TransferChanged`]. The host keeps what is behind each path
+    /// open until the transfer's last event.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LpError::BadRequest`] for a malformed key, an empty list or
+    /// a peer that does not receive files, [`LpError::Mismatch`] for a peer
+    /// that is not this person's, and [`LpError::Internal`] if it is not
+    /// connected.
+    pub fn send_files(&self, peer: String, files: Vec<OutgoingFile>) -> Result<String, LpError> {
+        let peer = PublicKey::parse(peer.trim())?;
+        let mut list = Vec::with_capacity(files.len());
+        for f in files {
+            let id = ligatured::files_sync::FilesSync::new_id()?;
+            let mut descriptor =
+                FileDescriptor::new(&id, &ligatured::files::safe_name(&f.name), f.size);
+            descriptor.mime = if f.mime.trim().is_empty() {
+                ligatured::files::mime_for(&f.name).to_owned()
+            } else {
+                f.mime
+            };
+            list.push((descriptor, FileSource::Path(PathBuf::from(f.path))));
+        }
+        let transfer = self.with_runtime(|rt| {
+            let _guard = rt.enter();
+            self.files.push(&peer, list)
+        })?;
+        Ok(transfer.id())
+    }
+
+    /// Fetches `ids`, which `peer` offered earlier, into the download folder.
+    /// Returns the transfer id.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::send_files`].
+    pub fn get_files(&self, peer: String, ids: Vec<String>) -> Result<String, LpError> {
+        let peer = PublicKey::parse(peer.trim())?;
+        let transfer = self.with_runtime(|rt| {
+            let _guard = rt.enter();
+            self.files.fetch(&peer, ids, Destination::Downloads)
+        })?;
+        Ok(transfer.id())
+    }
+
+    /// Cancels a transfer in flight, either direction. Returns whether there
+    /// was one.
+    pub fn cancel_transfer(&self, transfer: String) -> bool {
+        self.files.cancel(&transfer)
+    }
+
+    /// The transfers in flight, for a host that restarts its notifications.
+    #[must_use]
+    pub fn transfers(&self) -> Vec<TransferInfo> {
+        self.files
+            .transfers()
+            .iter()
+            .map(|p| {
+                let name = self
+                    .daemon
+                    .device_display_name(&p.peer)
+                    .unwrap_or_else(|| p.peer.fingerprint());
+                TransferInfo::from_progress(p, name)
+            })
+            .collect()
     }
 
     /// Creates the person on this first device (`lpctl init`). Returns the

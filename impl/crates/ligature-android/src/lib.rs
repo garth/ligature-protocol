@@ -16,13 +16,15 @@
 #![allow(clippy::needless_pass_by_value)]
 
 mod clipboard;
+mod files;
 mod logging;
 mod node;
 mod notifications;
 mod pairing;
 
 pub use clipboard::HostClipboard;
-pub use node::{Config, Device, Node, Status};
+pub use files::HostFiles;
+pub use node::{Config, Device, Node, OutgoingFile, Status, TransferInfo};
 pub use notifications::HostNotifications;
 pub use pairing::Pairing;
 
@@ -53,6 +55,32 @@ pub enum Event {
     },
     /// A peer's clipboard text was applied to the host's clipboard.
     ClipboardReceived,
+    /// A file transfer started, moved or ended: show or update its
+    /// progress notification (milestone 4).
+    TransferChanged {
+        /// The transfer so far.
+        info: TransferInfo,
+    },
+}
+
+/// Where the host put a download the node is about to write.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct DownloadTarget {
+    /// The host's handle, given back to finish or abort it.
+    pub id: u64,
+    /// A path the node opens for writing: `/proc/self/fd/N` for a descriptor
+    /// the host holds open until the download is finished or aborted.
+    pub path: String,
+}
+
+/// A published download, as the host names it.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct PublishedDownload {
+    /// The name the platform gave it, which may differ from the one asked
+    /// for when it numbered a clash.
+    pub name: String,
+    /// Where it is: a content URI the host can open.
+    pub location: String,
 }
 
 /// A log line's level.
@@ -128,6 +156,15 @@ pub trait Host: Send + Sync {
     /// Cancels this device's own notification `id`: another device dismissed
     /// its copy. Returns whether the listener could.
     fn dismiss_own_notification(&self, id: String) -> bool;
+    /// Starts a download of `size` bytes named `name` with content type
+    /// `mime` in the platform's download folder, pending until finished.
+    /// `None` if the platform refuses.
+    fn create_download(&self, name: String, mime: String, size: u64) -> Option<DownloadTarget>;
+    /// The node wrote and verified the download: publish it. `None` if the
+    /// platform refuses.
+    fn finish_download(&self, id: u64) -> Option<PublishedDownload>;
+    /// The download will not complete: remove every trace of it.
+    fn abort_download(&self, id: u64);
     /// Something happened that the user interface may want to show.
     fn on_event(&self, event: Event);
     /// A log line from the node, for logcat.

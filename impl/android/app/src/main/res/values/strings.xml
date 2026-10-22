@@ -10,4 +10,24 @@
     <string name="sent_to_none">No device is connected</string>
     <string name="clipboard_empty">The clipboard holds no text</string>
     <string name="notifications_channel_prefix">Notifications from</string>
+    <string name="transfers_channel">File transfers</string>
+    <string name="no_file_target">None of your connected devices receives files</string>
+    <string name="no_file_opened">Nothing shared could be opened</string>
+    <plurals name="send_files_title">
+        <item quantity="one">Send %1$d file to</item>
+        <item quantity="other">Send %1$d files to</item>
+    </plurals>
+    <plurals name="sending_files">
+        <item quantity="one">Sending %1$d file</item>
+        <item quantity="other">Sending %1$d files</item>
+    </plurals>
+    <string name="transfer_to">to %1$s</string>
+    <string name="transfer_from">from %1$s</string>
+    <string name="transfer_files">%1$d files</string>
+    <string name="transfer_progress">%1$s of %2$s</string>
+    <string name="transfer_cancel">Cancel</string>
+    <string name="transfer_received">Received %1$s</string>
+    <string name="transfer_sent">Sent %1$s</string>
+    <string name="transfer_cancelled">Cancelled %1$s</string>
+    <string name="transfer_failed">Could not transfer %1$s</string>
 </resources>

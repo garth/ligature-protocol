@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import org.ligatureprotocol.core.Config
 import org.ligatureprotocol.core.Device
+import org.ligatureprotocol.core.DownloadTarget
 import org.ligatureprotocol.core.Event
 import org.ligatureprotocol.core.Host
 import org.ligatureprotocol.core.LocalNotification
@@ -26,6 +27,7 @@ import org.ligatureprotocol.core.LpException
 import org.ligatureprotocol.core.Node
 import org.ligatureprotocol.core.NotificationCopy
 import org.ligatureprotocol.core.Pairing
+import org.ligatureprotocol.core.PublishedDownload
 import org.ligatureprotocol.core.Status
 import java.io.File
 
@@ -177,6 +179,41 @@ object NodeHolder : Host {
         return clipboardChanged(text)
     }
 
+    // Files (milestone 4).
+
+    /** The connected devices that receive files: key and display name. */
+    fun fileTargets(): List<Pair<String, String>> {
+        val n = node ?: return emptyList()
+        val status = runCatching { n.status() }.getOrNull() ?: return emptyList()
+        val devices = runCatching { n.devices() }.getOrDefault(emptyList())
+        return status.filePeers.map { key ->
+            key to (devices.firstOrNull { it.key == key }?.displayName ?: key.take(12) + "…")
+        }
+    }
+
+    /**
+     * Sends the content behind [uris] to [peer]. Opens each one and keeps it
+     * open until the transfer's last event. Returns a message for the user.
+     */
+    fun sendFiles(context: Context, peer: String, uris: List<android.net.Uri>): String {
+        val n = node ?: return context.getString(R.string.sent_to_none)
+        val (files, handles) = Transfers.open(context, uris)
+            ?: return context.getString(R.string.no_file_opened)
+        return try {
+            val transfer = n.sendFiles(peer, files)
+            Transfers.keepOpen(transfer, handles)
+            context.resources.getQuantityString(R.plurals.sending_files, files.size, files.size)
+        } catch (e: LpException) {
+            handles.forEach { runCatching { it.close() } }
+            Log.w(TAG, "send failed", e)
+            e.message ?: e.toString()
+        }
+    }
+
+    fun cancelTransfer(transfer: String) {
+        node?.cancelTransfer(transfer)
+    }
+
     // Notifications (milestone 3).
 
     /** The listener connected or disconnected: the capability's `emits` follows. */
@@ -305,6 +342,13 @@ object NodeHolder : Host {
 
     override fun dismissOwnNotification(id: String): Boolean = NotificationListener.cancelOwn(id)
 
+    override fun createDownload(name: String, mime: String, size: ULong): DownloadTarget? =
+        Transfers.createDownload(appContext, name, mime, size)
+
+    override fun finishDownload(id: ULong): PublishedDownload? = Transfers.finishDownload(appContext, id)
+
+    override fun abortDownload(id: ULong) = Transfers.abortDownload(appContext, id)
+
     override fun onEvent(event: Event) {
         when (event) {
             is Event.StatusChanged -> refresh()
@@ -326,6 +370,7 @@ object NodeHolder : Host {
                 refresh()
             }
             is Event.ClipboardReceived -> refresh()
+            is Event.TransferChanged -> Transfers.changed(appContext, event.info)
         }
     }
 

@@ -83,3 +83,45 @@ received.
 variant; a chunk's bytes are a CBOR byte string through `wire::Bytes`. `lp-crypto` gains a
 streaming SHA-256 (`Sha256Stream`) and `lp-transport` a stream priority call, a
 receive-side stop, and the peer's stop code on a write error.
+
+## LP-103: Android
+
+**The library lands files through the host.** `ligature_android::HostFiles` is the
+`FileStore` behind the node: `Host::create_download` inserts a pending row in MediaStore's
+Downloads collection, opens a descriptor on it for writing and hands the node
+`/proc/self/fd/N` as the path to write to; the node writes and hashes through that path as
+on the desktops, then `finish_download` publishes the row (clearing `IS_PENDING`) and
+returns the name the platform gave it and its content URI, or `abort_download` deletes it.
+MediaStore numbers a clashing name itself, so the name rule's numbering is left to it on
+this platform, and the modification time is not applied, since the platform owns that
+column. Chunks therefore never cross the UniFFI boundary: only the row's metadata does.
+
+**Sending reads the share's descriptor the same way.** `ShareActivity` takes `ACTION_SEND`
+and `ACTION_SEND_MULTIPLE` for any type, opens each content URI for reading and hands the
+node `/proc/self/fd/N` with the display name, the descriptor's size and the resolver's
+type (`OutgoingFile`); content whose size the descriptor cannot report (a pipe) is copied
+once to the app's cache to learn it. The descriptors, or the copies, are kept until the
+transfer's last event and closed then. Text shared to the app still goes to every
+device's clipboard as in milestone 2.
+
+**One device per share.** Files go to one device the user picks from the connected
+same-person devices that advertise `receive` (`Status::file_peers`, named from the device
+list), in a plain dialog from the share sheet; there is no fan-out to several devices,
+since a transfer is one pairwise session.
+
+**Progress is a notification per transfer.** The node announces every transfer, either
+direction, through `FilesSync::subscribe` and forwards its progress to the host as
+`Event::TransferChanged` at most four times a second and always at its end
+(`TransferInfo`: direction, peer name, bytes, files done, the active names, the outcome,
+where received files landed). The app shows one notification per transfer on a
+`transfers` channel with a progress bar and a **Cancel** action, which a broadcast
+receiver turns into `Node::cancel_transfer`; at the end it becomes a received, sent,
+cancelled or failed notification, the received one opening the first file through its
+content URI.
+
+**The phone takes one file at a time and sends up to four**: `maxStreams` 1 advertised,
+since several files landing at once interleave on flash and multiply pending rows, and a
+send budget of 4 towards a desktop that allows it.
+
+**`Status` gains `file_peers`** beside `clipboard_peers`, and the one-second status poll
+that tells the host about capability changes watches the files descriptor too.

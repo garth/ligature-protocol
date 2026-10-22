@@ -24,6 +24,7 @@ bindgen = ["uniffi/cli", "uniffi/cargo-metadata"]
 [dependencies]
 ligatured.workspace = true
 lp-core.workspace = true
+lp-crypto.workspace = true
 lp-identity.workspace = true
 lp-transport.workspace = true
 tokio.workspace = true

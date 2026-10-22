@@ -112,7 +112,8 @@ private fun StatusCard(status: Status, backgroundRead: Boolean, notificationAcce
             Spacer(Modifier.height(4.dp))
             Text("${status.deviceName}  ·  ${status.fingerprint}…  ·  port ${status.port}")
             Text(
-                "${status.peers.size} connected, ${status.clipboardPeers.size} with a clipboard",
+                "${status.peers.size} connected, ${status.clipboardPeers.size} with a clipboard, " +
+                    "${status.filePeers.size} receiving files",
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
@@ -123,6 +124,10 @@ private fun StatusCard(status: Status, backgroundRead: Boolean, notificationAcce
             Text(
                 if (notificationAccess) "Notifications: forwarding and displaying"
                 else "Notifications: displaying only (no notification access)",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                "Files: share to Ligature to send; received files land in Downloads",
                 style = MaterialTheme.typography.bodySmall,
             )
         }

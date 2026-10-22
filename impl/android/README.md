@@ -54,6 +54,17 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 If the phone is your first device, enter your name and tap **Create my keys on this
 phone** instead; it then holds your master key and can introduce the others.
 
+## Files
+
+Share any file, or several, to **Send to my devices** and pick one of your connected devices
+that receives files; it lands in that device's download folder. A notification shows the
+transfer with a progress bar and a **Cancel** action, and becomes a **Sent** or **Received**
+notification at the end; tapping a received one opens the file. Files your other devices
+send to the phone land in **Downloads**, where the Files app shows them, pending until they
+are complete and verified. The phone takes one file at a time and sends up to four at once.
+From a desktop, `lpctl files send <phone> <path>...` pushes to the phone and `lpctl files
+get <phone> <id>` fetches what it offered (milestone 4).
+
 ## Clipboard
 
 Receiving needs nothing: text copied on your other devices lands on the phone's clipboard

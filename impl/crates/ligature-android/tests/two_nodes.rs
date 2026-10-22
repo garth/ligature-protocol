@@ -6,7 +6,10 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use ligature_android::{Config, Event, Host, LocalNotification, LogLevel, Node, NotificationCopy};
+use ligature_android::{
+    Config, DownloadTarget, Event, Host, LocalNotification, LogLevel, Node, NotificationCopy,
+    OutgoingFile, PublishedDownload, TransferInfo,
+};
 
 #[derive(Default)]
 struct FakeHost {
@@ -15,9 +18,33 @@ struct FakeHost {
     shown: Mutex<Vec<NotificationCopy>>,
     dismissed_copies: Mutex<Vec<(String, String)>>,
     dismissed_own: Mutex<Vec<String>>,
+    /// Where this host's downloads land, when it receives files.
+    downloads: Option<tempfile::TempDir>,
+    /// Pending downloads by handle: the final path.
+    pending: Mutex<Vec<(u64, std::path::PathBuf)>>,
+    aborted: Mutex<Vec<u64>>,
 }
 
 impl FakeHost {
+    fn with_downloads() -> Self {
+        Self {
+            downloads: Some(tempfile::tempdir().unwrap()),
+            ..Self::default()
+        }
+    }
+
+    fn transfers(&self) -> Vec<TransferInfo> {
+        self.events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|e| match e {
+                Event::TransferChanged { info } => Some(info.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
     fn clipboard(&self) -> Option<String> {
         self.clipboard.lock().unwrap().clone()
     }
@@ -69,6 +96,44 @@ impl Host for FakeHost {
         true
     }
 
+    fn create_download(&self, name: String, _mime: String, _size: u64) -> Option<DownloadTarget> {
+        // A real path rather than a descriptor: the node opens it the same way.
+        let dir = self.downloads.as_ref()?;
+        let path = dir.path().join(format!("{name}.pending"));
+        std::fs::write(&path, b"").ok()?;
+        let mut pending = self.pending.lock().unwrap();
+        let id = pending.len() as u64 + 1;
+        pending.push((id, dir.path().join(&name)));
+        Some(DownloadTarget {
+            id,
+            path: path.to_string_lossy().into_owned(),
+        })
+    }
+
+    fn finish_download(&self, id: u64) -> Option<PublishedDownload> {
+        let final_path = self
+            .pending
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(i, _)| *i == id)?
+            .1
+            .clone();
+        let pending = final_path.with_file_name(format!(
+            "{}.pending",
+            final_path.file_name()?.to_string_lossy()
+        ));
+        std::fs::rename(&pending, &final_path).ok()?;
+        Some(PublishedDownload {
+            name: final_path.file_name()?.to_string_lossy().into_owned(),
+            location: format!("content://downloads/{id}"),
+        })
+    }
+
+    fn abort_download(&self, id: u64) {
+        self.aborted.lock().unwrap().push(id);
+    }
+
     fn on_event(&self, event: Event) {
         self.events.lock().unwrap().push(event);
     }
@@ -100,8 +165,8 @@ fn config(dir: &tempfile::TempDir, name: &str) -> Config {
 fn a_phone_joins_and_the_clipboard_flows_both_ways() {
     let laptop_dir = tempfile::tempdir().unwrap();
     let phone_dir = tempfile::tempdir().unwrap();
-    let laptop_host = Arc::new(FakeHost::default());
-    let phone_host = Arc::new(FakeHost::default());
+    let laptop_host = Arc::new(FakeHost::with_downloads());
+    let phone_host = Arc::new(FakeHost::with_downloads());
 
     let laptop = Node::start(config(&laptop_dir, "laptop"), laptop_host.clone()).unwrap();
     assert!(!laptop.status().initialised);
@@ -269,6 +334,68 @@ fn a_phone_joins_and_the_clipboard_flows_both_ways() {
         phone_host.dismissed_copies.lock().unwrap().as_slice()
             == [(laptop_key.clone(), "77".to_owned())]
     });
+
+    // Files: the phone's host hands the node two opened files; they land
+    // through the laptop's host, and both hosts see the transfer move and end.
+    until("laptop receives files", || {
+        phone.status().file_peers == vec![laptop_key.clone()]
+    });
+    let src = tempfile::tempdir().unwrap();
+    let big: Vec<u8> = (0..700_000u32).map(|i| (i % 251) as u8).collect();
+    std::fs::write(src.path().join("big.bin"), &big).unwrap();
+    std::fs::write(src.path().join("note.txt"), b"hi").unwrap();
+    assert!(phone.send_files("junk".to_owned(), vec![]).is_err());
+    let transfer = phone
+        .send_files(
+            laptop_key.clone(),
+            vec![
+                OutgoingFile {
+                    path: src.path().join("big.bin").to_string_lossy().into_owned(),
+                    name: "big.bin".to_owned(),
+                    size: big.len() as u64,
+                    mime: String::new(),
+                },
+                OutgoingFile {
+                    path: src.path().join("note.txt").to_string_lossy().into_owned(),
+                    name: "note.txt".to_owned(),
+                    size: 2,
+                    mime: "text/plain".to_owned(),
+                },
+            ],
+        )
+        .unwrap();
+    until("transfer ended on both hosts", || {
+        let ended = |h: &FakeHost| {
+            h.transfers()
+                .iter()
+                .any(|t| t.transfer == transfer && t.outcome.is_some())
+        };
+        ended(&phone_host) && ended(&laptop_host)
+    });
+    let sent = phone_host
+        .transfers()
+        .into_iter()
+        .rfind(|t| t.transfer == transfer)
+        .unwrap();
+    assert!(sent.outgoing && sent.all_received, "{sent:?}");
+    assert_eq!(sent.outcome.as_deref(), Some("complete"));
+    assert_eq!(sent.peer_name, "laptop");
+    assert_eq!(sent.files_total, 2);
+    assert_eq!(sent.done_bytes, big.len() as u64 + 2);
+    let received = laptop_host
+        .transfers()
+        .into_iter()
+        .rfind(|t| t.transfer == transfer)
+        .unwrap();
+    assert!(!received.outgoing && received.all_received, "{received:?}");
+    assert_eq!(received.peer_name, "phone");
+    assert_eq!(received.locations.len(), 2);
+    let landed = laptop_host.downloads.as_ref().unwrap().path();
+    assert_eq!(std::fs::read(landed.join("big.bin")).unwrap(), big);
+    assert_eq!(std::fs::read(landed.join("note.txt")).unwrap(), b"hi");
+    assert!(laptop_host.aborted.lock().unwrap().is_empty());
+    assert!(phone.transfers().is_empty() && laptop.transfers().is_empty());
+    assert!(!phone.cancel_transfer(transfer.clone()));
 
     // Revoking the phone from the laptop drops it.
     laptop.revoke(phone_key.clone()).unwrap();

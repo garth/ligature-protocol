@@ -18,5 +18,6 @@ class LigatureApp : Application() {
                 setShowBadge(false)
             },
         )
+        Transfers.createChannel(this)
     }
 }

@@ -978,6 +978,7 @@ version = "0.0.1"
 dependencies = [
  "ligatured",
  "lp-core",
+ "lp-crypto",
  "lp-identity",
  "lp-transport",
  "tempfile",

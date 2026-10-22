@@ -48,7 +48,8 @@
             android:taskAffinity=""
             android:theme="@style/Theme.Ligature.Transparent" />
 
-        <!-- "Share to Ligature": the text arrives in the intent, no clipboard read needed. -->
+        <!-- "Send to my devices": text arrives in the intent and goes to every
+             clipboard; files go to one device the user picks (milestone 4). -->
         <activity
             android:name=".ShareActivity"
             android:excludeFromRecents="true"
@@ -62,7 +63,18 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
         </activity>
+
+        <!-- The cancel action on a transfer's progress notification. -->
+        <receiver
+            android:name=".Transfers$TransferReceiver"
+            android:exported="false" />
 
         <service
             android:name=".NodeService"

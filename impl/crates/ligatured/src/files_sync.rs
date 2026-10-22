@@ -395,6 +395,9 @@ pub struct FilesSync {
     receiving: AtomicU32,
     peak_receiving: AtomicU32,
     offered: tokio::sync::Mutex<Option<FilesParams>>,
+    /// Every transfer as it starts, either direction, for hosts that show
+    /// progress.
+    started: tokio::sync::broadcast::Sender<Arc<Transfer>>,
 }
 
 impl std::fmt::Debug for FilesSync {
@@ -419,6 +422,7 @@ impl FilesSync {
             receiving: AtomicU32::new(0),
             peak_receiving: AtomicU32::new(0),
             offered: tokio::sync::Mutex::new(None),
+            started: tokio::sync::broadcast::channel(32).0,
         });
         daemon.manager().on_stream(FILES_TYPE, this.handler());
         let advertise = this.clone();
@@ -540,6 +544,18 @@ impl FilesSync {
         out
     }
 
+    /// A receiver of every transfer as it starts, either direction.
+    #[must_use]
+    pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<Arc<Transfer>> {
+        self.started.subscribe()
+    }
+
+    /// Records a transfer that just started and tells subscribers.
+    fn track(&self, transfer: &Arc<Transfer>) {
+        lock(&self.transfers).insert(transfer.id(), transfer.clone());
+        let _ = self.started.send(transfer.clone());
+    }
+
     /// A transfer in flight, by id.
     #[must_use]
     pub fn transfer(&self, id: &str) -> Option<Arc<Transfer>> {
@@ -598,7 +614,7 @@ impl FilesSync {
         let id = Self::new_id()?;
         let descriptors: Vec<FileDescriptor> = files.iter().map(|(f, _)| f.clone()).collect();
         let transfer = Transfer::new(id.clone(), *peer, true, &descriptors);
-        lock(&self.transfers).insert(id.clone(), transfer.clone());
+        self.track(&transfer);
         {
             let mut offers = lock(&self.offers);
             for (file, source) in &files {
@@ -643,7 +659,7 @@ impl FilesSync {
         let placeholders: Vec<FileDescriptor> =
             ids.iter().map(|i| FileDescriptor::new(i, i, 0)).collect();
         let transfer = Transfer::new(id.clone(), *peer, false, &placeholders);
-        lock(&self.transfers).insert(id.clone(), transfer.clone());
+        self.track(&transfer);
         let sync = self.clone();
         let t = transfer.clone();
         tokio::spawn(async move {
@@ -1144,7 +1160,7 @@ impl FilesSync {
             return;
         }
         let transfer = Transfer::new(offer.transfer.clone(), peer, false, &offer.files);
-        lock(&self.transfers).insert(transfer.id(), transfer.clone());
+        self.track(&transfer);
         let incoming =
             self.register_incoming(&transfer, &peer, &offer.files, Destination::Downloads);
         let accept = FilesMessage::Accept(FilesAccept {
@@ -1204,7 +1220,7 @@ impl FilesSync {
         }
         let descriptors: Vec<FileDescriptor> = found.iter().map(|(f, _)| f.clone()).collect();
         let transfer = Transfer::new(request.transfer, peer, true, &descriptors);
-        lock(&self.transfers).insert(transfer.id(), transfer.clone());
+        self.track(&transfer);
         let offer = FilesMessage::Offer(FilesOffer {
             transfer: transfer.id(),
             files: descriptors,

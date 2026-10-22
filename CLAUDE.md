@@ -127,8 +127,9 @@ The reference implementation is Rust and is also the production implementation
   bus, macOS display-only) has `03-implementation-decisions.md` for its non-protocol
   choices (the `Notifications` trait and `NotificationSync`, `zbus` 6 over the session bus
   with a monitor connection, `lpctl notify`). `04-files.md` is the current one (file
-  transfer native to the session: a `files` stream per transfer with an offer, an accept,
-  chunks within the 1 MiB frame and a hash at the end, cancel by stream reset, a
+  transfer native to the session: a control stream per transfer with an offer and an
+  accept, a data stream per file with chunks within the 1 MiB frame and a hash at the end,
+  the receiver's `maxStreams` bounding how many run at once, cancel by stream reset, a
   receiver-started fetch by an id the sender offered, a standalone file descriptor for
   milestone 5's clipboard to reference); its tasks are raised when the plan is accepted.
 - `schemas/*.schema.json`: JSON Schema 2020-12 drafts (person, device, capability, grant,

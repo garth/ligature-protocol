@@ -121,12 +121,16 @@ The reference implementation is Rust and is also the production implementation
   records the Android choices (the daemon as a library behind UniFFI; the clipboard read by
   the app when Android allows and automatic only with `READ_CLIPBOARD_IN_BACKGROUND`, which
   only a platform-signed build holds and an official LineageOS build cannot be; a
-  `connectedDevice` foreground service with the multicast lock). `03-notifications.md` is
-  the current one (notifications flow between every device that emits or displays them:
-  one family with two directions, dismissal fanned out directly, Linux emitting by monitoring the
-  session bus, macOS display-only) and `03-implementation-decisions.md` records its
-  non-protocol choices (the `Notifications` trait and `NotificationSync`, `zbus` 6 over the
-  session bus with a monitor connection, `lpctl notify`).
+  `connectedDevice` foreground service with the multicast lock). `03-notifications.md`
+  (notifications flow between every device that emits or displays them: one family with
+  two directions, dismissal fanned out directly, Linux emitting by monitoring the session
+  bus, macOS display-only) has `03-implementation-decisions.md` for its non-protocol
+  choices (the `Notifications` trait and `NotificationSync`, `zbus` 6 over the session bus
+  with a monitor connection, `lpctl notify`). `04-files.md` is the current one (file
+  transfer native to the session: a `files` stream per transfer with an offer, an accept,
+  chunks within the 1 MiB frame and a hash at the end, cancel by stream reset, a
+  receiver-started fetch by an id the sender offered, a standalone file descriptor for
+  milestone 5's clipboard to reference); its tasks are raised when the plan is accepted.
 - `schemas/*.schema.json`: JSON Schema 2020-12 drafts (person, device, capability, grant,
   group, role, revocation, envelope, message, pairing, capability.clipboard,
   capability.notifications; `control` is implementation-only).

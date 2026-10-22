@@ -173,7 +173,7 @@ follow them.
    everywhere at once ([plan](docs/milestones/03-notifications.md)).
 4. **File transfer among a person's devices.** Planned: a file chosen on any device lands
    on another over the LP session itself, with progress and cancel, and a receiver can
-   fetch content a sender has offered. The plan is written when the milestone starts.
+   fetch content a sender has offered ([plan](docs/milestones/04-files.md)).
 5. **A clipboard that carries rich text, images and files.** Planned, built on milestone
    4: a `set` carries several representations of one selection, small content is pushed on
    copy as text is today, and large content is announced and fetched only when pasted.
@@ -189,6 +189,7 @@ Not planned: Apple phones and tablets, for the reasons in the
 - [Milestone 2 plan: an Android phone joins them](docs/milestones/02-android-clipboard.md)
   and [the Android app](impl/android/README.md)
 - [Milestone 3 plan: notifications between all the devices](docs/milestones/03-notifications.md)
+- [Milestone 4 plan: file transfer among a person's devices](docs/milestones/04-files.md)
 - [Architecture decisions](docs/adr/)
 - [Glossary](docs/glossary.md)
 - [Prior art](docs/prior-art.md)

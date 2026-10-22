@@ -25,10 +25,10 @@ Browsing a remote file system (a fetch by an announced id is not browsing); sync
 kind; resumption of an interrupted transfer; directories (a folder is sent as its files, or
 not at all, in a later milestone); transfers to other people, which is `share` (chapter 05
 section 3a); a desktop drag-and-drop or file-manager picker (the desktops send with `lpctl`
-in this milestone); previews or thumbnails; interoperation with LocalSend, which stays a
-possible bridge under [ADR 0010](../adr/0010-interop-bridges.md) and is recorded as
-rejected for the transfer itself on LP-87; and any change to the protocol's framing,
-sessions or trust.
+in this milestone); previews or thumbnails; interoperation with LocalSend or any other
+transfer protocol, which is not on the table yet and would be a bridge under
+[ADR 0010](../adr/0010-interop-bridges.md) if it ever is; and any change to the protocol's
+framing, sessions or trust.
 
 ## 3. Decisions
 
@@ -49,10 +49,8 @@ chunking, which is what section 3d of chapter 05 will do. What this milestone pi
    (`application/octet-stream` when unknown), an optional `sha256` (base64url, unpadded,
    as the notifications icon hash) and an optional `modified` timestamp. Other capability
    schemas reference it by `capability.files.schema.json#/$defs/file`; the clipboard
-   announcement of milestone 5 is the first. The vocabulary maps one-to-one onto
-   LocalSend's file entry (`id`, `fileName`, `size`, `fileType`, `sha256`,
-   `metadata.modified`) so a bridge later translates without loss. What is behind a
-   descriptor is the sender's business: a path, bytes in memory, a clipboard selection.
+   announcement of milestone 5 is the first. What is behind a descriptor is the sender's
+   business: a path, bytes in memory, a clipboard selection.
 3. **One stream per transfer, files one after another.** Whoever starts a transfer opens a
    stream with the capability type as its purpose (ADR 0036): the sender for a push, the
    receiver for a fetch. A fetch is a push the receiver asked for, so the two share one
@@ -100,11 +98,11 @@ chunking, which is what section 3d of chapter 05 will do. What this milestone pi
    get` without `--to`; the path `--to` names; or, for a capability inside the daemon
    (milestone 5), a temporary file or memory. Sink and source are daemon interfaces
    (`FileSink`, `FileSource`), not wire concepts: the sender never learns or chooses a
-   destination. The download directory is `$XDG_DOWNLOAD_DIR` from `user-dirs.dirs`, else
-   `~/Downloads`, with `/Ligature` appended on Linux; `~/Downloads/Ligature` on macOS;
-   MediaStore's Downloads collection under `Download/Ligature` on Android, the entry
-   pending until the file is complete and visible in the Files app after. It is created on
-   first use.
+   destination. The download directory is the platform's own, where a browser would put a
+   download, with no folder of LP's: `$XDG_DOWNLOAD_DIR` from `user-dirs.dirs`, else
+   `~/Downloads`, on Linux; `~/Downloads` on macOS; MediaStore's Downloads collection on
+   Android, the entry pending until the file is complete and visible in the Files app
+   after. A missing directory is created.
 8. **Names and partial files.** The receiver keeps the base name of `name` only, drops
    control characters and a leading dot, trims to 255 bytes keeping the extension, and uses
    `file` if nothing is left. A clash gets a space and `(2)`, `(3)` and so on before the extension;
@@ -144,10 +142,7 @@ chunking, which is what section 3d of chapter 05 will do. What this milestone pi
     deliberately lists nothing. Section 3a's wording is brought in line; ADR 0022 is about
     `share` and stands.
 
-No decision above changes an accepted ADR, so the plan asks for none. The one decision the
-owner may want as an ADR rather than a ticket comment is the transport itself: that a
-transfer is native to the session, with LocalSend's HTTPS transfer API recorded as the
-rejected alternative (LP-87, 2026-10-21). If so, the schema task writes it.
+No decision above changes an accepted ADR, so the plan asks for none.
 
 ```mermaid
 sequenceDiagram
@@ -183,9 +178,9 @@ sequenceDiagram
 
 ## 4. Exit criteria
 
-- `lpctl files send` on the Linux machine lands a file on the Mac and on the phone, under
-  `Downloads/Ligature` on each, with the same name, size and SHA-256 and the modification
-  time kept; the same from the Mac to the other two.
+- `lpctl files send` on the Linux machine lands a file on the Mac and on the phone, in the
+  download folder of each, with the same name, size and SHA-256 and the modification time
+  kept; the same from the Mac to the other two.
 - A file shared from the phone's share sheet to a chosen desktop lands there; two files
   shared at once arrive as two files.
 - A file larger than the phone's free memory streams to disk with progress shown at both
@@ -219,9 +214,9 @@ The tasks after the plan are raised when the plan is accepted, one ticket each:
 
 - LP-100. This plan.
 - **Schema and chapter 05.** `schemas/capability.files.schema.json` with `file`, `params`
-  and the eight messages; chapter 05 section 3d, the `files` wording in section 3a and the
+  and the nine messages; chapter 05 section 3d, the `files` wording in section 3a and the
   directions line in section 2; chapter 04's open question on streams per file answered;
-  the privacy sentence in chapter 09; the ADR of section 3 if the owner wants it.
+  the privacy sentence in chapter 09.
 - **Daemon core, `lpctl` and the desktops.** `lp-core` message and descriptor types;
   `ligatured::files_sync` beside the other two synchronisers: the offer registry,
   `FileSource` and `FileSink`, the transfer state machine for both roles, the download
@@ -246,8 +241,8 @@ The tasks after the plan are raised when the plan is accepted, one ticket each:
   `OpenableColumns.SIZE` is unknown, and `size` is exact in the descriptor. The app reads
   such a file once into its cache to learn the size before offering it, and declines it if
   the cache cannot hold it.
-- **MediaStore on LineageOS.** Pending entries, the `Download/Ligature` relative path and
-  the rename on completion are exercised in the run before the design is taken as settled;
+- **MediaStore on LineageOS.** Pending entries in the Downloads collection and the rename
+  on completion are exercised in the run before the design is taken as settled;
   the fallback is the app's external files directory, which the Files app also shows.
 - **macOS Downloads.** A launchd agent writing under `~/Downloads` may be met by a
   Transparency, Consent and Control prompt on first write; the run records whether it is,
@@ -266,5 +261,5 @@ The tasks after the plan are raised when the plan is accepted, one ticket each:
 
 Candidates, in no order: the rich clipboard of milestone 5 (LP-95), which fetches over
 `files`; resumption with an offset in `accept`; folders; a desktop picker and a file-manager
-action; the LocalSend bridge under ADR 0010 as its own component; the milestone 1
+action; bridges to other transfer protocols under ADR 0010; the milestone 1
 carry-overs (offline master keys, D-Bus for `lpctl`, the `share` family, groups, relays).

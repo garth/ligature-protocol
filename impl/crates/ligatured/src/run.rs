@@ -102,6 +102,17 @@ pub async fn run(
         None => tracing::info!("no notification backend on this platform"),
     }
 
+    match crate::files::platform_download_dir() {
+        Some(dir) => {
+            tracing::info!(dir = %dir.display(), "received files land in the download folder");
+            daemon.attach_files(
+                crate::files::DirectoryStore::new(dir),
+                crate::files_sync::FilesConfig::default(),
+            );
+        }
+        None => tracing::warn!("no home directory: the files capability is not offered"),
+    }
+
     spawn_connection_events(daemon.clone(), events);
     spawn_discovery(daemon.clone());
 

@@ -44,7 +44,7 @@ if-addrs = "0.15"
 ligatured = { path = "crates/ligatured", version = "0.0.1" }
 jsonschema = { version = "0.59", default-features = false }
 time = { version = "0.3", features = ["std", "formatting", "parsing", "serde-well-known", "macros"] }
-tokio = { version = "1.53", features = ["rt-multi-thread", "net", "sync", "time", "macros", "fs", "io-util"] }
+tokio = { version = "1.53", features = ["rt-multi-thread", "net", "sync", "time", "macros", "fs", "io-util", "signal"] }
 rusqlite = { version = "0.40", features = ["bundled"] }
 
 # Networking and discovery (LP-28). ring is the rustls provider on both platforms;

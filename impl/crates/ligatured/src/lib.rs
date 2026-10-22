@@ -11,6 +11,8 @@ pub mod clipboard_macos;
 pub mod clipboard_sync;
 pub mod control;
 pub mod daemon;
+pub mod files;
+pub mod files_sync;
 pub mod gossip;
 pub mod grants;
 pub mod notification_sync;

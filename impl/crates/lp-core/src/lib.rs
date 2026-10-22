@@ -12,6 +12,7 @@ pub mod device;
 pub mod envelope;
 pub mod error;
 pub mod facts;
+pub mod files;
 pub mod frame;
 pub mod identity;
 pub mod key;

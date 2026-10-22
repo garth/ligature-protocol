@@ -36,6 +36,14 @@ fn control_messages_validate() {
         types::PAIR_ABORT,
         types::CLIPBOARD_GET,
         types::CLIPBOARD_SET,
+        types::NOTIFY,
+        types::FILES_SEND,
+        types::FILES_GET,
+        types::FILES_OFFER,
+        types::FILES_OFFERS,
+        types::FILES_WITHDRAW,
+        types::FILES_CANCEL,
+        types::FILES_TRANSFERS,
     ] {
         let mut r = Request::new(t, 7);
         r.name = Some("Alice".to_owned());
@@ -52,6 +60,7 @@ fn control_messages_validate() {
             id: 1,
             offer: None,
             code: Some("012345".to_owned()),
+            progress: None,
         },
     );
     check(
@@ -61,6 +70,7 @@ fn control_messages_validate() {
             id: 1,
             offer: Some("ligature:pair/1?b=z6Mk".to_owned()),
             code: None,
+            progress: None,
         },
     );
     assert!(

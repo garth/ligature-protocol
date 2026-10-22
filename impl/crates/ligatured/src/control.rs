@@ -56,6 +56,23 @@ pub mod types {
     pub const PAIR_OFFER: &str = "org.ligatureprotocol.control.pair.offer";
     /// Event: the six-digit code.
     pub const PAIR_CODE: &str = "org.ligatureprotocol.control.pair.code";
+    /// Push files to one of this person's devices.
+    pub const FILES_SEND: &str = "org.ligatureprotocol.control.files.send";
+    /// Fetch files a device offered, by id.
+    pub const FILES_GET: &str = "org.ligatureprotocol.control.files.get";
+    /// Offer a file by id until withdrawn.
+    pub const FILES_OFFER: &str = "org.ligatureprotocol.control.files.offer";
+    /// The standing offers.
+    pub const FILES_OFFERS: &str = "org.ligatureprotocol.control.files.offers";
+    /// Withdraw an offer.
+    pub const FILES_WITHDRAW: &str = "org.ligatureprotocol.control.files.withdraw";
+    /// Cancel a transfer in flight.
+    pub const FILES_CANCEL: &str = "org.ligatureprotocol.control.files.cancel";
+    /// The transfers in flight.
+    pub const FILES_TRANSFERS: &str = "org.ligatureprotocol.control.files.transfers";
+    /// Event: a transfer's progress, before the response to `files.send` or
+    /// `files.get`.
+    pub const FILES_PROGRESS: &str = "org.ligatureprotocol.control.files.progress";
 }
 
 /// A request from `lpctl`.
@@ -94,6 +111,19 @@ pub struct Request {
     /// `notify`: the body.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
+    /// `files.send`, `files.offer`: absolute paths of the files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paths: Option<Vec<String>>,
+    /// `files.get`: the ids to fetch; `files.withdraw`: the one id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ids: Option<Vec<String>>,
+    /// `files.get`: an absolute directory or file path to land in, instead
+    /// of the download folder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to: Option<String>,
+    /// `files.cancel`: the transfer id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transfer: Option<String>,
 }
 
 impl Request {
@@ -203,7 +233,7 @@ impl Response {
 /// An event the daemon sends before a request's response.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Event {
-    /// [`types::PAIR_OFFER`] or [`types::PAIR_CODE`].
+    /// [`types::PAIR_OFFER`], [`types::PAIR_CODE`] or [`types::FILES_PROGRESS`].
     #[serde(rename = "type")]
     pub event_type: TypeName,
     /// The request's id.
@@ -214,6 +244,9 @@ pub struct Event {
     /// `pair.code`: the six digits.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code: Option<String>,
+    /// `files.progress`: the transfer so far.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress: Option<crate::files_sync::TransferProgress>,
 }
 
 /// Writes one frame to an async writer.
@@ -719,6 +752,9 @@ pub async fn handle(
         t if t.starts_with(types::PREFIX) && t.contains(".pair.") => {
             return crate::ceremony::handle_control(daemon, state, request, out).await;
         }
+        t if t.starts_with(types::PREFIX) && t.contains(".files.") => {
+            return handle_files(daemon, request, out);
+        }
         other => Ok(Response::error(
             id,
             ErrorBody::new("unknown-type", format!("unknown request type {other}")),
@@ -728,6 +764,159 @@ pub async fn handle(
         Ok(r) => r,
         Err(e) => Response::error(id, ErrorBody::from_error(&e)),
     })
+}
+
+/// Handles a `files.*` request. A send or a get is answered by a task that
+/// first streams progress events; the rest answer at once.
+fn handle_files(
+    daemon: &Arc<Daemon>,
+    request: Request,
+    out: tokio::sync::mpsc::Sender<Outgoing>,
+) -> Option<Response> {
+    use crate::files::Destination;
+    use crate::files_sync::FilesSync;
+    let id = request.id;
+    let Some(files) = daemon.files_sync() else {
+        return Some(Response::error(
+            id,
+            ErrorBody::new("not-found", "no files capability on this daemon"),
+        ));
+    };
+    let bad = |message: &str| Some(Response::error(id, ErrorBody::new("bad-request", message)));
+    let result: Result<Response, Error> = match request.request_type.as_str() {
+        types::FILES_SEND => {
+            let (Some(peer), Some(paths)) = (request.key, request.paths.as_deref()) else {
+                return bad("files.send needs a key and paths");
+            };
+            let mut list = Vec::new();
+            for path in paths {
+                match FilesSync::new_id().and_then(|fid| {
+                    crate::files::FileSource::describe_path(&fid, std::path::Path::new(path))
+                }) {
+                    Ok(entry) => list.push(entry),
+                    Err(e) => return Some(Response::error(id, ErrorBody::from_error(&e))),
+                }
+            }
+            match files.push(&peer, list) {
+                Ok(transfer) => {
+                    stream_progress(id, transfer, out);
+                    return None;
+                }
+                Err(e) => Err(e),
+            }
+        }
+        types::FILES_GET => {
+            let (Some(peer), Some(ids)) = (request.key, request.ids.clone()) else {
+                return bad("files.get needs a key and ids");
+            };
+            let destination = request
+                .to
+                .as_deref()
+                .map_or(Destination::Downloads, |p| Destination::Path(p.into()));
+            match files.fetch(&peer, ids, destination) {
+                Ok(transfer) => {
+                    stream_progress(id, transfer, out);
+                    return None;
+                }
+                Err(e) => Err(e),
+            }
+        }
+        types::FILES_OFFER => match request.paths.as_deref().and_then(<[String]>::first) {
+            Some(path) => files
+                .offer_path(std::path::Path::new(path))
+                .and_then(|file| Response::ok(id, &file)),
+            None => return bad("files.offer needs a path"),
+        },
+        types::FILES_OFFERS => Response::ok(
+            id,
+            &Offers {
+                offers: files.offers(),
+                location: files.store_description(),
+            },
+        ),
+        types::FILES_WITHDRAW => match request.ids.as_deref().and_then(<[String]>::first) {
+            Some(fid) if files.withdraw(fid) => Response::ok(id, &Empty {}),
+            Some(fid) => Ok(Response::error(
+                id,
+                ErrorBody::new("not-found", format!("no standing offer {fid}")),
+            )),
+            None => return bad("files.withdraw needs an id"),
+        },
+        types::FILES_CANCEL => match request.transfer.as_deref() {
+            Some(t) if files.cancel(t) => Response::ok(id, &Empty {}),
+            Some(t) => Ok(Response::error(
+                id,
+                ErrorBody::new("not-found", format!("no transfer {t} in flight")),
+            )),
+            None => return bad("files.cancel needs a transfer"),
+        },
+        types::FILES_TRANSFERS => Response::ok(
+            id,
+            &Transfers {
+                transfers: files.transfers(),
+            },
+        ),
+        other => Ok(Response::error(
+            id,
+            ErrorBody::new("unknown-type", format!("unknown request type {other}")),
+        )),
+    };
+    Some(match result {
+        Ok(r) => r,
+        Err(e) => Response::error(id, ErrorBody::from_error(&e)),
+    })
+}
+
+/// Sends a `files.progress` event for every change of `transfer`, then its
+/// final state as the response to request `id`.
+fn stream_progress(
+    id: u64,
+    transfer: Arc<crate::files_sync::Transfer>,
+    out: tokio::sync::mpsc::Sender<Outgoing>,
+) {
+    tokio::spawn(async move {
+        let mut rx = transfer.watch();
+        loop {
+            let progress = rx.borrow_and_update().clone();
+            let finished = progress.finished.is_some();
+            if finished {
+                let response = Response::ok(id, &progress)
+                    .unwrap_or_else(|e| Response::error(id, ErrorBody::from_error(&e)));
+                let _ = out.send(Outgoing::Response(response)).await;
+                return;
+            }
+            let event = Event {
+                event_type: TypeName::new(types::FILES_PROGRESS),
+                id,
+                offer: None,
+                code: None,
+                progress: Some(progress),
+            };
+            if out.send(Outgoing::Event(event)).await.is_err() {
+                // The client went away: the transfer carries on unwatched.
+                return;
+            }
+            if rx.changed().await.is_err() {
+                return;
+            }
+        }
+    });
+}
+
+/// The `files.offers` result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Offers {
+    /// The standing offers.
+    pub offers: Vec<lp_core::files::FileDescriptor>,
+    /// Where pushed files land on this device.
+    pub location: String,
+}
+
+/// The `files.transfers` result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Transfers {
+    /// Every transfer in flight.
+    pub transfers: Vec<crate::files_sync::TransferProgress>,
 }
 
 /// The `init` result.

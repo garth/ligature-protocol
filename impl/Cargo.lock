@@ -995,6 +995,7 @@ dependencies = [
  "clap",
  "futures-util",
  "gethostname",
+ "getrandom 0.4.3",
  "if-addrs",
  "jsonschema",
  "lp-core",

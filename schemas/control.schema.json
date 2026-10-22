@@ -29,14 +29,22 @@
         "org.ligatureprotocol.control.pair.abort",
         "org.ligatureprotocol.control.clipboard.get",
         "org.ligatureprotocol.control.clipboard.set",
-        "org.ligatureprotocol.control.notify"
+        "org.ligatureprotocol.control.notify",
+        "org.ligatureprotocol.control.files.send",
+        "org.ligatureprotocol.control.files.get",
+        "org.ligatureprotocol.control.files.offer",
+        "org.ligatureprotocol.control.files.offers",
+        "org.ligatureprotocol.control.files.withdraw",
+        "org.ligatureprotocol.control.files.cancel",
+        "org.ligatureprotocol.control.files.transfers"
       ]
     },
     "eventType": {
       "type": "string",
       "enum": [
         "org.ligatureprotocol.control.pair.offer",
-        "org.ligatureprotocol.control.pair.code"
+        "org.ligatureprotocol.control.pair.code",
+        "org.ligatureprotocol.control.files.progress"
       ]
     },
     "request": {
@@ -54,7 +62,7 @@
         },
         "key": {
           "$ref": "#/$defs/publicKey",
-          "description": "revoke: the binding, principal or master key to revoke."
+          "description": "revoke: the binding, principal or master key to revoke. files.send, files.get: the binding key of the device to send to or fetch from."
         },
         "offer": {
           "type": "string",
@@ -89,6 +97,28 @@
         "body": {
           "type": "string",
           "description": "notify: the body of the test notification."
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "files.send: absolute paths of the files to push. files.offer: one absolute path to offer."
+        },
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "files.get: the ids the peer offered. files.withdraw: the one id to withdraw."
+        },
+        "to": {
+          "type": "string",
+          "description": "files.get: an absolute directory or file path to land in, instead of the download folder."
+        },
+        "transfer": {
+          "type": "string",
+          "description": "files.cancel: the id of the transfer in flight."
         }
       }
     },
@@ -169,6 +199,10 @@
           "type": "string",
           "pattern": "^[0-9]{6}$",
           "description": "pair.code: the six-digit short authentication string the user compares."
+        },
+        "progress": {
+          "type": "object",
+          "description": "files.progress: the transfer so far, with its id, peer, direction, each file's name, size, bytes done and state, and the outcome once it ends (the shape is the daemon's files_sync::TransferProgress)."
         }
       }
     }

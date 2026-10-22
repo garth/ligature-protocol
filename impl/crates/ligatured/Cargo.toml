@@ -20,6 +20,7 @@ serde.workspace = true
 ciborium.workspace = true
 gethostname.workspace = true
 if-addrs.workspace = true
+getrandom.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

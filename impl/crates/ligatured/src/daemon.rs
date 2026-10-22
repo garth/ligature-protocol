@@ -79,6 +79,8 @@ pub struct Daemon {
     clipboard: Mutex<Option<Arc<crate::clipboard_sync::ClipboardSync>>>,
     clipboard_impl: Mutex<Option<Arc<dyn crate::clipboard::Clipboard>>>,
     notifications: Mutex<Option<Arc<crate::notification_sync::NotificationSync>>>,
+    notifications_impl: Mutex<Option<Arc<dyn crate::notifications::Notifications>>>,
+    files: Mutex<Option<Arc<crate::files_sync::FilesSync>>>,
     ceremonies: Arc<std::sync::atomic::AtomicUsize>,
 }
 
@@ -201,6 +203,8 @@ impl Daemon {
             clipboard: Mutex::new(None),
             clipboard_impl: Mutex::new(None),
             notifications: Mutex::new(None),
+            notifications_impl: Mutex::new(None),
+            files: Mutex::new(None),
             ceremonies: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         });
         if daemon.is_initialised() {
@@ -624,6 +628,9 @@ impl Daemon {
         if let Some(sync) = self.notification_sync() {
             sync.detach(peer);
         }
+        if let Some(sync) = self.files_sync() {
+            sync.detach(peer);
+        }
     }
 
     /// Starts carrying notifications through the given backend. Called once
@@ -632,12 +639,50 @@ impl Daemon {
         self: &Arc<Self>,
         backend: Arc<dyn crate::notifications::Notifications>,
     ) -> Arc<crate::notification_sync::NotificationSync> {
-        let sync = crate::notification_sync::NotificationSync::start(self.clone(), backend);
+        let sync = crate::notification_sync::NotificationSync::start(self.clone(), backend.clone());
         *self
             .notifications
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(sync.clone());
+        *self
+            .notifications_impl
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(backend);
         sync
+    }
+
+    /// The local notification backend, if one was attached: for a
+    /// notification this device posts on its own account.
+    #[must_use]
+    pub fn notifications_backend(&self) -> Option<Arc<dyn crate::notifications::Notifications>> {
+        self.notifications_impl
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Starts carrying files, landing pushed ones in `store`. Called once at
+    /// startup.
+    pub fn attach_files(
+        self: &Arc<Self>,
+        store: Arc<dyn crate::files::FileStore>,
+        config: crate::files_sync::FilesConfig,
+    ) -> Arc<crate::files_sync::FilesSync> {
+        let sync = crate::files_sync::FilesSync::start(self.clone(), store, config);
+        *self
+            .files
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(sync.clone());
+        sync
+    }
+
+    /// The file synchroniser, if files were attached.
+    #[must_use]
+    pub fn files_sync(&self) -> Option<Arc<crate::files_sync::FilesSync>> {
+        self.files
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 
     /// The notification synchroniser, if a backend was attached.

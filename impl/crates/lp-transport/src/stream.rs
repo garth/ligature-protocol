@@ -44,10 +44,12 @@ impl FramedStream {
     /// [`Error::Transport`] if the stream is gone.
     pub async fn send<T: Serialize>(&mut self, message: &T) -> Result<(), Error> {
         let bytes = frame::encode(message, self.max)?;
-        self.send
-            .write_all(&bytes)
-            .await
-            .map_err(|e| Error::Transport(format!("write: {e}")))
+        self.send.write_all(&bytes).await.map_err(|e| match e {
+            quinn::WriteError::Stopped(code) => {
+                Error::Transport(format!("{STOPPED_BY_PEER} {}", code.into_inner()))
+            }
+            other => Error::Transport(format!("write: {other}")),
+        })
     }
 
     /// Reads the next frame body. `None` when the peer finished the stream
@@ -105,6 +107,13 @@ impl FramedStream {
         Ok(header)
     }
 
+    /// Sets the send side's priority among this connection's streams: quinn
+    /// schedules a higher value first and defaults to 0. A bulk data stream
+    /// takes a negative value so interactive streams are never behind it.
+    pub fn set_priority(&self, priority: i32) {
+        let _ = self.send.set_priority(priority);
+    }
+
     /// Finishes the send side; the peer sees a clean end after the last frame.
     pub fn finish(&mut self) {
         let _ = self.send.finish();
@@ -114,5 +123,26 @@ impl FramedStream {
     pub fn reset(&mut self, code: u32) {
         let _ = self.send.reset(code.into());
         let _ = self.recv.stop(code.into());
+    }
+
+    /// Stops the receive side only, with an application error code, leaving
+    /// what this side has written to be delivered.
+    pub fn stop(&mut self, code: u32) {
+        let _ = self.recv.stop(code.into());
+    }
+}
+
+/// How a write error names the peer's stop code; see [`peer_stop_code`].
+const STOPPED_BY_PEER: &str = "stopped by peer with code";
+
+/// The application error code the peer stopped the stream with, if `error`
+/// came from a write to a stream the peer stopped.
+#[must_use]
+pub fn peer_stop_code(error: &Error) -> Option<u32> {
+    match error {
+        Error::Transport(m) => m
+            .strip_prefix(STOPPED_BY_PEER)
+            .and_then(|rest| rest.trim().parse().ok()),
+        _ => None,
     }
 }

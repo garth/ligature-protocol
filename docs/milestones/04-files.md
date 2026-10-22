@@ -1,7 +1,8 @@
 # Milestone 4: file transfer among a person's devices over the LP session
 
-**Status:** Planned. The design points in section 3 are put to the owner before any code; the
-tasks are raised as sub-tickets of the epic LP-87 when the plan is accepted.
+**Status:** Accepted by the owner on 2026-10-22, with files landing in the platform's own
+download folder, nothing shaped around LocalSend, and parallel transfers bounded by a
+negotiated number of streams. The tasks are LP-101 to LP-104 under the epic LP-87.
 
 ## 1. Goal
 
@@ -230,34 +231,32 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-    P["LP-100 plan"] --> S["schema and chapter 05"]
-    S --> D["daemon core, lpctl, desktops"]
-    D --> A["Android"]
-    D --> M["chapter 08, README, the run"]
+    P["LP-100 plan"] --> S["LP-101 schema and chapter 05"]
+    S --> D["LP-102 daemon core, lpctl, desktops"]
+    D --> A["LP-103 Android"]
+    D --> M["LP-104 chapter 08, README, the run"]
     A --> M
 ```
 
-The tasks after the plan are raised when the plan is accepted, one ticket each:
-
 - LP-100. This plan.
-- **Schema and chapter 05.** `schemas/capability.files.schema.json` with `file`, `params`
+- **LP-101. Schema and chapter 05.** `schemas/capability.files.schema.json` with `file`, `params`
   and the nine messages; chapter 05 section 3d, the `files` wording in section 3a and the
   directions line in section 2; chapter 04's open question answered with the control and
   data streams;
   the privacy sentence in chapter 09.
-- **Daemon core, `lpctl` and the desktops.** `lp-core` message and descriptor types;
+- **LP-102. Daemon core, `lpctl` and the desktops.** `lp-core` message and descriptor types;
   `ligatured::files_sync` beside the other two synchronisers: the offer registry,
   `FileSource` and `FileSink`, the transfer state machine for both roles, the per-peer
   stream budget and queue with the stream priorities, the download
   directory, the name rule, part files, hashing while streaming, the received-file
   notification; control-channel requests and progress events; `lpctl files`; the
   two-daemon test. `04-implementation-decisions.md` records the choices as they are made.
-- **Android.** The `Host` trait grows what the platform keeps from a library: open a
+- **LP-103. Android.** The `Host` trait grows what the platform keeps from a library: open a
   content URI for reading with its name, size and type, create and finish a pending
   MediaStore entry, post and update a progress notification; the node gains send, fetch and
   cancel calls with progress callbacks behind UniFFI; the share target takes files with the
   device picker; the progress and received notifications.
-- **Chapter 08, README, the run.** The platform notes per device, README and CLAUDE.md for
+- **LP-104. Chapter 08, README, the run.** The platform notes per device, README and CLAUDE.md for
   milestone 4, the run with the real devices and the milestone status.
 
 ## 6. Risks

@@ -25,7 +25,11 @@ otherwise the machine connects only when it dials. Notifications both ways: the 
 displays other devices' notifications by calling the freedesktop notification service on
 the session bus, and sees what every application posts by being a monitor of that bus,
 whatever notification daemon is in use, so Linux emits and displays (chapter 05 section
-3c). Open question: the minimum set of compositors and portals to support
+3c). Files (chapter 05 section 3d) land in the user's download folder, `XDG_DOWNLOAD_DIR`
+from `user-dirs.dirs` or else `~/Downloads`, as a part file renamed into place once
+verified; the desktop sends with `lpctl files send` and fetches with `lpctl files get`, and
+a received file is announced by a local notification. Open question: the minimum set of
+compositors and portals to support
 (Hyprland is the first target), and how the system service drives audio and display without a
 session of its own.
 
@@ -51,6 +55,10 @@ extra components. What a third-party daemon may offer is bounded by platform per
   the permission prompt: the user runs `display notification` once inside Script Editor
   and allows it, after which the daemon's posts show without a restart. A Focus mode hides
   them as it hides any other. A signed helper application would lift all of these limits.
+- **Files**: received files land in `~/Downloads` the same way as on Linux, and `lpctl
+  files` sends and fetches. Whether a launchd agent writing under `~/Downloads` meets a
+  Transparency, Consent and Control prompt on first write is recorded by the milestone 4
+  run.
 - **Remote input and displays**: injecting input needs the Accessibility permission and
   capturing or mirroring the screen needs Screen Recording; both are granted per
   application by the user under Transparency, Consent and Control.
@@ -100,6 +108,14 @@ protocol of its own. LineageOS is the first target (no Google services, sideload
   phone emits and displays (chapter 05 section 3c); the capability's `emits` follows the
   grant. Ongoing, silent and summary notifications stay on the phone, and the user can
   switch any app off.
+- **Files.** The app has no download folder of its own: a received file is a row in
+  MediaStore's Downloads collection, inserted pending, written by the node through a
+  descriptor the app opened, and published once verified, so the Files app shows it under
+  Downloads and MediaStore numbers a clashing name. Sending starts from the share sheet:
+  the user shares one or several files to Ligature and picks a device that receives them;
+  the app opens each one and the node reads it through the descriptor. Each transfer is a
+  notification with a progress bar and a cancel. The phone takes one file at a time
+  (`maxStreams` 1) and sends up to four at once (chapter 05 section 3d).
 - **SMS, telephony.** SMS and telephony need their own permissions and, for SMS, store
   policy approval; neither is offered yet.
 - **Keys.** The Android Keystore holds no Ed25519 keys on most devices (section 3a); the

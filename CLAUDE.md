@@ -12,12 +12,13 @@ tablets are off the roadmap (chapter 08 section 4). Principles: local-first, sel
 with no required central server, end-to-end encrypted, built on existing open standards,
 interoperate rather than replace.
 
-Status is pre-alpha. The spec is a draft, the Rust workspace implements milestones 1 to 3
-(pairing, the text clipboard and notifications between a Linux machine, a Mac and an
-Android phone on one LAN; the phone receives the clipboard automatically and sends on a
-tap, since Android lets only a focused app read it; the Mac displays notifications but
-cannot read its own) and nothing beyond them, and the `org.ligatureprotocol` type names
-use a placeholder domain.
+Status is pre-alpha. The spec is a draft, the Rust workspace implements milestones 1 to 4
+(pairing, the text clipboard, notifications and file transfer between a Linux machine, a
+Mac and an Android phone on one LAN; the phone receives the clipboard automatically and
+sends on a tap, since Android lets only a focused app read it; the Mac displays
+notifications but cannot read its own; files land in each device's download folder, from
+`lpctl files` on the desktops and the share sheet on the phone) and nothing beyond them,
+and the `org.ligatureprotocol` type names use a placeholder domain.
 
 ## Architecture decisions
 
@@ -131,7 +132,10 @@ The reference implementation is Rust and is also the production implementation
   accept, a data stream per file with chunks within the 1 MiB frame and a hash at the end,
   the receiver's `maxStreams` bounding how many run at once, cancel by stream reset, a
   receiver-started fetch by an id the sender offered, a standalone file descriptor for
-  milestone 5's clipboard to reference); its tasks are raised when the plan is accepted.
+  milestone 5's clipboard to reference) and `04-implementation-decisions.md` records its
+  non-protocol choices (`FilesSync` with `FileStore` and `Landing`, part files renamed after
+  the hash check, MediaStore pending rows written through `/proc/self/fd` on Android, one
+  progress notification per transfer); its run with the real devices is LP-104.
 - `schemas/*.schema.json`: JSON Schema 2020-12 drafts (person, device, capability, grant,
   group, role, revocation, envelope, message, pairing, capability.clipboard,
   capability.notifications, capability.files; `control` is implementation-only).

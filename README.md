@@ -1,9 +1,9 @@
 # Ligature Protocol (LP)
 
 > **Status: pre-alpha.** Nothing here is stable. The specification is a draft, the
-> reference implementation shares the clipboard and notifications between a Linux machine,
-> a Mac and an Android phone (milestones 1 to 3), and the `org.ligatureprotocol` type names
-> use a placeholder domain.
+> reference implementation shares the clipboard, notifications and files between a Linux
+> machine, a Mac and an Android phone (milestones 1 to 4), and the `org.ligatureprotocol`
+> type names use a placeholder domain.
 
 Ligature Protocol binds the devices a person owns, and the devices a household shares,
 into one trusted group, whatever they run: Linux and macOS desktops and laptops, Android
@@ -139,10 +139,14 @@ because Android lets only a focused app read the clipboard. A notification poste
 phone or the Linux machine appears on the other devices, with the app's name and icon and
 the device it came from, and dismissing it anywhere clears it elsewhere where the platform
 allows; the Mac displays but cannot read its own. Revoking a device stops it connecting,
-and pairings survive a restart. This is the scope of
+and pairings survive a restart. A file shared from the phone, or sent with `lpctl files
+send` from a desktop, lands in the other device's download folder, several at once where the
+receiver allows, with progress and a cancel at either end, and a device can fetch a file
+another has offered. This is the scope of
 [milestone 1](docs/milestones/01-clipboard-poc.md),
-[milestone 2](docs/milestones/02-android-clipboard.md) and
-[milestone 3](docs/milestones/03-notifications.md); everything else in the
+[milestone 2](docs/milestones/02-android-clipboard.md),
+[milestone 3](docs/milestones/03-notifications.md) and
+[milestone 4](docs/milestones/04-files.md); everything else in the
 specification is unimplemented. Apple phones and tablets are off the roadmap for now; what
 the platform would allow is recorded in the
 [platform notes](docs/spec/08-platform-notes.md#4-ios-and-ipados).
@@ -171,9 +175,10 @@ follow them.
 3. **Notifications among all of a person's devices.** Done: a notification posted on any
    device that can see its own appears on every device that displays them, dismissed
    everywhere at once ([plan](docs/milestones/03-notifications.md)).
-4. **File transfer among a person's devices.** Planned: a file chosen on any device lands
-   on another over the LP session itself, with progress and cancel, and a receiver can
-   fetch content a sender has offered ([plan](docs/milestones/04-files.md)).
+4. **File transfer among a person's devices.** In progress: a file chosen on any device
+   lands on another over the LP session itself, several at once where the receiver allows,
+   with progress and cancel, and a receiver can fetch content a sender has offered; the run
+   with the real devices remains ([plan](docs/milestones/04-files.md)).
 5. **A clipboard that carries rich text, images and files.** Planned, built on milestone
    4: a `set` carries several representations of one selection, small content is pushed on
    copy as text is today, and large content is announced and fetched only when pasted.

@@ -133,7 +133,9 @@ The `impl/` workspace contains:
 What works today: a Linux machine, a Mac and an Android phone (LineageOS) on the same LAN
 pair with the proximity ceremony, started from `lpctl pair` on the desktops and from the
 app on the phone, which shows its offer as a QR code; text copied on any of them can be
-pasted on the others, with no server, account or internet connection. The phone receives
+pasted on the others, with no server, account or internet connection. The clipboard
+carries rich text, images and files too: small content is pushed as it is copied, and large
+content is announced and fetched only when an application pastes it. The phone receives
 by itself and sends with a tap (a quick-settings tile, the notification, the share sheet),
 because Android lets only a focused app read the clipboard. A notification posted on the
 phone or the Linux machine appears on the other devices, with the app's name and icon and
@@ -145,8 +147,9 @@ receiver allows, with progress and a cancel at either end, and a device can fetc
 another has offered. This is the scope of
 [milestone 1](docs/milestones/01-clipboard-poc.md),
 [milestone 2](docs/milestones/02-android-clipboard.md),
-[milestone 3](docs/milestones/03-notifications.md) and
-[milestone 4](docs/milestones/04-files.md); everything else in the
+[milestone 3](docs/milestones/03-notifications.md),
+[milestone 4](docs/milestones/04-files.md) and
+[milestone 5](docs/milestones/05-rich-clipboard.md); everything else in the
 specification is unimplemented. Apple phones and tablets are off the roadmap for now; what
 the platform would allow is recorded in the
 [platform notes](docs/spec/08-platform-notes.md#4-ios-and-ipados).
@@ -179,9 +182,10 @@ follow them.
    another over the LP session itself, several at once where the receiver allows, with
    progress and cancel, and a receiver can fetch content a sender has offered
    ([plan](docs/milestones/04-files.md)).
-5. **A clipboard that carries rich text, images and files.** Planned, built on milestone
-   4: a `set` carries several representations of one selection, small content is pushed on
-   copy as text is today, and large content is announced and fetched only when pasted.
+5. **A clipboard that carries rich text, images and files.** In progress: a `set` carries
+   several representations of one selection, small content is pushed on copy as text is
+   today, and large content is announced and fetched only when pasted; the run with the
+   real devices remains ([plan](docs/milestones/05-rich-clipboard.md)).
 
 Not planned: Apple phones and tablets, for the reasons in the
 [platform notes](docs/spec/08-platform-notes.md#4-ios-and-ipados).
@@ -195,6 +199,7 @@ Not planned: Apple phones and tablets, for the reasons in the
   and [the Android app](impl/android/README.md)
 - [Milestone 3 plan: notifications between all the devices](docs/milestones/03-notifications.md)
 - [Milestone 4 plan: file transfer among a person's devices](docs/milestones/04-files.md)
+- [Milestone 5 plan: the clipboard carries rich text, images and files](docs/milestones/05-rich-clipboard.md)
 - [Architecture decisions](docs/adr/)
 - [Glossary](docs/glossary.md)
 - [Prior art](docs/prior-art.md)

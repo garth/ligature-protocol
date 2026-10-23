@@ -12,10 +12,11 @@ tablets are off the roadmap (chapter 08 section 4). Principles: local-first, sel
 with no required central server, end-to-end encrypted, built on existing open standards,
 interoperate rather than replace.
 
-Status is pre-alpha. The spec is a draft, the Rust workspace implements milestones 1 to 4
-(pairing, the text clipboard, notifications and file transfer between a Linux machine, a
-Mac and an Android phone on one LAN; the phone receives the clipboard automatically and
-sends on a tap, since Android lets only a focused app read it; the Mac displays
+Status is pre-alpha. The spec is a draft, the Rust workspace implements milestones 1 to 5
+(pairing, the clipboard with text, HTML, images and files, notifications and file transfer
+between a Linux machine, a Mac and an Android phone on one LAN; the phone receives the
+clipboard automatically and sends on a tap, since Android lets only a focused app read it;
+large clipboard content is fetched only when pasted; the Mac displays
 notifications but cannot read its own; files land in each device's download folder, from
 `lpctl files` on the desktops and the share sheet on the phone) and nothing beyond them,
 and the `org.ligatureprotocol` type names use a placeholder domain.
@@ -136,7 +137,13 @@ The reference implementation is Rust and is also the production implementation
   non-protocol choices (`FilesSync` with `FileStore` and `Landing`, part files renamed after
   the hash check, MediaStore pending rows written through `/proc/self/fd` on Android, one
   progress notification per transfer); it is done, its run with the real devices recorded on
-  LP-87.
+  LP-87. `05-rich-clipboard.md` is the current one (a `set` of several representations,
+  pushed within the receiver's `maxBytes` and announced above it as `files` descriptors
+  fetched only on paste, files always announced, `get` for the current value, the echo rule
+  over the set) and `05-implementation-decisions.md` records its non-protocol choices
+  (`Value`, `Incoming` with promises and a `Fetch`, the fingerprint echo rule, the Wayland
+  helper's own data-control source, NSPasteboard data providers, the Android content
+  provider and Save action); its run with the real devices is LP-110.
 - `schemas/*.schema.json`: JSON Schema 2020-12 drafts (person, device, capability, grant,
   group, role, revocation, envelope, message, pairing, capability.clipboard,
   capability.notifications, capability.files; `control` is implementation-only).

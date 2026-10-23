@@ -19,8 +19,13 @@ on the OS's account isolation to keep one account's keys and clipboard from anot
 daemon does not depend on the session's environment: it finds the compositor socket in the runtime
 directory and runs the Wayland side in a small helper process whose environment names that socket,
 advertises the clipboard only while a compositor is reachable, and keeps running (gossip,
-revocations) when none is. The QUIC endpoint takes a port the system assigns unless one is
-fixed (`--port`); behind a host firewall the fixed port and one rule let peers dial in,
+revocations) when none is. The helper reads a selection's text, HTML, PNG and file list
+(`text/uri-list` of local `file:` URIs) and owns a data-control source for what peers
+send: pushed parts from its copy, an announced part fetched from the peer only when the
+compositor asks for that type, and a file list as `file:` URIs of files fetched into
+`$XDG_RUNTIME_DIR/ligature/clipboard` when a file manager pastes (chapter 05 section 3b).
+The QUIC endpoint takes a port the system assigns unless one is fixed (`--port`); behind a
+host firewall the fixed port and one rule let peers dial in,
 otherwise the machine connects only when it dials. Notifications both ways: the daemon
 displays other devices' notifications by calling the freedesktop notification service on
 the session bus, and sees what every application posts by being a monitor of that bus,
@@ -43,7 +48,12 @@ extra components. What a third-party daemon may offer is bounded by platform per
 
 - **Clipboard**: NSPasteboard has no change notification, so the watcher polls the change
   count (every 250 ms in the reference daemon); reading the pasteboard from a background
-  process is permitted.
+  process is permitted. Types map through a table (`public.utf8-plain-text`,
+  `public.html`, `public.rtf`, `public.png`, `public.tiff`, `public.file-url`); a value a
+  peer sent is one pasteboard item with the text and pushed parts and a lazy data provider
+  for each announced type, plus one item per promised file whose `public.file-url` is
+  answered once the file is fetched into
+  `~/Library/Caches/org.ligatureprotocol.ligatured/clipboard`, which Finder copies from.
 - **Notifications**: a daemon may post notifications, but may not read other
   applications' notifications, so macOS can display forwarded notifications and cannot
   forward its own. The reference daemon posts them with AppleScript's
@@ -97,7 +107,13 @@ protocol of its own. LineageOS is the first target (no Google services, sideload
   from a quick-settings tile, a notification action, the app's own screen or the share
   sheet, each of which gives the app a moment of focus or hands it the text directly. The
   capability is advertised in both cases: what differs is when a `set` goes out, not
-  whether the peer may send one.
+  whether the peer may send one. The clip carries text and HTML itself; an image or a file
+  selection a peer sent is a content URI of the app's own provider, fetched from the peer
+  only when an application opens it, into the app's cache directory. Since few Android
+  applications paste files, a file list also raises a notification whose **Save** lands
+  the files in Downloads, and **Receive now** on the app's screen asks the other devices
+  for their clipboard. What the app reads when it may includes the clip's HTML and content
+  URIs, an image up to 64 MiB becoming a part and anything else a file of the selection.
 - **Pairing.** The phone has a screen and a camera, so it shows its offer as a QR code
   and as text (the newcomer role); introducing another device from a pasted offer works
   too. A camera-based scanner is a later addition.

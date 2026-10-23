@@ -64,6 +64,11 @@ impl Daemon {
     /// takes the platform defaults from `HOME`, `XDG_DATA_HOME` and
     /// `XDG_RUNTIME_DIR`, all under the test's directory, and `lpctl` is
     /// given the same three and nothing else.
+    /// A daemon at the platform's own defaults, with no `LIGATURE_*`
+    /// variable: on Linux `$XDG_DATA_HOME/ligature` and
+    /// `$XDG_RUNTIME_DIR/ligature`, on macOS `~/Library/Application
+    /// Support/ligature` and `$TMPDIR/ligature`, every base directory
+    /// pointed into the test's own tree.
     fn start_with_platform_defaults(root: &Path, name: &str) -> Self {
         let home = root.join("home").join(name);
         let xdg_data = root.join("xdg").join(name);
@@ -71,24 +76,37 @@ impl Daemon {
         for d in [&home, &xdg_data, &runtime] {
             std::fs::create_dir_all(d).unwrap();
         }
+        let (data, env): (PathBuf, Vec<(&'static str, PathBuf)>) = if cfg!(target_os = "macos") {
+            (
+                home.join("Library")
+                    .join("Application Support")
+                    .join("ligature"),
+                vec![("HOME", home.clone()), ("TMPDIR", runtime.clone())],
+            )
+        } else {
+            (
+                xdg_data.join("ligature"),
+                vec![
+                    ("HOME", home.clone()),
+                    ("XDG_DATA_HOME", xdg_data.clone()),
+                    ("XDG_RUNTIME_DIR", runtime.clone()),
+                ],
+            )
+        };
         let mut command = Command::new(ligatured());
         command
             .env_remove("LIGATURE_DATA_DIR")
             .env_remove("LIGATURE_RUNTIME_DIR")
-            .env_remove("LIGATURE_CLIPBOARD_CACHE")
-            .env("HOME", &home)
-            .env("XDG_DATA_HOME", &xdg_data)
-            .env("XDG_RUNTIME_DIR", &runtime);
+            .env_remove("LIGATURE_CLIPBOARD_CACHE");
+        for (k, v) in &env {
+            command.env(k, v);
+        }
         Self::spawn(
             command,
             name,
-            xdg_data.join("ligature"),
+            data,
             runtime.join("ligature").join("control.sock"),
-            vec![
-                ("HOME", home),
-                ("XDG_DATA_HOME", xdg_data),
-                ("XDG_RUNTIME_DIR", runtime),
-            ],
+            env,
         )
     }
 
@@ -303,7 +321,7 @@ fn lpctl_finds_a_daemon_at_the_platform_defaults_with_no_flag_or_variable() {
     let d = Daemon::start_with_platform_defaults(root.path(), "plain-box");
     assert!(
         d.socket.starts_with(root.path().join("run")),
-        "the socket is under XDG_RUNTIME_DIR: {}",
+        "the socket is under the platform's runtime directory: {}",
         d.socket.display()
     );
     assert!(d.ctl_ok(&["status"]).contains("initialised: false"));
@@ -314,7 +332,7 @@ fn lpctl_finds_a_daemon_at_the_platform_defaults_with_no_flag_or_variable() {
     assert!(status.contains("plain-box"), "{status}");
     assert!(
         d.data.join("store.sqlite").exists() && d.data.join("keys.cbor").exists(),
-        "state under XDG_DATA_HOME/ligature: {}",
+        "state under the platform's data directory: {}",
         d.data.display()
     );
     drop(d);

@@ -1,8 +1,17 @@
 # Milestone 5: the clipboard carries rich text, images and files
 
-**Status:** Accepted by the owner on 2026-10-22, with the push bound at 512 KiB, the sender
-keeping announced bytes up to 64 MiB for at most an hour, and files reaching the phone through
-a Save action. The tasks are LP-106 to LP-110 under the epic LP-95.
+**Status:** Done. Accepted by the owner on 2026-10-22, with the push bound at 512 KiB, the
+sender keeping announced bytes up to 64 MiB for at most an hour, and files reaching the phone
+through a Save action; the tasks LP-106 to LP-110 under the epic LP-95 are done, and the exit
+criteria were run on the Linux machine, the Mac and the Pixel on 2026-10-22 (LP-110, recorded
+on LP-95). The run found and fixed, under LP-108 and LP-109: the Mac's pasteboard delivers a
+request for a promised type to the daemon's main thread, which now runs the Cocoa run loop;
+TextEdit took the plain string until the data types were listed first; Android's copy overlay
+fetched a promised image for its thumbnail, which now gets a placeholder; and the Linux helper
+died on a would-block read. Two platform facts stand: a desktop clipboard manager that reads
+every selection (Omarchy's does) fetches a promised image once as soon as it appears, and
+`get` and a textless set go only to devices of this version. Not run: a device without
+`fetch`, timing text during a large fetch, and CI, since nothing was pushed.
 
 ## 1. Goal
 

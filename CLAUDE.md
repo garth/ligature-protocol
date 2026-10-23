@@ -143,7 +143,7 @@ The reference implementation is Rust and is also the production implementation
   over the set) and `05-implementation-decisions.md` records its non-protocol choices
   (`Value`, `Incoming` with promises and a `Fetch`, the fingerprint echo rule, the Wayland
   helper's own data-control source, NSPasteboard data providers, the Android content
-  provider and Save action); its run with the real devices is LP-110.
+  provider and Save action); it is done, its run with the real devices recorded on LP-95.
 - `schemas/*.schema.json`: JSON Schema 2020-12 drafts (person, device, capability, grant,
   group, role, revocation, envelope, message, pairing, capability.clipboard,
   capability.notifications, capability.files; `control` is implementation-only).

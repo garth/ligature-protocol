@@ -114,6 +114,8 @@ protocol of its own. LineageOS is the first target (no Google services, sideload
   the files in Downloads, and **Receive now** on the app's screen asks the other devices
   for their clipboard. What the app reads when it may includes the clip's HTML and content
   URIs, an image up to 64 MiB becoming a part and anything else a file of the selection.
+  The system's copy overlay asks the provider for a thumbnail the moment a clip is set;
+  it gets a placeholder, so only an application's read fetches.
 - **Pairing.** The phone has a screen and a camera, so it shows its offer as a QR code
   and as text (the newcomer role); introducing another device from a pasted offer works
   too. A camera-based scanner is a later addition.

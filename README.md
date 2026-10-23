@@ -182,10 +182,10 @@ follow them.
    another over the LP session itself, several at once where the receiver allows, with
    progress and cancel, and a receiver can fetch content a sender has offered
    ([plan](docs/milestones/04-files.md)).
-5. **A clipboard that carries rich text, images and files.** In progress: a `set` carries
-   several representations of one selection, small content is pushed on copy as text is
-   today, and large content is announced and fetched only when pasted; the run with the
-   real devices remains ([plan](docs/milestones/05-rich-clipboard.md)).
+5. **A clipboard that carries rich text, images and files.** Done: a `set` carries several
+   representations of one selection, small content is pushed on copy as text is today, and
+   large content is announced and fetched only when pasted
+   ([plan](docs/milestones/05-rich-clipboard.md)).
 
 Not planned: Apple phones and tablets, for the reasons in the
 [platform notes](docs/spec/08-platform-notes.md#4-ios-and-ipados).

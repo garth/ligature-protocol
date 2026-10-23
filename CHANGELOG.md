@@ -8,6 +8,12 @@ release workflow publishes the section as the release notes with the installers.
 
 ## [Unreleased]
 
+### Fixed
+
+- A device found by mDNS while already connected is no longer dialled again, which replaced
+  the live connection and lost what was in flight on it: a dismissal, a clipboard promise, a
+  file offer (LP-117).
+
 ## [0.1.0-alpha] - 2026-10-23
 
 ### Added

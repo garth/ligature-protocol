@@ -223,6 +223,18 @@ async fn discovery_loop(daemon: Arc<Daemon>) {
                     {
                         continue;
                     }
+                    // A peer connected by another route (the ceremony's offer
+                    // address, a redial) advertises, among its addresses, the
+                    // one its connection shows, since a daemon dials and
+                    // listens on one socket. Dialling it again would replace
+                    // the live connection and lose what was in flight on it
+                    // (LP-117).
+                    if let Some(key) = connected_at(&daemon, &addrs) {
+                        tracing::debug!(%id, %key, "found an instance we are connected to");
+                        keys.insert(id.clone(), key);
+                        continue;
+                    }
+                    tracing::debug!(%id, %addr, "found an instance; dialling");
                     if !policy.try_begin(&id, Instant::now()) {
                         continue;
                     }
@@ -239,6 +251,35 @@ async fn discovery_loop(daemon: Arc<Daemon>) {
             }
         }
     }
+}
+
+/// The peer whose live connection has one of `addrs` as its remote address,
+/// if any. A host announces its up interfaces' addresses with one port, so the
+/// port must match and the address must be one of them. A daemon on this very
+/// host may have been reached at an address mDNS does not announce (the
+/// loopback, a bridge that is down), so a remote address of this host's own
+/// matches when an announced address is this host's own too: one port means
+/// one daemon on a host. Addresses compare in canonical form, so an IPv4
+/// address matches its IPv4-mapped IPv6 form on a dual-stack socket.
+fn connected_at(daemon: &Daemon, addrs: &[SocketAddr]) -> Option<PublicKey> {
+    let canonical = |a: SocketAddr| (a.ip().to_canonical(), a.port());
+    let own: Vec<std::net::IpAddr> = daemon
+        .dialable_addrs()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|a| a.ip().to_canonical())
+        .collect();
+    daemon.manager().peers().into_iter().find(|key| {
+        daemon.manager().peer(key).is_some_and(|conn| {
+            let remote = canonical(conn.remote_address());
+            conn.raw().close_reason().is_none()
+                && addrs.iter().any(|a| {
+                    let a = canonical(*a);
+                    a.1 == remote.1
+                        && (a.0 == remote.0 || (own.contains(&remote.0) && own.contains(&a.0)))
+                })
+        })
+    })
 }
 
 /// Dials `addr` and keeps the connection only if the peer is trusted; returns

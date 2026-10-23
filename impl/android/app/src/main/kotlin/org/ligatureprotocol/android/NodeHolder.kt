@@ -408,7 +408,12 @@ object NodeHolder : Host {
         }
         val ok = runCatching { manager.setPrimaryClip(clip) }.isSuccess
         val files = value.items.filter { it.file }
-        if (ok && files.isNotEmpty()) offerSave(files)
+        if (ok && files.isNotEmpty()) {
+            offerSave(files)
+        } else {
+            // The clipboard moved on: a Save for the old list would find it gone.
+            appContext.getSystemService(NotificationManager::class.java).cancel(SAVE_CLIP_NOTIFICATION)
+        }
         return ok
     }
 

@@ -34,6 +34,26 @@ jobs:
       - name: cargo test
         run: cargo test --workspace
 
+  msrv:
+    name: Builds at the minimum Rust (rust-version)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: impl
+    steps:
+      - uses: actions/checkout@v7
+      - name: Read rust-version from the workspace
+        id: msrv
+        run: echo "version=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml)" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: impl
+      - name: cargo check at the minimum Rust
+        run: cargo check --workspace --all-targets --locked
+
   android-library:
     name: Android library (aarch64 and x86_64 cross-build)
     runs-on: ubuntu-latest
@@ -49,7 +69,7 @@ jobs:
         with:
           workspaces: impl
       - name: cargo-ndk
-        run: cargo install cargo-ndk --locked
+        run: cargo install cargo-ndk@4.1.2 --locked
       - name: Cross-build the library with the runner's NDK
         run: cargo ndk -t arm64-v8a -t x86_64 build -p ligature-android --release
       - name: Kotlin bindings generate from the host build
@@ -78,7 +98,7 @@ jobs:
         with:
           workspaces: impl
       - name: cargo-ndk
-        run: cargo install cargo-ndk --locked
+        run: cargo install cargo-ndk@4.1.2 --locked
       - name: The NDK the app pins (the runner's own is another version)
         run: |
           version=$(sed -n 's/.*ndkVersion = "\(.*\)".*/\1/p' app/build.gradle.kts)

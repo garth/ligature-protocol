@@ -22,7 +22,6 @@ allow = [
     "ISC",
     "Zlib",
     "Unicode-3.0",
-    "CC0-1.0",
     # uniffi and its support crates (LP-77): file-level copyleft that never
     # touches our own files.
     "MPL-2.0",

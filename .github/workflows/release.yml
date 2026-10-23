@@ -128,7 +128,7 @@ jobs:
         with:
           workspaces: impl
       - name: cargo-ndk
-        run: cargo install cargo-ndk --locked
+        run: cargo install cargo-ndk@4.1.2 --locked
       - name: The NDK the app pins (the runner's own is another version)
         run: |
           version=$(sed -n 's/.*ndkVersion = "\(.*\)".*/\1/p' app/build.gradle.kts)

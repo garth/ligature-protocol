@@ -88,7 +88,7 @@ cargo deny check            # when a dependency or deny.toml changed
 and on the Markdown, from the repository root, the same globs CI uses:
 
 ```sh
-npx --yes markdownlint-cli2 "**/*.md"
+npx --yes markdownlint-cli2@0.23.2 "**/*.md"
 ```
 
 `cargo test --workspace` rebuilds `target/debug/ligatured` for the `lpctl` end-to-end test

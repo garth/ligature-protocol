@@ -12,20 +12,21 @@ versions are pinned by `Cargo.lock` and "bumps are deliberate commits of their o
 
 ## Where versions are pinned
 
-| What                                                             | Where                                                                                                    |
-| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Crate ranges, grouped with a reason per group                    | `impl/Cargo.toml` `[workspace.dependencies]` (crates use `workspace = true`)                             |
-| Resolved crate versions                                          | `impl/Cargo.lock`, committed                                                                             |
-| Minimum Rust                                                     | `impl/Cargo.toml` `[workspace.package] rust-version` (1.89); CI uses `dtolnay/rust-toolchain@stable`     |
-| Rust and JDK on the primary machine and for Gradle               | `impl/android/mise.toml` (`rust = "stable"`, `java = "21"`); `cargo` is `mise exec rust@stable -- cargo` |
-| Licence and advisory policy                                      | `impl/deny.toml` (allow list, `yanked = "deny"`, advisory ignores with a reason)                         |
-| Android Gradle plugin, Kotlin, Compose BOM, AndroidX, JNA, ZXing | `impl/android/gradle/libs.versions.toml`                                                                 |
-| Gradle                                                           | `impl/android/gradle/wrapper/gradle-wrapper.properties`                                                  |
-| NDK                                                              | `impl/android/app/build.gradle.kts` `ndkVersion` (CI installs that version)                              |
-| `compileSdk`, `minSdk` (29), `targetSdk`                         | `impl/android/app/build.gradle.kts`                                                                      |
-| GitHub Actions                                                   | `.github/workflows/ci.yml`, `release.yml` (`uses:` majors)                                               |
-| CI tooling from npm                                              | `ci.yml`: `ajv-cli@5.0.0`, `ajv-formats@3.0.1`; the markdownlint action's major                          |
-| The project's own version                                        | `impl/Cargo.toml` `[workspace.package] version`, moved only by `scripts/release.sh`                      |
+| What                                                             | Where                                                                                                                                                                          |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Crate ranges, grouped with a reason per group                    | `impl/Cargo.toml` `[workspace.dependencies]` (crates use `workspace = true`)                                                                                                   |
+| Resolved crate versions                                          | `impl/Cargo.lock`, committed                                                                                                                                                   |
+| Minimum Rust                                                     | `impl/Cargo.toml` `[workspace.package] rust-version` (1.89); CI uses `dtolnay/rust-toolchain@stable`                                                                           |
+| Rust and JDK on the primary machine and for Gradle               | `impl/android/mise.toml` (`rust = "stable"`, `java = "21"`); `cargo` is `mise exec rust@stable -- cargo`                                                                       |
+| Licence and advisory policy                                      | `impl/deny.toml` (allow list, `yanked = "deny"`, advisory ignores with a reason)                                                                                               |
+| Android Gradle plugin, Kotlin, Compose BOM, AndroidX, JNA, ZXing | `impl/android/gradle/libs.versions.toml`                                                                                                                                       |
+| Gradle                                                           | `impl/android/gradle/wrapper/gradle-wrapper.properties`                                                                                                                        |
+| NDK                                                              | `impl/android/app/build.gradle.kts` `ndkVersion` (CI installs that version)                                                                                                    |
+| `compileSdk`, `minSdk` (29), `targetSdk`                         | `impl/android/app/build.gradle.kts`                                                                                                                                            |
+| GitHub Actions                                                   | `.github/workflows/ci.yml`, `release.yml` (`uses:` majors)                                                                                                                     |
+| CI tooling from npm                                              | `ci.yml`: `ajv-cli@5.0.0`, `ajv-formats@3.0.1`; the markdownlint action's major, whose bundled `markdownlint-cli2` version the local `npx` pin (CLAUDE.md, the skills) follows |
+| cargo-ndk                                                        | `cargo install cargo-ndk@X.Y.Z --locked` in both workflows                                                                                                                     |
+| The project's own version                                        | `impl/Cargo.toml` `[workspace.package] version`, moved only by `scripts/release.sh`                                                                                            |
 
 ## Phase 1: crates within their ranges
 
@@ -114,7 +115,7 @@ cargo test --workspace
 cargo deny check
 cargo ndk -t arm64-v8a -t x86_64 build -p ligature-android --release     # the Android library
 (cd android && ./gradlew assembleDebug)                                   # the APK, bindings regenerated
-npx --yes markdownlint-cli2 "**/*.md"                                     # from the repository root
+npx --yes markdownlint-cli2@0.23.2 "**/*.md"                                     # from the repository root
 ```
 
 A flaky test is looped before it is blamed on an update; the two-node and multi-daemon

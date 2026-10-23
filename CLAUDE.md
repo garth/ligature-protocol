@@ -242,7 +242,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 Markdown lint uses `.markdownlint-cli2.jsonc` (100-column lines, licence files ignored) over
-every Markdown file in the repository, as CI does: `npx --yes markdownlint-cli2 "**/*.md"`.
+every Markdown file in the repository, as CI does: `npx --yes markdownlint-cli2@0.23.2 "**/*.md"`.
 Every schema must compile under draft 2020-12 with formats enabled, as CI does:
 
 ```sh

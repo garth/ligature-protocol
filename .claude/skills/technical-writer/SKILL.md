@@ -75,10 +75,12 @@ npx --yes @mermaid-js/mermaid-cli -p /tmp/puppeteer.json -i /tmp/x.mmd -o /tmp/x
 `markdownlint-cli2` with the repository's `.markdownlint-cli2.jsonc`: 100-column lines
 (tables and code blocks excepted), repeated changelog headings allowed, licence files and
 the code of conduct ignored. CI lints every Markdown file in the repository, the skills and
-the READMEs under `impl/` and `vectors/` included; run the same on every Markdown change:
+the READMEs under `impl/` and `vectors/` included, with the version its action bundles
+(0.23.2 today; the local pin moves with the action under `update-dependencies`); run the
+same on every Markdown change:
 
 ```sh
-npx --yes markdownlint-cli2 "**/*.md"
+npx --yes markdownlint-cli2@0.23.2 "**/*.md"
 ```
 
 Every schema must compile under draft 2020-12 with formats, with `-r` for each schema it

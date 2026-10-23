@@ -25,6 +25,7 @@ versions are pinned by `Cargo.lock` and "bumps are deliberate commits of their o
 | `compileSdk`, `minSdk` (29), `targetSdk`                         | `impl/android/app/build.gradle.kts`                                                                                                                                            |
 | GitHub Actions                                                   | `.github/workflows/ci.yml`, `release.yml` (`uses:` majors)                                                                                                                     |
 | CI tooling from npm                                              | `ci.yml`: `ajv-cli@5.0.0`, `ajv-formats@3.0.1`; the markdownlint action's major, whose bundled `markdownlint-cli2` version the local `npx` pin (CLAUDE.md, the skills) follows |
+| The documentation site                                           | `site/requirements.txt` (`mkdocs-material`, pinned); the Pages actions' majors in `pages.yml`                                                                                  |
 | cargo-ndk                                                        | `cargo install cargo-ndk@X.Y.Z --locked` in both workflows                                                                                                                     |
 | The project's own version                                        | `impl/Cargo.toml` `[workspace.package] version`, moved only by `scripts/release.sh`                                                                                            |
 

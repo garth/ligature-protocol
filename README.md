@@ -238,6 +238,9 @@ Not planned: Apple phones and tablets, for the reasons in the
 
 ## Documentation
 
+Everything below is also published, with the user guide and the specification side by
+side, at [garth.github.io/ligature-protocol](https://garth.github.io/ligature-protocol/).
+
 - [User guide](docs/guide/index.md): installing the apps and using every feature
 - [Specification overview](docs/spec/00-overview.md)
 - [Shared devices and groups](docs/spec/10-shared-devices-and-groups.md)

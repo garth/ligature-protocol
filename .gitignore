@@ -21,5 +21,8 @@ data/
 # Release tarballs built by packaging/package.sh (LP-85)
 dist/
 
+# The documentation site built by mkdocs (site/mkdocs.yml, LP-137)
+build/
+
 # Claude Code local settings; the skills under .claude/skills are part of the project
 .claude/settings.local.json

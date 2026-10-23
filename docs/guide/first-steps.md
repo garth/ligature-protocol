@@ -30,32 +30,32 @@ running.
 
 1. **On the newcomer, show an offer.** On a desktop:
 
-   ```sh
-   lpctl pair
-   ```
+    ```sh
+    lpctl pair
+    ```
 
-   It prints a QR code and the offer as text, `ligature:pair/1?…`, and waits. On a phone,
-   tap **Show pairing offer**: the QR code and the text appear, with **Copy** and **Share**.
+    It prints a QR code and the offer as text, `ligature:pair/1?…`, and waits. On a phone,
+    tap **Show pairing offer**: the QR code and the text appear, with **Copy** and **Share**.
 
 2. **On the introducer, use the offer.** On a desktop, paste the text:
 
-   ```sh
-   lpctl pair 'ligature:pair/1?…'
-   ```
+    ```sh
+    lpctl pair 'ligature:pair/1?…'
+    ```
 
-   On a phone, paste it under **Add another device** and tap **Introduce**. A desktop can
-   also scan the phone's QR code with anything that reads one and paste the result. The
-   offer names the newcomer's key and addresses on the network and nothing else; it is
-   useless to anyone who is not on your network at that moment.
+    On a phone, paste it under **Add another device** and tap **Introduce**. A desktop can
+    also scan the phone's QR code with anything that reads one and paste the result. The
+    offer names the newcomer's key and addresses on the network and nothing else; it is
+    useless to anyone who is not on your network at that moment.
 
 3. **Compare the code.** Both devices show the same six-digit code, derived from the
-   connection they have just made. Check they match, then confirm on both: answer `y` at the
-   prompt on a desktop, tap **Yes, same code** on a phone. If the codes differ, someone else
-   answered the offer: say no, and nothing is signed.
+    connection they have just made. Check they match, then confirm on both: answer `y` at the
+    prompt on a desktop, tap **Yes, same code** on a phone. If the codes differ, someone else
+    answered the offer: say no, and nothing is signed.
 
 4. **Done.** The introducer signs the newcomer in and hands it everything it knows about
-   your devices; the newcomer connects to each of them as they appear. `lpctl devices` and
-   the phone's **Devices** card list it on every device within a moment.
+    your devices; the newcomer connects to each of them as they appear. `lpctl devices` and
+    the phone's **Devices** card list it on every device within a moment.
 
 ### Options
 

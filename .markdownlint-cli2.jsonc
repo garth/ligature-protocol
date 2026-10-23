@@ -15,6 +15,7 @@
   },
   "ignores": [
     "impl/target/**",
+    "build/**",
     "LICENSE",
     "LICENSE-SPEC",
     "CODE_OF_CONDUCT.md"

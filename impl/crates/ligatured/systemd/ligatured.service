@@ -19,7 +19,7 @@
 # firewall rule lets peers dial in (for example: ufw allow 47471/udp).
 [Unit]
 Description=Ligature Protocol user daemon
-Documentation=https://github.com/ligature-protocol/ligature-protocol
+Documentation=https://garth.github.io/ligature-protocol/
 After=network.target
 
 [Service]

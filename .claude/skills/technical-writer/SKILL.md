@@ -15,6 +15,7 @@ description: USE after a change to user-facing behaviour, the protocol, a platfo
 | Milestone plan           | `docs/milestones/NN-*.md`: goal, non-goals, decisions, diagrams, exit criteria, work breakdown, risks, after | Written before the work; status line updated when done       |
 | Implementation decisions | `docs/milestones/NN-implementation-decisions.md`                                                             | A non-protocol choice is made while implementing             |
 | User guide               | `docs/guide/*.md`: one page per topic, commands as a user types them, platform limits stated                 | A feature, an install step or a platform's behaviour changes |
+| Site                     | `docs/index.md` (landing page), `site/mkdocs.yml` (navigation: a new page needs a line), `site/hooks.py`     | A page is added or moved; the landing page's status changes  |
 | README                   | `README.md`: what works today, install, releases, roadmap, documentation list                                | A milestone closes, install or release changes               |
 | Changelog                | `CHANGELOG.md`, Unreleased section                                                                           | Any change worth a release note, in its commit               |
 | Security policy          | `SECURITY.md`: how to report, the alpha status, the link to the latest audit                                 | The reporting route or the status changes; an audit          |
@@ -85,4 +86,6 @@ npx --yes markdownlint-cli2@0.23.2 "**/*.md"
 ```
 
 Every schema must compile under draft 2020-12 with formats, with `-r` for each schema it
-references (the command is in CLAUDE.md).
+references (the command is in CLAUDE.md). The site must build strictly, which catches a
+broken link or anchor that markdownlint does not: `mkdocs build --strict -f site/mkdocs.yml`
+after `pip install -r site/requirements.txt` in a virtual environment.

@@ -1,0 +1,2 @@
+# The site's build dependencies, pinned (LP-137); mkdocs-material brings mkdocs and pymdown-extensions.
+mkdocs-material==9.7.7

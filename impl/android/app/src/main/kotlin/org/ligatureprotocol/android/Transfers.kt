@@ -12,6 +12,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Environment
 import android.os.ParcelFileDescriptor
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.util.Log
@@ -174,12 +175,20 @@ object Transfers {
         return files to handles
     }
 
-    /** The provider's modification time in Unix seconds, when it has the column. */
-    private fun modifiedAt(context: Context, uri: Uri): Long? = runCatching {
-        context.contentResolver.query(uri, arrayOf(MediaStore.MediaColumns.DATE_MODIFIED), null, null, null)?.use {
-            if (it.moveToFirst() && !it.isNull(0)) it.getLong(0).takeIf { t -> t > 0 } else null
-        }
-    }.getOrNull()
+    /**
+     * The provider's modification time in Unix seconds: MediaStore's
+     * `date_modified` (seconds) or a documents provider's `last_modified`
+     * (milliseconds), whichever the provider has.
+     */
+    private fun modifiedAt(context: Context, uri: Uri): Long? {
+        fun column(name: String, divisor: Long): Long? = runCatching {
+            context.contentResolver.query(uri, arrayOf(name), null, null, null)?.use {
+                if (it.moveToFirst() && !it.isNull(0)) (it.getLong(0) / divisor).takeIf { t -> t > 0 } else null
+            }
+        }.getOrNull()
+        return column(MediaStore.MediaColumns.DATE_MODIFIED, 1)
+            ?: column(DocumentsContract.Document.COLUMN_LAST_MODIFIED, 1000)
+    }
 
     private fun displayName(context: Context, uri: Uri): String {
         runCatching {

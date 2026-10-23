@@ -471,7 +471,7 @@ pub fn devices(daemon: &Daemon) -> Result<Devices, Error> {
             introducer: role.introducer,
             display_name: record.as_ref().map(|d| d.display_name.clone()),
             platform: record.as_ref().map(|d| d.platform.clone()),
-            revoked: store.is_revoked(&role.subject)?,
+            revoked: lp_identity::trust::is_revoked(store, &owner, &role.subject)?,
             connected: connected.contains(&role.subject),
             this_device: role.subject == *daemon.binding().public()
                 || role.subject == *daemon.principal().public(),

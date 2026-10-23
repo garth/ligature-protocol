@@ -247,23 +247,19 @@ impl TrustStore {
         .collect()
     }
 
-    /// Whether any usable revocation or abandonment names `subject`. A revoked
-    /// key stays revoked: there is no fact that undoes a revocation, and a
-    /// later role fact over the same key does not restore it.
+    /// Every usable revocation or abandonment naming `subject`, oldest first,
+    /// whoever signed it. Whether one of them counts is decided against the
+    /// person it names by [`crate::trust::is_revoked`] (LP-120); the store
+    /// alone never says a key is revoked.
     ///
     /// # Errors
     ///
     /// Returns [`Error::Store`] on a database error.
-    pub fn is_revoked(&self, subject: &PublicKey) -> Result<bool, Error> {
-        self.conn()
-            .query_row(
-                "SELECT 1 FROM facts WHERE quarantined = 0 AND kind = ?1 AND subject = ?2 LIMIT 1",
-                params![REVOCATION_TYPE, subject.to_string()],
-                |_| Ok(()),
-            )
-            .optional()
-            .map(|o| o.is_some())
-            .map_err(store_err)
+    pub fn revocations_naming(&self, subject: &PublicKey) -> Result<Vec<StoredFact>, Error> {
+        self.query(
+            "WHERE quarantined = 0 AND kind = ?1 AND subject = ?2 ORDER BY created_at, hash",
+            &[&REVOCATION_TYPE, &subject.to_string()],
+        )
     }
 
     /// Every usable revocation and abandonment, oldest first. Gossip sends
@@ -504,19 +500,32 @@ mod tests {
         use lp_core::facts::RevocationKind;
         let store = TrustStore::in_memory().unwrap();
         let alice = PersonKeys::generate().unwrap();
+        store
+            .insert(&facts::person_fact(&alice, "Alice", 1, at()).unwrap())
+            .unwrap();
         let laptop = SigningKey::generate().unwrap();
         store
             .insert(
                 &facts::role_fact(&alice, Role::Binding, *laptop.public(), false, at()).unwrap(),
             )
             .unwrap();
-        assert!(!store.is_revoked(laptop.public()).unwrap());
+        let revoked = |store: &TrustStore| {
+            crate::trust::is_revoked(store, alice.person(), laptop.public()).unwrap()
+        };
+        assert!(!revoked(&store));
+        assert!(
+            store
+                .revocations_naming(laptop.public())
+                .unwrap()
+                .is_empty()
+        );
         let later = Timestamp::from_unix(1_760_000_100).unwrap();
         let rev =
             facts::revocation_fact(&alice, *laptop.public(), RevocationKind::Revocation, later)
                 .unwrap();
         store.insert(&rev).unwrap();
-        assert!(store.is_revoked(laptop.public()).unwrap());
+        assert!(revoked(&store));
+        assert_eq!(store.revocations_naming(laptop.public()).unwrap().len(), 1);
         // A newer role fact over the same key does not restore it.
         let newer = Timestamp::from_unix(1_760_000_200).unwrap();
         store
@@ -524,7 +533,7 @@ mod tests {
                 &facts::role_fact(&alice, Role::Binding, *laptop.public(), true, newer).unwrap(),
             )
             .unwrap();
-        assert!(store.is_revoked(laptop.public()).unwrap());
+        assert!(revoked(&store));
         assert_eq!(store.revocations().unwrap().len(), 1);
         assert_eq!(
             store.about(laptop.public()).unwrap().len(),

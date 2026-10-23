@@ -133,3 +133,96 @@ async fn a_revocation_made_on_one_device_reaches_the_others() {
         x.shutdown();
     }
 }
+
+/// A revocation that a stranger signed, naming a binding or the master key,
+/// is stored when it arrives by gossip and changes nothing: recognition goes
+/// by the chain, not by the subject (LP-120).
+#[tokio::test]
+async fn a_forged_revocation_relayed_by_gossip_changes_nothing() {
+    use lp_core::facts::{RevocationFact, RevocationKind};
+    use lp_crypto::signing::SigningKey;
+
+    let alice = PersonKeys::generate().unwrap();
+    let person = facts::person_fact(&alice, "Alice", 1, at(0)).unwrap();
+    let (a, _da) = daemon("a");
+    let (b, _db) = daemon("b");
+    for (i, d) in [&a, &b].iter().enumerate() {
+        d.store().insert(&person).unwrap();
+        for x in [&a, &b] {
+            d.store()
+                .insert(
+                    &facts::role_fact(
+                        &alice,
+                        Role::Binding,
+                        *x.binding().public(),
+                        true,
+                        at(1 + i as i64),
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+        }
+        d.update_keys(|k| k.set_joined(*alice.person(), Some(&alice.self_signing)))
+            .unwrap();
+    }
+
+    // Mallory's forgeries reach A somehow (a compromised peer relayed them);
+    // A stores them, since they are well-formed self-signed facts.
+    let mallory = SigningKey::generate().unwrap();
+    for subject in [*b.binding().public(), *alice.person()] {
+        let forged = RevocationFact {
+            subject,
+            kind: RevocationKind::Revocation,
+            person: *alice.person(),
+            revoked_at: at(5),
+        };
+        a.store()
+            .insert(&facts::sign(&mallory, &forged).unwrap())
+            .unwrap();
+    }
+    assert_eq!(
+        a.recognise(b.binding().public()).unwrap(),
+        Recognition::MyBinding { introducer: true },
+        "A itself is unmoved"
+    );
+
+    // Gossip carries them to B, revocations first; B is unmoved too.
+    let ab = a
+        .manager()
+        .connect(b.manager().endpoint().local_addr().unwrap())
+        .await
+        .unwrap();
+    let result = run_dialer(a.store(), &ab).await.unwrap();
+    assert!(result.sent >= 2, "the two forgeries, among the rest");
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(
+        b.recognise(a.binding().public()).unwrap(),
+        Recognition::MyBinding { introducer: true }
+    );
+    assert!(
+        !lp_identity::trust::is_revoked(b.store(), alice.person(), alice.person()).unwrap(),
+        "the master key is not abandoned on a stranger's say-so"
+    );
+    let listed = ligatured::control::devices(&b).unwrap();
+    assert!(listed.devices.iter().all(|d| !d.revoked));
+
+    // Alice's own revocation of A, from B, still works after the forgeries.
+    b.store()
+        .insert(
+            &facts::revocation_fact(
+                &alice,
+                *a.binding().public(),
+                RevocationKind::Revocation,
+                at(6),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(
+        b.recognise(a.binding().public()).unwrap(),
+        Recognition::Revoked
+    );
+    for x in [&a, &b] {
+        x.shutdown();
+    }
+}

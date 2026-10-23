@@ -86,7 +86,7 @@ async fn two_stores_converge_and_the_revocation_lands_first() {
     assert_eq!(a.store().ids().unwrap().len(), 6);
     assert_eq!(b.store().ids().unwrap().len(), 6);
     assert!(
-        b.store().is_revoked(phone.public()).unwrap(),
+        lp_identity::trust::is_revoked(b.store(), alice.person(), phone.public()).unwrap(),
         "revocation reached B"
     );
     assert_eq!(b.recognise(phone.public()).unwrap(), Recognition::Revoked);

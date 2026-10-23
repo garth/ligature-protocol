@@ -226,14 +226,24 @@ impl LinuxClipboard {
     }
 
     async fn supervise(self: Arc<Self>) {
+        let mut last_error = String::new();
         loop {
             if !self.available() {
                 match select_wayland_socket(self.env_display.as_deref(), &self.runtime_dir) {
                     Some(socket) if socket.exists() => match self.spawn_helper(&socket) {
                         Ok(()) => {
-                            tracing::info!(socket = %socket.display(), "clipboard helper started")
+                            last_error.clear();
+                            tracing::info!(socket = %socket.display(), "clipboard helper started");
                         }
-                        Err(e) => tracing::debug!(%e, "clipboard helper did not start"),
+                        Err(e) => {
+                            // Said once per distinct failure, since it retries
+                            // every few seconds; a replaced binary is one cause.
+                            let text = e.to_string();
+                            if text != last_error {
+                                tracing::warn!(%e, "clipboard helper did not start; retrying");
+                                last_error = text;
+                            }
+                        }
                     },
                     _ => tracing::debug!("no Wayland socket; clipboard unavailable"),
                 }
@@ -1118,9 +1128,14 @@ mod helper {
                 )
             };
             if conn_ready {
-                guard
-                    .read()
-                    .map_err(|e| Error::Io(format!("wayland read: {e}")))?;
+                // Nothing to read after all (another thread, or a hang-up
+                // the next dispatch reports) is not an error.
+                match guard.read() {
+                    Ok(_) => {}
+                    Err(wayland_client::backend::WaylandError::Io(e))
+                        if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                    Err(e) => return Err(Error::Io(format!("wayland read: {e}"))),
+                }
             } else {
                 drop(guard);
             }

@@ -63,20 +63,22 @@ each other on the local network and hold one QUIC connection per pair, with TLS 
 their own keys as the credentials, so the session itself is the end-to-end layer. Over it,
 devices advertise capabilities (clipboard, notifications, files, and more to come) and use
 each other's. There is no shared database: each device keeps its own signed facts and
-gossips them to its peers, revocations first. The
-[specification](spec/00-overview.md) and the
-[architecture decisions](adr/0001-record-architecture-decisions.md) have the whole design;
-the [Rust implementation](https://github.com/garth/ligature-protocol/tree/main/impl) is both
-the reference and the product.
+gossips them to its peers, revocations first. The [specification](spec/00-overview.md) has
+the whole design, and the
+[repository](https://github.com/garth/ligature-protocol) holds the decisions behind it, the
+plans for what comes next and the Rust implementation, which is both the reference and the
+product.
 
 ## Status
 
-Alpha. The releases carry the first five milestones: pairing, the clipboard with text,
-HTML, images and files, notifications, and file transfer, between a Linux machine, a Mac and
-an Android phone on one network. Remote connections, sharing between people and shared
-household devices are specified and not yet built; the
-[milestone plans](milestones/06-phone-and-media.md) say what comes next. The project is
-[security audited](security-audit/ligature-security-audit-2026-10-23.md) at each release.
+Alpha. The releases carry pairing, the clipboard with text, HTML, images and files,
+notifications, and file transfer, between a Linux machine, a Mac and an Android phone on
+one network. Next come the phone's messages and calls and media control, then one keyboard
+and mouse across the desktops, then a screen viewed and controlled from another device.
+Remote connections, sharing between people and shared household devices are specified and
+not yet built. Each release is reviewed against the project's threat model before it goes
+out; the reports are in the
+[repository](https://github.com/garth/ligature-protocol/tree/main/docs/security-audit).
 
 <small>Specification and documentation
 [CC-BY-4.0](https://github.com/garth/ligature-protocol/blob/main/LICENSE-SPEC), code

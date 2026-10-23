@@ -161,9 +161,11 @@ The reference implementation is Rust and is also the production implementation
   `06-phone-and-media.md` (the phone's SMS and calls, media control), `07-shared-input.md`
   (one keyboard and mouse across the desktops, the phone as a touchpad) and
   `08-remote-desktop.md` (a screen viewed, then controlled) are drafts.
-- `site/`: the documentation site, MkDocs with the Material theme (`mkdocs.yml` with an
-  explicit navigation, `hooks.py` rewriting links that leave `docs/` to GitHub,
-  `requirements.txt` pinned); `docs/index.md` is its landing page. `.github/workflows/pages.yml`
+- `site/`: the documentation site for users, MkDocs with the Material theme: the landing
+  page (`docs/index.md`), the user guide and the specification, and nothing else (the ADRs,
+  the milestone plans and the audits are for the repository; `mkdocs.yml` excludes them and
+  `hooks.py` rewrites links to them, and to anything outside `docs/`, to GitHub;
+  `requirements.txt` pinned). `.github/workflows/pages.yml`
   builds it with `mkdocs build --strict` and deploys it to GitHub Pages on every push to
   `main`, at `https://garth.github.io/ligature-protocol/`; CI builds it the same way so a
   broken link fails the build. A new chapter, ADR, plan or guide page needs a line in the

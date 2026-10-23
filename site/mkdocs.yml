@@ -87,9 +87,13 @@ validation:
     absolute_links: warn
     unrecognized_links: warn
 
-# Superseded decisions stay reachable by link but out of the navigation.
-not_in_nav: |
-  adr/superseded/*
+# The site is for users and for presenting the protocol: the decisions, the
+# milestone plans and the security audits stay on GitHub, and hooks.py sends a
+# link to them there.
+exclude_docs: |
+  adr/
+  milestones/
+  security-audit/
 
 nav:
   - Home: index.md
@@ -117,52 +121,3 @@ nav:
       - 'Shared Devices and Groups': spec/10-shared-devices-and-groups.md
       - Glossary: glossary.md
       - 'Prior art': prior-art.md
-  - Decisions:
-      - '0001 Record architecture decisions': adr/0001-record-architecture-decisions.md
-      - '0003 Per-device keys cross-signed by the user identity': adr/0003-device-cross-signing.md
-      - '0008 Typed capabilities with explicit discovery, request and grant': adr/0008-capability-model.md
-      - '0010 Interoperate with and bridge to existing protocols rather than replace them': adr/0010-interop-bridges.md
-      - '0011 Application-level QUIC transport authenticated by device keys': adr/0011-quic-application-transport.md
-      - '0012 Decentralised, replaceable, untrusted connectivity helpers': adr/0012-decentralised-untrusted-helpers.md
-      - '0013 WireGuard / Headscale as an optional integration, not a transport': adr/0013-wireguard-optional-integration.md
-      - '0015 Shared multi-user devices, groups, and scoped capabilities': adr/0015-shared-devices-and-groups.md
-      - '0016 No required shared state: local trust stores, gossip, and live capabilities': adr/0016-no-required-shared-state.md
-      - '0017 A per-person master key as the root of trust, with one proximity ceremony': adr/0017-master-key-identity-and-proximity-ceremony.md
-      - '0018 Rebuild instead of recovery': adr/0018-rebuild-instead-of-recovery.md
-      - '0019 Pairwise session encryption with least exposure': adr/0019-pairwise-least-exposure-encryption.md
-      - '0020 JSON Schema for records and messages, reverse-DNS type names': adr/0020-json-schema-and-reverse-dns-names.md
-      - '0021 A group key, and devices owned by the group': adr/0021-group-key-and-group-owned-devices.md
-      - '0022 Ad-hoc sharing between people''s devices': adr/0022-ad-hoc-sharing-between-people.md
-      - '0023 Group devices: registered to the group, sessions, and the authority of a request': adr/0023-group-devices-sessions-and-authority.md
-      - '0024 Device security is out of scope': adr/0024-device-security-out-of-scope.md
-      - '0025 CBOR as the wire encoding': adr/0025-cbor-wire-encoding.md
-      - '0026 Rust is the reference implementation': adr/0026-rust-reference-implementation.md
-      - '0027 Ed25519 is the signature algorithm': adr/0027-ed25519.md
-      - '0028 quinn over rustls as the QUIC stack': adr/0028-quinn-over-rustls.md
-      - '0029 The ceremony''s short code is derived from the TLS exporter': adr/0029-ceremony-code-from-tls-exporter.md
-      - '0030 In-person verification is mandatory; there is no remote joining': adr/0030-in-person-verification-mandatory.md
-      - '0031 The split key structure is the design and is implemented from the start': adr/0031-split-keys-from-the-start.md
-      - '0032 No key publication; display names are self-asserted signed facts': adr/0032-no-publication-self-asserted-names.md
-      - '0033 Supported platforms': adr/0033-supported-platforms.md
-      - '0034 Devices and people are identified by their public keys; names default to the host name': adr/0034-keys-are-identifiers.md
-      - '0035 Byte-exact signatures in one fact envelope; forgiving decoding': adr/0035-byte-exact-signatures-forgiving-decoding.md
-      - '0036 Stream framing, message typing and versioning on the wire': adr/0036-stream-framing-and-message-typing.md
-      - '0037 The local discovery record': adr/0037-local-discovery-record.md
-      - '0038 Stream reset codes, and streams held until the peer is admitted': adr/0038-stream-reset-codes-and-admission.md
-      - '0039 Whose revocation counts, and a gossiped revocation ending the live session': adr/0039-revocation-scope-and-live-session-close.md
-  - Milestones:
-      - 'Milestone 1: a Linux machine and a Mac share the clipboard': milestones/01-clipboard-poc.md
-      - 'Milestone 1: implementation decisions': milestones/01-implementation-decisions.md
-      - 'Milestone 2: an Android phone shares the clipboard with Linux and macOS': milestones/02-android-clipboard.md
-      - 'Milestone 2: implementation decisions': milestones/02-implementation-decisions.md
-      - 'Milestone 3 implementation decisions': milestones/03-implementation-decisions.md
-      - 'Milestone 3: notifications flow between all of a person''s devices': milestones/03-notifications.md
-      - 'Milestone 4: file transfer among a person''s devices over the LP session': milestones/04-files.md
-      - 'Milestone 4 implementation decisions': milestones/04-implementation-decisions.md
-      - 'Milestone 5 implementation decisions': milestones/05-implementation-decisions.md
-      - 'Milestone 5: the clipboard carries rich text, images and files': milestones/05-rich-clipboard.md
-      - 'Milestone 6: the phone''s SMS and calls, and media control, among a person''s devices': milestones/06-phone-and-media.md
-      - 'Milestone 7: one keyboard and mouse across a person''s desktops, and the phone as a touchpad': milestones/07-shared-input.md
-      - 'Milestone 8: a device''s screen viewed, then controlled, from another of the person''s devices': milestones/08-remote-desktop.md
-  - 'Security audits':
-      - 'Audit of 2026-10-23': security-audit/ligature-security-audit-2026-10-23.md

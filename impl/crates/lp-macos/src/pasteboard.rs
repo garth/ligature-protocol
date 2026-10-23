@@ -183,13 +183,16 @@ pub fn write(items: &[WriteItem]) -> Result<isize, String> {
     let mut objects: Vec<Retained<ProtocolObject<dyn NSPasteboardWriting>>> = Vec::new();
     for item in items {
         let pb_item = NSPasteboardItem::new();
+        // Types are listed in the order they are set, and applications that
+        // take the first type they can read then get the rich form (HTML,
+        // RTF, an image) rather than the plain string.
+        for (uti, bytes) in &item.data {
+            pb_item.setData_forType(&NSData::with_bytes(bytes), &NSString::from_str(uti));
+        }
         if let Some((uti, text)) = &item.text
             && !pb_item.setString_forType(&NSString::from_str(text), &NSString::from_str(uti))
         {
             return Err(format!("the pasteboard refused the string of {uti}"));
-        }
-        for (uti, bytes) in &item.data {
-            pb_item.setData_forType(&NSData::with_bytes(bytes), &NSString::from_str(uti));
         }
         if !item.lazy.is_empty() {
             let provider = item

@@ -11,6 +11,7 @@
 
 use std::io::Write as _;
 use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 
 use ligatured::files::{FileStore, Landed, Landing};
 use lp_core::Error;
@@ -102,10 +103,18 @@ impl Landing for HostLanding {
         Bytes(self.hasher.clone().finish().to_vec()).to_base64url()
     }
 
-    fn finish(mut self: Box<Self>, _modified: Option<Timestamp>) -> Result<Landed, Error> {
+    fn finish(mut self: Box<Self>, modified: Option<Timestamp>) -> Result<Landed, Error> {
         if let Some(mut file) = self.file.take() {
             file.flush()
                 .map_err(|e| Error::Io(format!("download {}: {e}", self.id)))?;
+            // Set on the descriptor before the row is published: MediaStore
+            // reads the file's time into `DATE_MODIFIED` when it scans the
+            // published row. A platform that refuses leaves the arrival time.
+            if let Some(t) = modified
+                && let Ok(secs) = u64::try_from(t.unix())
+            {
+                let _ = file.set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(secs));
+            }
         }
         self.closed = true;
         let landed = self

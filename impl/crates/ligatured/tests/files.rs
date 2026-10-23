@@ -85,6 +85,7 @@ async fn pair(a_streams: u32, b_streams: u32) -> (Device, Device) {
                 max_streams: streams,
                 max_chunk_bytes: 4096,
                 send_streams: 8,
+                ..FilesConfig::default()
             },
         );
         spawn_connection_events(daemon.clone(), events);

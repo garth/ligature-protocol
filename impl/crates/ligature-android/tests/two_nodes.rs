@@ -354,12 +354,14 @@ fn a_phone_joins_and_the_clipboard_flows_both_ways() {
                     name: "big.bin".to_owned(),
                     size: big.len() as u64,
                     mime: String::new(),
+                    modified: None,
                 },
                 OutgoingFile {
                     path: src.path().join("note.txt").to_string_lossy().into_owned(),
                     name: "note.txt".to_owned(),
                     size: 2,
                     mime: "text/plain".to_owned(),
+                    modified: None,
                 },
             ],
         )

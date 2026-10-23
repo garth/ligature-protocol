@@ -18,6 +18,7 @@ use tokio::sync::{mpsc, oneshot};
 use ligatured::files::{Destination, FileSource};
 use ligatured::files_sync::{FileState, FilesConfig, TransferEnd, TransferProgress};
 use lp_core::files::{FILES_TYPE, FileDescriptor, FilesParams};
+use lp_core::wire::Timestamp;
 
 use crate::clipboard::HostClipboard;
 use crate::pairing::Pairing;
@@ -76,6 +77,9 @@ pub struct OutgoingFile {
     pub size: u64,
     /// The content type, or empty when unknown.
     pub mime: String,
+    /// When the content was last modified, in Unix seconds, when the
+    /// provider says.
+    pub modified: Option<i64>,
 }
 
 /// A transfer as the host shows it: one notification's worth.
@@ -239,6 +243,8 @@ impl Node {
                     max_streams: 1,
                     max_chunk_bytes: FilesParams::DEFAULT_MAX_CHUNK_BYTES,
                     send_streams: 4,
+                    // The app's transfer notification says the file landed.
+                    announce_received: false,
                 },
             )
         };
@@ -395,6 +401,7 @@ impl Node {
             } else {
                 f.mime
             };
+            descriptor.modified = f.modified.and_then(|t| Timestamp::from_unix(t).ok());
             list.push((descriptor, FileSource::Path(PathBuf::from(f.path))));
         }
         let transfer = self.with_runtime(|rt| {

@@ -5,10 +5,12 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
+import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Environment
 import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import android.provider.OpenableColumns
@@ -57,9 +59,9 @@ object Transfers {
     fun createDownload(context: Context, name: String, mime: String, size: ULong): DownloadTarget? = runCatching {
         val resolver = context.contentResolver
         val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, name)
+            put(MediaStore.Downloads.DISPLAY_NAME, freeName(resolver, name))
             put(MediaStore.Downloads.MIME_TYPE, mime.ifBlank { "application/octet-stream" })
-            put(MediaStore.Downloads.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
+            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
             put(MediaStore.Downloads.IS_PENDING, 1)
             if (size > 0uL) put(MediaStore.Downloads.SIZE, size.toLong())
         }
@@ -72,6 +74,32 @@ object Transfers {
         pending[id] = Pending(uri, descriptor)
         DownloadTarget(id, "/proc/self/fd/${descriptor.fd}")
     }.onFailure { Log.w(TAG, "cannot create a download", it) }.getOrNull()
+
+    /**
+     * The name rule of the plan (`04-files.md`, decision 9): `name`, or
+     * `stem (2).ext`, `stem (3).ext`… past the names already in Downloads.
+     * The query sees the rows this app may see, which under scoped storage
+     * are its own; a clash with another app's file is still MediaStore's to
+     * resolve, with its own numbering.
+     */
+    private fun freeName(resolver: ContentResolver, name: String): String {
+        val dot = name.lastIndexOf('.')
+        val (stem, ext) = if (dot > 0) name.substring(0, dot) to name.substring(dot) else name to ""
+        val taken = HashSet<String>()
+        runCatching {
+            resolver.query(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                arrayOf(MediaStore.Downloads.DISPLAY_NAME),
+                "${MediaStore.Downloads.RELATIVE_PATH} = ? AND ${MediaStore.Downloads.DISPLAY_NAME} LIKE ?",
+                arrayOf("${Environment.DIRECTORY_DOWNLOADS}/", "$stem%"),
+                null,
+            )?.use { while (it.moveToNext()) it.getString(0)?.let(taken::add) }
+        }.onFailure { Log.w(TAG, "cannot list Downloads for the name rule", it) }
+        if (name !in taken) return name
+        var n = 2
+        while ("$stem ($n)$ext" in taken) n++
+        return "$stem ($n)$ext"
+    }
 
     @Synchronized
     fun finishDownload(context: Context, id: ULong): PublishedDownload? {
@@ -116,11 +144,12 @@ object Transfers {
         for (uri in uris) {
             val name = displayName(context, uri)
             val mime = resolver.getType(uri) ?: ""
+            val modified = modifiedAt(context, uri)
             val descriptor = runCatching { resolver.openFileDescriptor(uri, "r") }.getOrNull() ?: continue
             val size = descriptor.statSize
             if (size >= 0) {
                 handles += descriptor
-                files += OutgoingFile("/proc/self/fd/${descriptor.fd}", name, size.toULong(), mime)
+                files += OutgoingFile("/proc/self/fd/${descriptor.fd}", name, size.toULong(), mime, modified)
             } else {
                 // A pipe or a provider that cannot say: copy once to learn the size.
                 val copy = File(context.cacheDir, "share").apply { mkdirs() }
@@ -135,7 +164,7 @@ object Transfers {
                     continue
                 }
                 handles += AutoCloseable { copy.delete() }
-                files += OutgoingFile(copy.absolutePath, name, copy.length().toULong(), mime)
+                files += OutgoingFile(copy.absolutePath, name, copy.length().toULong(), mime, modified)
             }
         }
         if (files.isEmpty()) {
@@ -144,6 +173,13 @@ object Transfers {
         }
         return files to handles
     }
+
+    /** The provider's modification time in Unix seconds, when it has the column. */
+    private fun modifiedAt(context: Context, uri: Uri): Long? = runCatching {
+        context.contentResolver.query(uri, arrayOf(MediaStore.MediaColumns.DATE_MODIFIED), null, null, null)?.use {
+            if (it.moveToFirst() && !it.isNull(0)) it.getLong(0).takeIf { t -> t > 0 } else null
+        }
+    }.getOrNull()
 
     private fun displayName(context: Context, uri: Uri): String {
         runCatching {

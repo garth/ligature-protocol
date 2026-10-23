@@ -66,7 +66,8 @@ which MediaStore may.
 `org.ligatureprotocol.files`, because that is the one path every platform already has and
 it carries the origin hint on Linux, so the monitor never forwards it. One notification per
 transfer, naming the file or the count and where it landed. Dismissing it sends a `dismiss`
-for an id the sender never posted, which every backend ignores.
+for an id the sender never posted, which every backend ignores. `FilesConfig::announce_received`
+turns it off where the host shows its own, as the Android app does.
 
 **`lpctl files`.** `send <device> <path>...`, `get <device> <id>... [--to]`, `offer`,
 `offers`, `withdraw`, `cancel`, `transfers`. A device is its key, or its name or a prefix of
@@ -92,9 +93,12 @@ Downloads collection, opens a descriptor on it for writing and hands the node
 `/proc/self/fd/N` as the path to write to; the node writes and hashes through that path as
 on the desktops, then `finish_download` publishes the row (clearing `IS_PENDING`) and
 returns the name the platform gave it and its content URI, or `abort_download` deletes it.
-MediaStore numbers a clashing name itself, so the name rule's numbering is left to it on
-this platform, and the modification time is not applied, since the platform owns that
-column. Chunks therefore never cross the UniFFI boundary: only the row's metadata does.
+The app applies the name rule before inserting the row, past the Downloads names it may see,
+which under scoped storage are its own; a clash with another app's file is still MediaStore's
+to resolve, with its own numbering. The landing sets the sender's modification time on the
+descriptor before the row is published, so the scan that publishes it reads that time into
+`DATE_MODIFIED` (the LP-104 run on the Pixel found both: a second copy named `(1)` and the
+arrival time kept). Chunks never cross the UniFFI boundary: only the row's metadata does.
 
 **Sending reads the share's descriptor the same way.** `ShareActivity` takes `ACTION_SEND`
 and `ACTION_SEND_MULTIPLE` for any type, opens each content URI for reading and hands the
@@ -117,7 +121,10 @@ where received files landed). The app shows one notification per transfer on a
 `transfers` channel with a progress bar and a **Cancel** action, which a broadcast
 receiver turns into `Node::cancel_transfer`; at the end it becomes a received, sent,
 cancelled or failed notification, the received one opening the first file through its
-content URI.
+content URI. The node's own received-file announcement is off on this platform
+(`announce_received: false`), since the LP-104 run showed it beside the app's as a second
+notification with the content URI as its text. A shared file carries the provider's
+`DATE_MODIFIED` as its `modified`, when the provider has the column.
 
 **The phone takes one file at a time and sends up to four**: `maxStreams` 1 advertised,
 since several files landing at once interleave on flash and multiply pending rows, and a

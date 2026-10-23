@@ -47,6 +47,9 @@ pub struct FilesConfig {
     pub max_chunk_bytes: u64,
     /// Data streams this device is willing to run at once towards one peer.
     pub send_streams: u32,
+    /// Whether a landed file is announced through the daemon's notifications
+    /// backend. Off where the host shows its own transfer notifications.
+    pub announce_received: bool,
 }
 
 impl Default for FilesConfig {
@@ -55,6 +58,7 @@ impl Default for FilesConfig {
             max_streams: 4,
             max_chunk_bytes: FilesParams::DEFAULT_MAX_CHUNK_BYTES,
             send_streams: 4,
+            announce_received: true,
         }
     }
 }
@@ -1308,7 +1312,7 @@ impl FilesSync {
         }
         crate::grants::record_implicit_for(&self.daemon, &incoming.peer, FILES_TYPE);
         self.end_transfer(&transfer, TransferEnd::Complete);
-        if incoming.destination == Destination::Downloads {
+        if incoming.destination == Destination::Downloads && self.config.announce_received {
             self.notify_received(&incoming.peer, &transfer.progress());
         }
     }

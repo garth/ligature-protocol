@@ -1,7 +1,8 @@
 # Milestone 5: the clipboard carries rich text, images and files
 
-**Status:** Draft, for the owner's acceptance. The tasks are LP-106 to LP-110 under the
-epic LP-95, raised once the plan is accepted.
+**Status:** Accepted by the owner on 2026-10-22, with the push bound at 512 KiB, the sender
+keeping announced bytes up to 64 MiB for at most an hour, and files reaching the phone through
+a Save action. The tasks are LP-106 to LP-110 under the epic LP-95.
 
 ## 1. Goal
 

@@ -290,6 +290,17 @@ async fn run(options: &Options, locations: &Locations) -> Result<(), Error> {
                 if let Some(t) = c.text {
                     println!("{t}");
                 }
+                for p in &c.parts {
+                    eprintln!(
+                        "({} {}{})",
+                        p.mime,
+                        human(p.size),
+                        if p.promised { ", promised" } else { "" }
+                    );
+                }
+                for f in &c.files {
+                    eprintln!("(file {f}, promised)");
+                }
             }
             ClipboardAction::Set { text } => {
                 let mut req = Request::new(types::CLIPBOARD_SET, 0);
@@ -660,6 +671,14 @@ fn directions(d: &lp_core::capability::Descriptor) -> String {
         return format!(
             "  send={} receive={} maxChunkBytes={} maxStreams={}",
             p.send, p.receive, p.max_chunk_bytes, p.max_streams
+        );
+    }
+    if let Some(p) = lp_core::capability::ClipboardParams::from_descriptor(d) {
+        return format!(
+            "  maxBytes={} mimeTypes={} fetch={}",
+            p.max_bytes,
+            p.mime_types.join(","),
+            p.fetch
         );
     }
     String::new()

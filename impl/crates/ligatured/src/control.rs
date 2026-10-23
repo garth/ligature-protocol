@@ -685,12 +685,33 @@ pub async fn handle(
         types::DEVICES => devices(daemon).and_then(|d| Response::ok(id, &d)),
         types::GRANTS => crate::grants::list(daemon).and_then(|g| Response::ok(id, &g)),
         types::CLIPBOARD_GET => match daemon.clipboard() {
-            Some(c) => c.read_text().and_then(|text| {
+            Some(c) => c.read_value().and_then(|value| {
+                let (mut parts, mut files) = (Vec::new(), Vec::new());
+                if let Some(v) = &value {
+                    parts.extend(v.parts.iter().map(|p| ClipboardPartInfo {
+                        mime: p.mime.clone(),
+                        size: p.bytes.len() as u64,
+                        promised: false,
+                    }));
+                    files.extend(v.files.iter().map(|f| f.name.clone()));
+                }
+                if let Some(sync) = daemon.clipboard_sync() {
+                    for p in sync.promises() {
+                        parts.push(ClipboardPartInfo {
+                            mime: p.mime,
+                            size: p.file.size,
+                            promised: true,
+                        });
+                    }
+                    files.extend(sync.promised_files().into_iter().map(|f| f.name));
+                }
                 Response::ok(
                     id,
                     &ClipboardText {
                         available: c.available(),
-                        text,
+                        text: value.and_then(|v| v.text),
+                        parts,
+                        files,
                     },
                 )
             }),
@@ -943,6 +964,23 @@ pub struct ClipboardText {
     /// Its text, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    /// Its other representations, pushed or promised.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<ClipboardPartInfo>,
+    /// The files on it, promised.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<String>,
+}
+
+/// One representation as `lpctl clipboard` shows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClipboardPartInfo {
+    /// The content type.
+    pub mime: String,
+    /// Its size in bytes.
+    pub size: u64,
+    /// Whether it is a promise still to be fetched.
+    pub promised: bool,
 }
 
 /// An empty result.

@@ -700,12 +700,27 @@ impl Daemon {
         stored_device_name(&self.store, key).ok().flatten()
     }
 
-    /// Starts synchronising the given clipboard. Called once at startup.
+    /// Starts synchronising the given clipboard with the default
+    /// configuration. Called once at startup.
     pub fn attach_clipboard(
         self: &Arc<Self>,
         clipboard: Arc<dyn crate::clipboard::Clipboard>,
     ) -> Arc<crate::clipboard_sync::ClipboardSync> {
-        let sync = crate::clipboard_sync::ClipboardSync::start(self.clone(), clipboard.clone());
+        self.attach_clipboard_with(clipboard, crate::clipboard_sync::ClipboardConfig::default())
+    }
+
+    /// Starts synchronising the given clipboard with `config`. Called once
+    /// at startup.
+    pub fn attach_clipboard_with(
+        self: &Arc<Self>,
+        clipboard: Arc<dyn crate::clipboard::Clipboard>,
+        config: crate::clipboard_sync::ClipboardConfig,
+    ) -> Arc<crate::clipboard_sync::ClipboardSync> {
+        let sync = crate::clipboard_sync::ClipboardSync::start_with(
+            self.clone(),
+            clipboard.clone(),
+            config,
+        );
         *self
             .clipboard
             .lock()

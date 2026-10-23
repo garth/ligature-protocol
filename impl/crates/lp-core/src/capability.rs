@@ -123,7 +123,115 @@ impl Default for ClipboardGet {
     }
 }
 
-/// The descriptor this device advertises for its clipboard.
+/// A message on the clipboard stream: a `set` or a `get`. Decoded by shape,
+/// since a `set` carries `setAt` and a `get` carries only its type.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ClipboardMessage {
+    /// The peer's clipboard changed, or it answers a `get`.
+    Set(ClipboardSet),
+    /// The peer asks for our current value.
+    Get(ClipboardGet),
+}
+
+/// What a device advertises for its clipboard: the descriptor's `params`.
+/// Spec chapter 05 section 3b.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClipboardParams {
+    /// The push bound: the largest total of text and pushed part bytes the
+    /// device accepts in one `set`.
+    pub max_bytes: u64,
+    /// The content types the device accepts and can put on its clipboard.
+    pub mime_types: Vec<String>,
+    /// Whether the device holds a promise for an announced part and fetches
+    /// it on paste.
+    pub fetch: bool,
+}
+
+impl ClipboardParams {
+    /// The schema's default push bound, 512 KiB.
+    pub const DEFAULT_MAX_BYTES: u64 = 512 * 1024;
+    /// The largest push bound: the frame limit less 64 KiB of headroom.
+    pub const MAX_MAX_BYTES: u64 = 1024 * 1024 - 64 * 1024;
+    /// The plain-text type, which travels as `text` whatever the list says.
+    pub const TEXT_PLAIN: &'static str = "text/plain";
+
+    /// Text only, as a milestone 2 device advertises it.
+    #[must_use]
+    pub fn text_only() -> Self {
+        Self {
+            max_bytes: Self::DEFAULT_MAX_BYTES,
+            mime_types: vec![Self::TEXT_PLAIN.to_owned()],
+            fetch: false,
+        }
+    }
+
+    /// Whether the device accepts parts of `mime`.
+    #[must_use]
+    pub fn accepts(&self, mime: &str) -> bool {
+        self.mime_types.iter().any(|m| m.eq_ignore_ascii_case(mime))
+    }
+
+    /// The params of a clipboard descriptor, with the schema's defaults for
+    /// what it leaves out; `None` for any other capability.
+    #[must_use]
+    pub fn from_descriptor(descriptor: &Descriptor) -> Option<Self> {
+        if descriptor.capability_type.as_str() != CLIPBOARD_TYPE {
+            return None;
+        }
+        let mut params = Self::text_only();
+        if let Some(ciborium::Value::Map(entries)) = &descriptor.params {
+            for (k, v) in entries {
+                match (k.as_text(), v) {
+                    (Some("maxBytes"), ciborium::Value::Integer(i)) => {
+                        params.max_bytes = u64::try_from(*i)
+                            .unwrap_or(Self::DEFAULT_MAX_BYTES)
+                            .clamp(1, Self::MAX_MAX_BYTES);
+                    }
+                    (Some("mimeTypes"), ciborium::Value::Array(items)) => {
+                        params.mime_types = items
+                            .iter()
+                            .filter_map(|i| i.as_text().map(str::to_owned))
+                            .collect();
+                    }
+                    (Some("fetch"), ciborium::Value::Bool(b)) => params.fetch = *b,
+                    _ => {}
+                }
+            }
+        }
+        Some(params)
+    }
+}
+
+/// The descriptor a device advertises for its clipboard, from its params.
+#[must_use]
+pub fn clipboard_descriptor_with(params: &ClipboardParams) -> Descriptor {
+    let mut d = Descriptor::new(CLIPBOARD_TYPE, Scope::User);
+    d.params = Some(ciborium::Value::Map(vec![
+        (
+            ciborium::Value::Text("maxBytes".into()),
+            ciborium::Value::Integer(params.max_bytes.into()),
+        ),
+        (
+            ciborium::Value::Text("mimeTypes".into()),
+            ciborium::Value::Array(
+                params
+                    .mime_types
+                    .iter()
+                    .map(|m| ciborium::Value::Text(m.clone()))
+                    .collect(),
+            ),
+        ),
+        (
+            ciborium::Value::Text("fetch".into()),
+            ciborium::Value::Bool(params.fetch),
+        ),
+    ]));
+    d
+}
+
+/// The text-only clipboard descriptor of milestone 1, kept for the
+/// conformance vectors; the daemon advertises [`clipboard_descriptor_with`].
 #[must_use]
 pub fn clipboard_descriptor(max_bytes: u64) -> Descriptor {
     let mut d = Descriptor::new(CLIPBOARD_TYPE, Scope::User);

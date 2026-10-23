@@ -68,7 +68,7 @@ impl MacClipboard {
                             .lock()
                             .unwrap_or_else(std::sync::PoisonError::into_inner) =
                             Some(text.clone());
-                        let _ = tx.send(Change { text });
+                        let _ = tx.send(Change::text(&text));
                     }
                 }
             })

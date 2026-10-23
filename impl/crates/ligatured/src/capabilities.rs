@@ -59,13 +59,15 @@ impl Registry {
         self.publish(capabilities).await;
     }
 
-    /// Adds one capability unless an equal one is already offered.
+    /// Adds one capability, replacing any of the same type, unless an equal
+    /// one is already offered: a device offers one descriptor per family.
     pub async fn offer(&self, descriptor: Descriptor) {
         let _publishing = self.publishing.lock().await;
         let mut local = self.local();
         if local.contains(&descriptor) {
             return;
         }
+        local.retain(|d| d.capability_type != descriptor.capability_type);
         local.push(descriptor);
         self.publish(local).await;
     }

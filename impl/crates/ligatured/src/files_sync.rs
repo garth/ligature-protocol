@@ -36,7 +36,9 @@ use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, mpsc, watch};
 use tokio::task::JoinSet;
 
 use crate::daemon::Daemon;
-use crate::files::{Destination, DirectoryStore, FileSource, FileStore, Landing, MemoryLanding};
+use crate::files::{
+    Destination, DirectoryStore, FileSource, FileStore, Landed, Landing, MemoryLanding,
+};
 
 /// How the daemon takes part in file transfers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -182,6 +184,7 @@ pub struct Transfer {
     progress: watch::Sender<TransferProgress>,
     cancelled: AtomicBool,
     cancel: Notify,
+    landed: Mutex<HashMap<String, Landed>>,
 }
 
 impl std::fmt::Debug for Transfer {
@@ -208,7 +211,15 @@ impl Transfer {
             progress,
             cancelled: AtomicBool::new(false),
             cancel: Notify::new(),
+            landed: Mutex::new(HashMap::new()),
         })
+    }
+
+    /// Takes what a received file became, with its bytes when it landed in
+    /// memory; `None` before it is in place or once taken.
+    #[must_use]
+    pub fn take_landed(&self, id: &str) -> Option<Landed> {
+        lock(&self.landed).remove(id)
     }
 
     /// The transfer id.
@@ -1446,9 +1457,11 @@ impl FilesSync {
                 let _ = tx.send(WriterCommand::Finish { expected }).await;
                 drop(tx);
                 match writer.await {
-                    Ok(Ok(location)) => {
+                    Ok(Ok(landed)) => {
                         let _ = stream.send(&FilesMessage::Received).await;
                         stream.finish();
+                        let location = landed.location.clone();
+                        lock(&transfer.landed).insert(file.id.clone(), landed);
                         FileState::Received { location }
                     }
                     Ok(Err(reason)) => {
@@ -1556,7 +1569,7 @@ fn write_loop(
     mut landing: Box<dyn Landing>,
     mut rx: mpsc::Receiver<WriterCommand>,
     modified: Option<Timestamp>,
-) -> Result<Option<String>, Reason> {
+) -> Result<Landed, Reason> {
     while let Some(command) = rx.blocking_recv() {
         match command {
             WriterCommand::Write(bytes) => {
@@ -1579,7 +1592,7 @@ fn write_loop(
                 return match landing.finish(modified) {
                     Ok(landed) => {
                         tracing::info!(name = %landed.name, size = landed.size, ?landed.location, "file received");
-                        Ok(landed.location)
+                        Ok(landed)
                     }
                     Err(e) => {
                         tracing::warn!(%e, "putting a received file in place failed");

@@ -205,7 +205,7 @@ impl LinuxClipboard {
                     *last
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(text.clone());
-                    let _ = changes.send(Change { text });
+                    let _ = changes.send(Change::text(&text));
                 }
             }
             tracing::info!("clipboard helper ended; clipboard unavailable until it restarts");

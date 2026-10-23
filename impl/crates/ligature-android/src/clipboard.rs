@@ -46,9 +46,7 @@ impl HostClipboard {
     /// The host read the system clipboard and found `text` on it.
     pub fn changed(&self, text: &str) {
         *self.lock() = Some(text.to_owned());
-        let _ = self.changes.send(Change {
-            text: text.to_owned(),
-        });
+        let _ = self.changes.send(Change::text(text));
     }
 
     /// Whether the host can currently set the clipboard. While it cannot,

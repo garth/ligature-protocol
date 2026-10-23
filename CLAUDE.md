@@ -12,7 +12,8 @@ tablets are off the roadmap (chapter 08 section 4). Principles: local-first, sel
 with no required central server, end-to-end encrypted, built on existing open standards,
 interoperate rather than replace.
 
-Status is pre-alpha. The spec is a draft, the Rust workspace implements milestones 1 to 5
+Status is alpha, with release packages for Linux, macOS and Android on the GitHub Releases
+page (tags `vX.Y.Z-alpha`). The spec is a draft, the Rust workspace implements milestones 1 to 5
 (pairing, the clipboard with text, HTML, images and files, notifications and file transfer
 between a Linux machine, a Mac and an Android phone on one LAN; the phone receives the
 clipboard automatically and sends on a tap, since Android lets only a focused app read it;

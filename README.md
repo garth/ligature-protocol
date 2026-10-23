@@ -1,9 +1,11 @@
 # Ligature Protocol (LP)
 
-> **Status: pre-alpha.** Nothing here is stable. The specification is a draft, the
-> reference implementation shares the clipboard, notifications and files between a Linux
-> machine, a Mac and an Android phone (milestones 1 to 5), and the `org.ligatureprotocol`
-> type names use a placeholder domain.
+> **Status: alpha.** Release packages for Linux, macOS and Android are on the
+> [Releases page](https://github.com/garth/ligature-protocol/releases), tagged
+> `vX.Y.Z-alpha`: the reference implementation shares the clipboard, notifications and
+> files between a Linux machine, a Mac and an Android phone (milestones 1 to 5). Nothing is
+> stable yet: the specification is a draft, the wire format may change between releases,
+> and the `org.ligatureprotocol` type names use a placeholder domain.
 
 Ligature Protocol binds the devices a person owns, and the devices a household shares,
 into one trusted group, whatever they run: Linux and macOS desktops and laptops, Android
@@ -159,8 +161,8 @@ the platform would allow is recorded in the
 
 ### Install
 
-Each [release](https://github.com/ligature-protocol/ligature-protocol/releases) carries a
-tarball for Linux (x86_64 and aarch64) and macOS (universal) and an APK for Android. On a
+Each [release](https://github.com/garth/ligature-protocol/releases) carries a tarball for
+Linux (x86_64 and aarch64) and macOS (universal) and an APK for Android. On a
 desktop, unpack the tarball and run `./install.sh`: it puts `ligatured` and `lpctl` in
 `~/.local/bin` and runs the daemon as a user service that starts at login, a systemd user
 unit on Linux and a launchd agent on macOS (`./uninstall.sh` reverses it, leaving your

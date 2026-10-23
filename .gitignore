@@ -26,3 +26,6 @@ build/
 
 # Claude Code local settings; the skills under .claude/skills are part of the project
 .claude/settings.local.json
+
+# Python bytecode from the site hook (site/hooks.py)
+__pycache__/

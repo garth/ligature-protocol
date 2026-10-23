@@ -8,7 +8,7 @@
 use std::sync::{Arc, Weak};
 
 use lp_core::Error;
-use lp_core::frame::{GossipFact, GossipHave, GossipWant, StreamHeader};
+use lp_core::frame::{GossipFact, GossipHave, GossipWant, NOT_ADMITTED_CODE, StreamHeader};
 use lp_identity::gossip;
 use lp_identity::trust_store::TrustStore;
 use lp_transport::manager::{Manager, StreamHandler, open_on};
@@ -86,6 +86,12 @@ pub fn handler(daemon: Weak<Daemon>) -> StreamHandler {
             let Some(daemon) = daemon.upgrade() else {
                 return;
             };
+            if !daemon.recognise(conn.peer()).is_ok_and(|r| r.is_trusted()) {
+                tracing::debug!(peer = %conn.peer(), "gossip from a peer that is not trusted; refusing");
+                let mut stream = stream;
+                stream.reset(NOT_ADMITTED_CODE);
+                return;
+            }
             match exchange(daemon.store(), stream).await {
                 Ok(result) => {
                     tracing::info!(peer = %conn.peer(), ?result, "gossip exchanged");

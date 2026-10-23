@@ -60,12 +60,14 @@ async fn a_copy_on_one_device_appears_on_the_other_and_back() {
         Some("a"),
     )
     .unwrap();
+    a.manager().admit_all(); // this test drives the manager without the event loop (LP-121)
     let (b, eb) = Daemon::open(
         Locations::resolve(Some(d2.path()), None),
         "127.0.0.1:0".parse().unwrap(),
         Some("b"),
     )
     .unwrap();
+    b.manager().admit_all(); // this test drives the manager without the event loop (LP-121)
     for d in [&a, &b] {
         d.store().insert(&person).unwrap();
         d.update_keys(|k| k.set_joined(*alice.person(), Some(&alice.self_signing)))

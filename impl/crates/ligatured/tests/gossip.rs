@@ -50,6 +50,9 @@ async fn two_stores_converge_and_the_revocation_lands_first() {
         d.store().insert(&b_role).unwrap();
         d.update_keys(|k| k.set_joined(*alice.person(), Some(&alice.self_signing)))
             .unwrap();
+        // This test drives the managers without the daemons' event loops,
+        // which would admit each peer after recognising it (LP-121).
+        d.manager().admit_all();
     }
     // Only A knows about the old phone and its revocation; only B knows a TV.
     let phone = SigningKey::generate().unwrap();

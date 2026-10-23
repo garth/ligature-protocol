@@ -85,13 +85,20 @@ pub struct Daemon {
 }
 
 /// Marks a ceremony as in progress for as long as it lives, so unrecognised
-/// peers keep their connections.
+/// peers keep their connections; when it ends, those that did not become
+/// trusted are dropped (LP-121).
 #[derive(Debug)]
-pub struct CeremonyGuard(Arc<std::sync::atomic::AtomicUsize>);
+pub struct CeremonyGuard {
+    count: Arc<std::sync::atomic::AtomicUsize>,
+    daemon: std::sync::Weak<Daemon>,
+}
 
 impl Drop for CeremonyGuard {
     fn drop(&mut self) {
-        self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        self.count.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        if let Some(daemon) = self.daemon.upgrade() {
+            daemon.enforce_trust();
+        }
     }
 }
 
@@ -160,6 +167,10 @@ impl Daemon {
         };
         let endpoint = Endpoint::bind(bind, &binding)?;
         let (manager, events) = Manager::start(endpoint);
+        // Nothing but the pairing offer reaches a peer the daemon has not
+        // recognised (LP-121): streams wait for the verdict of
+        // `spawn_connection_events`, or of the ceremony.
+        manager.require_admission(&[pairing::PURPOSE]);
         let pairing: Arc<Mutex<Option<mpsc::Sender<PairingStream>>>> = Arc::new(Mutex::new(None));
         let slot = pairing.clone();
         manager.on_stream(
@@ -312,6 +323,8 @@ impl Daemon {
         }
         tracing::info!(person = %person.person(), name = person_name, "initialised");
         self.start_advertising()?;
+        // Strangers that connected while uninitialised go now.
+        self.enforce_trust();
         Ok(*person.person())
     }
 
@@ -499,12 +512,14 @@ impl Daemon {
         Ok(rx)
     }
 
-    /// Stops waiting for an introducer.
+    /// Stops waiting for an introducer, and drops the strangers that were
+    /// kept for it unless a ceremony still runs.
     pub fn stop_pairing(&self) {
         self.pairing
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take();
+        self.enforce_trust();
     }
 
     /// Whether an unrecognised peer may stay connected: while uninitialised
@@ -520,12 +535,16 @@ impl Daemon {
                 .is_some()
     }
 
-    /// Marks a ceremony (either role) as in progress until the guard drops.
+    /// Marks a ceremony (either role) as in progress until the guard drops,
+    /// which then drops the strangers the ceremony kept.
     #[must_use]
-    pub fn begin_ceremony(&self) -> CeremonyGuard {
+    pub fn begin_ceremony(self: &Arc<Self>) -> CeremonyGuard {
         self.ceremonies
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        CeremonyGuard(Arc::clone(&self.ceremonies))
+        CeremonyGuard {
+            count: Arc::clone(&self.ceremonies),
+            daemon: Arc::downgrade(self),
+        }
     }
 
     /// Completes a newcomer's ceremony: persists the facts and keys, then
@@ -605,6 +624,7 @@ impl Daemon {
     /// exchange facts (the acceptor's side runs in the registered handler);
     /// then, on both sides, announce our manifest.
     pub async fn on_trusted(&self, conn: &Connection) {
+        self.manager.admit(conn.peer());
         if conn.dialled_by_us() {
             if let Err(e) = crate::gossip::run_dialer(&self.store, conn).await {
                 tracing::warn!(peer = %conn.peer(), %e, "gossip failed");

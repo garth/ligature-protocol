@@ -28,6 +28,10 @@ pub const GOSSIP_FACT_TYPE: &str = "org.ligatureprotocol.gossip.fact";
 /// understand the stream's purpose.
 pub const UNKNOWN_PURPOSE_CODE: u32 = 1;
 
+/// Application error code a receiver closes a stream with when the peer that
+/// opened it has not been admitted past the pairing offer (LP-121).
+pub const NOT_ADMITTED_CODE: u32 = 2;
+
 /// Encodes one message as a frame: length prefix plus CBOR.
 ///
 /// # Errors

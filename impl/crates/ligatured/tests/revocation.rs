@@ -22,6 +22,7 @@ fn daemon(name: &str) -> (Arc<Daemon>, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let loc = Locations::resolve(Some(dir.path()), None);
     let (d, _events) = Daemon::open(loc, "127.0.0.1:0".parse().unwrap(), Some(name)).unwrap();
+    d.manager().admit_all(); // this test drives the manager without the event loop (LP-121)
     (d, dir)
 }
 

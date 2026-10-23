@@ -16,6 +16,9 @@ release workflow publishes the section as the release notes with the installers.
 - A device that learns a revocation by gossip closes the session it holds with the revoked
   device at once, and the clipboard and notifications are sent only to peers recognised at
   the time of sending (LP-122).
+- A peer the daemon has not recognised reaches nothing but the pairing offer: its other
+  streams wait for the daemon's verdict and are reset if it is dropped, and strangers kept
+  for a ceremony are dropped when it ends (LP-121).
 - A device found by mDNS while already connected is no longer dialled again, which replaced
   the live connection and lost what was in flight on it: a dismissal, a clipboard promise, a
   file offer (LP-117).

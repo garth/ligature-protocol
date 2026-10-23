@@ -138,12 +138,14 @@ pub fn spawn_connection_events(
                     Ok(r) if r.is_trusted() => {
                         tracing::info!(peer = %conn.peer(), ?r, "peer connected");
                         daemon.note_reached(conn.peer(), conn.remote_address());
+                        daemon.manager().admit(conn.peer());
                         let d = daemon.clone();
                         tokio::spawn(async move { d.on_trusted(&conn).await });
                     }
                     Ok(r) => {
                         if daemon.accepts_strangers() {
                             tracing::info!(peer = %conn.peer(), ?r, "unrecognised peer; pairing only");
+                            daemon.manager().restrict(conn.peer());
                         } else {
                             tracing::info!(peer = %conn.peer(), ?r, "unrecognised peer; dropping");
                             daemon.manager().drop_peer(conn.peer());
@@ -151,6 +153,7 @@ pub fn spawn_connection_events(
                     }
                     Err(Error::NotInitialised) => {
                         tracing::debug!(peer = %conn.peer(), "not initialised; connection kept for pairing");
+                        daemon.manager().restrict(conn.peer());
                     }
                     Err(e) => tracing::warn!(%e, "recognition failed"),
                 },

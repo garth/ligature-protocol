@@ -7,13 +7,13 @@
 //! purpose, or reset with [`UNKNOWN_PURPOSE_CODE`] while the connection
 //! carries on. The manager knows nothing about what the messages mean.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
-use lp_core::frame::{StreamHeader, UNKNOWN_PURPOSE_CODE};
+use lp_core::frame::{NOT_ADMITTED_CODE, StreamHeader, UNKNOWN_PURPOSE_CODE};
 use lp_core::{Error, PublicKey};
 use tokio::sync::mpsc;
 
@@ -28,17 +28,44 @@ pub type StreamHandler =
 #[derive(Debug)]
 pub enum Event {
     /// A connection completed its handshake; the peer key is authenticated,
-    /// not yet recognised. The owner decides what to do and may call
-    /// [`Manager::drop_peer`].
+    /// not yet recognised. The owner decides what to do: [`Manager::admit`],
+    /// [`Manager::restrict`] to the pairing offer, or [`Manager::drop_peer`].
+    /// Until it does, streams the peer opens wait (see
+    /// [`Manager::require_admission`]).
     Connected(Connection),
     /// The connection to this peer ended.
     Disconnected(PublicKey),
 }
 
+/// Where a connection stands with its owner (LP-121).
+enum Admission {
+    /// Not admitted: streams other than the allowed purposes wait here, to
+    /// be dispatched if the owner admits the peer and reset if it drops it.
+    /// A stranger kept for the pairing offer stays here for as long as it
+    /// is kept, and learns nothing from the streams it opened.
+    Waiting(Vec<(String, FramedStream)>),
+    /// Trusted: everything is dispatched.
+    Admitted,
+}
+
+/// How many streams a pending connection may have waiting.
+const MAX_QUEUED_STREAMS: usize = 8;
+
 #[derive(Default)]
 struct State {
     peers: HashMap<PublicKey, Connection>,
     handlers: HashMap<String, StreamHandler>,
+    /// The purposes a connection may open before it is admitted; `None`
+    /// admits every connection as it arrives, which only the transport's own
+    /// tests want.
+    gate: Option<HashSet<String>>,
+    admission: HashMap<PublicKey, Admission>,
+}
+
+enum Decision {
+    Dispatch,
+    Queued,
+    Refuse,
 }
 
 /// Owns the endpoint and the live connections.
@@ -127,10 +154,103 @@ impl Manager {
         self.lock().peers.keys().copied().collect()
     }
 
-    /// Closes and forgets the connection to `peer`.
+    /// Closes and forgets the connection to `peer`; streams that waited for
+    /// admission are reset.
     pub fn drop_peer(&self, peer: &PublicKey) {
-        if let Some(conn) = self.lock().peers.remove(peer) {
+        let (conn, queued) = {
+            let mut st = self.lock();
+            (
+                st.peers.remove(peer),
+                take_queued(st.admission.remove(peer)),
+            )
+        };
+        reset_all(queued);
+        if let Some(conn) = conn {
             conn.close();
+        }
+    }
+
+    /// Holds every stream a connection opens, other than those of the
+    /// purposes in `before`, until the owner calls [`Self::admit`] for that
+    /// peer, or drops it (LP-121). A connection may have a few streams
+    /// waiting; beyond that a stream is reset with [`NOT_ADMITTED_CODE`].
+    /// Without this call every connection is admitted as it arrives.
+    pub fn require_admission(&self, before: &[&str]) {
+        self.lock().gate = Some(before.iter().map(|s| (*s).to_owned()).collect());
+    }
+
+    /// Admits every connection, present and future, without a verdict: for
+    /// an owner that drives the manager without classifying its peers, such
+    /// as a test of what happens on the streams. Undoes
+    /// [`Self::require_admission`].
+    pub fn admit_all(&self) {
+        let pending: Vec<(Connection, Vec<(String, FramedStream)>)> = {
+            let mut st = self.lock();
+            st.gate = None;
+            let admission = std::mem::take(&mut st.admission);
+            admission
+                .into_iter()
+                .filter_map(|(peer, a)| {
+                    st.peers
+                        .get(&peer)
+                        .cloned()
+                        .map(|conn| (conn, take_queued(Some(a))))
+                })
+                .collect()
+        };
+        for (conn, queued) in pending {
+            for (purpose, stream) in queued {
+                self.dispatch(&conn, &purpose, stream);
+            }
+        }
+    }
+
+    /// The owner trusts `peer`: the streams that waited are dispatched, and
+    /// everything it opens from now on.
+    pub fn admit(&self, peer: &PublicKey) {
+        let (conn, queued) = {
+            let mut st = self.lock();
+            if st.gate.is_none() {
+                return;
+            }
+            let conn = st.peers.get(peer).cloned();
+            let queued = take_queued(st.admission.insert(*peer, Admission::Admitted));
+            (conn, queued)
+        };
+        match conn {
+            Some(conn) => {
+                for (purpose, stream) in queued {
+                    self.dispatch(&conn, &purpose, stream);
+                }
+            }
+            None => reset_all(queued),
+        }
+    }
+
+    /// The owner keeps `peer` for the pairing offer only: its other streams
+    /// go on waiting, dispatched only if it is admitted later (a newcomer
+    /// that becomes one of ours during the ceremony) and reset when it is
+    /// dropped.
+    pub fn restrict(&self, peer: &PublicKey) {
+        let mut st = self.lock();
+        if st.gate.is_none() {
+            return;
+        }
+        st.admission
+            .entry(*peer)
+            .or_insert_with(|| Admission::Waiting(Vec::new()));
+    }
+
+    fn dispatch(&self, conn: &Connection, purpose: &str, mut stream: FramedStream) {
+        let handler = self.lock().handlers.get(purpose).cloned();
+        match handler {
+            Some(h) => {
+                tokio::spawn(h(conn.clone(), stream));
+            }
+            None => {
+                tracing::debug!(peer = %conn.peer(), %purpose, "unknown stream purpose; refusing the stream");
+                stream.reset(UNKNOWN_PURPOSE_CODE);
+            }
         }
     }
 
@@ -196,6 +316,11 @@ impl Manager {
                 old.close();
             }
             st.peers.insert(peer, conn.clone());
+            if st.gate.is_some() {
+                let stale = take_queued(st.admission.insert(peer, Admission::Waiting(Vec::new())));
+                drop(st);
+                reset_all(stale);
+            }
         }
         let manager = self.clone();
         let streams = conn.clone();
@@ -208,42 +333,61 @@ impl Manager {
     }
 
     async fn stream_loop(&self, conn: Connection) {
+        let peer = *conn.peer();
         while let Ok((send, recv)) = conn.accept_bi().await {
-            {
-                {
-                    let mut stream = FramedStream::new(send, recv);
-                    let header = match stream.recv_header().await {
-                        Ok(h) => h,
-                        Err(e) => {
-                            tracing::debug!(peer = %conn.peer(), %e, "stream without a valid header");
-                            stream.reset(UNKNOWN_PURPOSE_CODE);
-                            continue;
+            let mut stream = FramedStream::new(send, recv);
+            let header = match stream.recv_header().await {
+                Ok(h) => h,
+                Err(e) => {
+                    tracing::debug!(%peer, %e, "stream without a valid header");
+                    stream.reset(UNKNOWN_PURPOSE_CODE);
+                    continue;
+                }
+            };
+            // Before the owner has classified the connection, only the
+            // allowed purposes go through; the rest wait, or are refused.
+            let mut slot = Some(stream);
+            let decision = {
+                let mut guard = self.lock();
+                let st = &mut *guard;
+                match (&st.gate, st.admission.get_mut(&peer)) {
+                    (None, _) => Decision::Dispatch,
+                    (Some(allowed), _) if allowed.contains(&header.purpose) => Decision::Dispatch,
+                    (Some(_), Some(Admission::Admitted)) => Decision::Dispatch,
+                    (Some(_), Some(Admission::Waiting(queue)))
+                        if queue.len() < MAX_QUEUED_STREAMS =>
+                    {
+                        if let Some(stream) = slot.take() {
+                            queue.push((header.purpose.clone(), stream));
                         }
-                    };
-                    let handler = self.lock().handlers.get(&header.purpose).cloned();
-                    match handler {
-                        Some(h) => {
-                            tokio::spawn(h(conn.clone(), stream));
-                        }
-                        None => {
-                            tracing::debug!(peer = %conn.peer(), purpose = %header.purpose, "unknown stream purpose; refusing the stream");
-                            stream.reset(UNKNOWN_PURPOSE_CODE);
-                        }
+                        Decision::Queued
                     }
+                    _ => Decision::Refuse,
+                }
+            };
+            let Some(mut stream) = slot else {
+                continue;
+            };
+            match decision {
+                Decision::Dispatch => self.dispatch(&conn, &header.purpose, stream),
+                Decision::Queued => {}
+                Decision::Refuse => {
+                    tracing::debug!(%peer, purpose = %header.purpose, "stream from a peer not admitted; refusing");
+                    stream.reset(NOT_ADMITTED_CODE);
                 }
             }
         }
-        let peer = *conn.peer();
-        let removed = {
+        let (removed, queued) = {
             let mut st = self.lock();
             match st.peers.get(&peer) {
                 Some(current) if current.raw().stable_id() == conn.raw().stable_id() => {
                     st.peers.remove(&peer);
-                    true
+                    (true, take_queued(st.admission.remove(&peer)))
                 }
-                _ => false,
+                _ => (false, Vec::new()),
             }
         };
+        reset_all(queued);
         if removed {
             let _ = self.events.send(Event::Disconnected(peer)).await;
         }
@@ -260,4 +404,17 @@ pub async fn open_on(conn: &Connection, purpose: &str) -> Result<FramedStream, E
     let mut stream = FramedStream::new(send, recv);
     stream.send(&StreamHeader::new(purpose)).await?;
     Ok(stream)
+}
+
+fn take_queued(admission: Option<Admission>) -> Vec<(String, FramedStream)> {
+    match admission {
+        Some(Admission::Waiting(queue)) => queue,
+        _ => Vec::new(),
+    }
+}
+
+fn reset_all(queued: Vec<(String, FramedStream)>) {
+    for (_, mut stream) in queued {
+        stream.reset(NOT_ADMITTED_CODE);
+    }
 }

@@ -154,3 +154,88 @@ async fn a_restarted_peer_replaces_the_connection_we_still_hold() {
         .expect("reached the restarted peer");
     assert_eq!(a.peers(), vec![*b_key.public()]);
 }
+
+/// With admission required, a stream of an allowed purpose goes through at
+/// once, any other waits for `admit`, and a peer kept for pairing only has
+/// its streams held until it is dropped.
+#[tokio::test]
+async fn streams_wait_for_admission_and_are_refused_under_restriction() {
+    let (a_ep, _a_key) = endpoint();
+    let (b_ep, b_key) = endpoint();
+    let b_addr = b_ep.local_addr().unwrap();
+    let (a, _a_events) = Manager::start(a_ep);
+    let (b, _b_events) = Manager::start(b_ep);
+    b.require_admission(&["pairing"]);
+
+    let (pairing_tx, mut pairing_rx) = mpsc::channel::<GossipHave>(4);
+    b.on_stream(
+        "pairing",
+        Arc::new(move |_conn, mut stream| {
+            let tx = pairing_tx.clone();
+            Box::pin(async move {
+                let msg: GossipHave = stream.recv().await.unwrap().unwrap();
+                tx.send(msg).await.unwrap();
+            })
+        }),
+    );
+    let (gossip_tx, mut gossip_rx) = mpsc::channel::<GossipHave>(4);
+    b.on_stream(
+        StreamHeader::GOSSIP,
+        Arc::new(move |_conn, mut stream| {
+            let tx = gossip_tx.clone();
+            Box::pin(async move {
+                let msg: GossipHave = stream.recv().await.unwrap().unwrap();
+                tx.send(msg).await.unwrap();
+            })
+        }),
+    );
+
+    let conn = a.connect(b_addr).await.unwrap();
+    assert_eq!(conn.peer(), b_key.public());
+
+    // The allowed purpose is dispatched before any verdict.
+    let mut pairing = open_on(&conn, "pairing").await.unwrap();
+    pairing.send(&GossipHave::new(vec![])).await.unwrap();
+    pairing.finish();
+    tokio::time::timeout(Duration::from_secs(5), pairing_rx.recv())
+        .await
+        .expect("pairing dispatched")
+        .unwrap();
+
+    // Gossip waits until the owner admits the peer.
+    let mut gossip = open_on(&conn, StreamHeader::GOSSIP).await.unwrap();
+    gossip.send(&GossipHave::new(vec![])).await.unwrap();
+    gossip.finish();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(300), gossip_rx.recv())
+            .await
+            .is_err(),
+        "held until admission"
+    );
+    b.admit(a.endpoint().public());
+    tokio::time::timeout(Duration::from_secs(5), gossip_rx.recv())
+        .await
+        .expect("dispatched on admission")
+        .unwrap();
+
+    // A fresh connection kept for pairing only: its gossip waits, the
+    // handler never runs, and dropping the peer resets what waited.
+    let (c_ep, c_key) = endpoint();
+    let (c, _c_events) = Manager::start(c_ep);
+    let conn = c.connect(b_addr).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    b.restrict(c_key.public());
+    let mut held = open_on(&conn, StreamHeader::GOSSIP).await.unwrap();
+    held.send(&GossipHave::new(vec![])).await.unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(300), gossip_rx.recv())
+            .await
+            .is_err(),
+        "the handler never ran"
+    );
+    b.drop_peer(c_key.public());
+    let outcome = tokio::time::timeout(Duration::from_secs(5), held.recv::<GossipHave>())
+        .await
+        .unwrap();
+    assert!(outcome.is_err(), "reset surfaces as an error: {outcome:?}");
+}

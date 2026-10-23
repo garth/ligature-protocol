@@ -156,8 +156,10 @@ The reference implementation is Rust and is also the production implementation
   launchd plist in `crates/ligatured/launchd/`),
   `lpctl` (CLI), `lp-vectors` (conformance vector formats and loader, test support,
   `publish = false`), `ligature-android` (the daemon as a `cdylib` for the Android app behind
-  UniFFI 0.32 proc macros, `publish = false`; the one crate that allows `unsafe_code`, for
-  the exported C ABI; its `uniffi-bindgen` binary, feature `bindgen`, generates the Kotlin).
+  UniFFI 0.32 proc macros, `publish = false`; allows `unsafe_code` for the exported C ABI;
+  its `uniffi-bindgen` binary, feature `bindgen`, generates the Kotlin), `lp-macos` (the
+  macOS pasteboard behind a safe API, `publish = false`, empty on other platforms; the other
+  crate allowing `unsafe_code`, for the Objective-C data provider class).
   `integrations/wireguard-integration` is a non-core placeholder.
   Dependency direction: `lp-crypto` depends only on `lp-core`; `lp-identity` and
   `lp-transport` depend on `lp-core` and `lp-crypto`; binaries depend on the layer crates;
@@ -194,7 +196,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 CI treats clippy warnings as errors and the workspace lints set `missing_docs = "warn"`,
 so every public item needs a doc comment. `unsafe_code` is forbidden workspace-wide, except
-in `ligature-android`, whose exported C ABI needs it.
+in `ligature-android`, whose exported C ABI needs it, and `lp-macos`, whose Objective-C
+pasteboard provider needs it.
 
 The Android app builds from `impl/android` with the SDK and NDK r27 installed
 (`local.properties` names the SDK), the Android Rust targets added and `cargo-ndk`

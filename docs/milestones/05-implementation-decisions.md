@@ -109,15 +109,17 @@ between the daemon and the helper are bounded at 256 MiB rather than the wire's 
 since a clipboard value is not a wire message.
 
 **The Mac keeps the pasteboard's own laziness.** `MacClipboard` maps types through a table
-(`public.html`, `public.rtf`, `public.png`, `public.tiff`, with `public.utf8-plain-text` for
-the text and `public.file-url` for files), writes a value as `NSPasteboardItem`s (the text
-and pushed parts as data, a lazy `NSPasteboardItemDataProvider` for the announced types, and
-one item per promised file whose `public.file-url` provider fetches the file into the cache
-and answers with its URL), and skips its own `changeCount` when polling. The provider is an
-Objective-C class defined with `objc2::define_class!` holding the value's fetcher and a
-runtime handle it blocks on. The plan's `NSFilePromiseProvider` is not used: a fetched file
-URL is enough for Finder and needs no completion blocks. This code is checked by CI's macOS
-build and the run, since the Linux machine cannot compile for the Mac.
+(`public.html`, `public.rtf`, `public.png`, `public.tiff`, with `public.utf8-plain-text` for the
+text and `public.file-url` for files), writes a value as `NSPasteboardItem`s (the text and pushed
+parts as data, a lazy `NSPasteboardItemDataProvider` for the announced types, and one item per
+promised file whose `public.file-url` provider fetches the file into the cache and answers with its
+URL), and skips its own `changeCount` when polling. The provider is an Objective-C class defined
+with `objc2::define_class!` in the `lp-macos` crate, the second crate allowed `unsafe` (the class's
+initialisation and thread marking need it, and `ligatured` forbids it), behind a safe `read`,
+`write` and `change_count`; the daemon's provider closure holds the value's fetcher and a runtime
+handle it blocks on. The plan's `NSFilePromiseProvider` is not used: a fetched file URL is enough
+for Finder and needs no completion blocks. This code is checked by CI's macOS build and the run,
+since the Linux machine cannot compile for the Mac.
 
 **`lpctl clipboard put` and `paste`** exist for the run: `put <mime> <path>` puts one typed
 part on the local clipboard as if copied, and `paste <mime> <out>` has the daemon write what

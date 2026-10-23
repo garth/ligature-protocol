@@ -1,32 +1,26 @@
-//! The macOS clipboard through `NSPasteboard`. Milestone 1 decision LP-29,
-//! milestone 5 LP-108; spec chapter 08 section 2b.
+//! The macOS clipboard through `NSPasteboard`, by way of the `lp-macos`
+//! crate. Milestone 1 decision LP-29, milestone 5 LP-108; spec chapter 08
+//! section 2b.
 //!
-//! The pasteboard has no change notification, so a thread polls
-//! `changeCount` every [`POLL`] and reads the value when it moves and the
-//! change is not this daemon's own write. The interval is chosen against the
+//! The pasteboard has no change notification, so a thread polls the change
+//! count every [`POLL`] and reads the value when it moves and the change is
+//! not this daemon's own write. The interval is chosen against the
 //! one-second exit criterion: a change is seen within a quarter second on
 //! average and costs one integer read per poll.
 //!
 //! Types map through a small table between MIME types and UTIs. A value a
-//! peer sent is written as one `NSPasteboardItem` carrying the text and the
-//! pushed parts as data, with a lazy data provider for each announced type
-//! that fetches the bytes when an application asks, and one item per
-//! promised file whose `public.file-url` provider fetches the file into the
-//! cache and answers with its URL, which Finder copies from.
+//! peer sent is written as one pasteboard item carrying the text and the
+//! pushed parts as data, with the announced types offered lazily and
+//! answered by fetching when an application asks, and one item per promised
+//! file whose `public.file-url` is answered once the file is fetched into
+//! the cache, which Finder copies from.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use lp_core::Error;
-use objc2::rc::Retained;
-use objc2::runtime::ProtocolObject;
-use objc2::{AnyThread, DefinedClass, define_class, msg_send};
-use objc2_app_kit::{
-    NSPasteboard, NSPasteboardItem, NSPasteboardItemDataProvider, NSPasteboardType,
-    NSPasteboardWriting,
-};
-use objc2_foundation::{NSArray, NSData, NSObject, NSObjectProtocol, NSString, NSURL};
+use lp_macos::{Provided, Provider, WriteItem};
 use tokio::sync::broadcast;
 
 use crate::clipboard::{Change, Clipboard, Fetch, Incoming, Part, TEXT_PLAIN, Value};
@@ -54,71 +48,8 @@ fn uti_for(mime: &str) -> Option<&'static str> {
         .map(|(_, u)| *u)
 }
 
-/// What a data provider serves: the fetcher of the value it belongs to and
-/// the id behind each UTI it was registered for.
-struct ProviderIvars {
-    fetch: Option<Arc<dyn Fetch>>,
-    ids: HashMap<String, String>,
-    runtime: tokio::runtime::Handle,
-}
-
-define_class!(
-    // SAFETY: NSObject has no subclassing requirements and the class does
-    // not implement Drop.
-    #[unsafe(super(NSObject))]
-    #[name = "LigatureClipboardProvider"]
-    #[ivars = ProviderIvars]
-    struct DataProvider;
-
-    unsafe impl NSObjectProtocol for DataProvider {}
-
-    unsafe impl NSPasteboardItemDataProvider for DataProvider {
-        #[unsafe(method(pasteboard:item:provideDataForType:))]
-        fn provide(
-            &self,
-            _pasteboard: Option<&NSPasteboard>,
-            item: &NSPasteboardItem,
-            r#type: &NSPasteboardType,
-        ) {
-            let uti = r#type.to_string();
-            let ivars = self.ivars();
-            let (Some(id), Some(fetch)) = (ivars.ids.get(&uti), ivars.fetch.as_ref()) else {
-                return;
-            };
-            let fetched = match ivars.runtime.block_on(fetch.fetch(id)) {
-                Ok(f) => f,
-                Err(e) => {
-                    tracing::debug!(%e, uti, "cannot fetch a promised clipboard type");
-                    return;
-                }
-            };
-            if uti == FILE_URL {
-                let Some(path) = fetched.path else { return };
-                let url = NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy()));
-                if let Some(s) = url.absoluteString() {
-                    item.setString_forType(&s, r#type);
-                }
-                return;
-            }
-            let bytes = match (fetched.bytes, fetched.path) {
-                (Some(b), _) => b.as_ref().clone(),
-                (None, Some(p)) => match std::fs::read(&p) {
-                    Ok(b) => b,
-                    Err(_) => return,
-                },
-                (None, None) => return,
-            };
-            item.setData_forType(&NSData::with_bytes(&bytes), r#type);
-        }
-    }
-);
-
-impl DataProvider {
-    fn new(ivars: ProviderIvars) -> Retained<Self> {
-        let this = Self::alloc().set_ivars(ivars);
-        // SAFETY: NSObject's init takes no arguments.
-        unsafe { msg_send![super(this), init] }
-    }
+fn mime_for(uti: &str) -> Option<&'static str> {
+    TABLE.iter().find(|(_, u)| *u == uti).map(|(m, _)| *m)
 }
 
 /// The macOS clipboard.
@@ -126,8 +57,6 @@ pub struct MacClipboard {
     last: Arc<Mutex<Option<Value>>>,
     /// The change count of this daemon's own last write, not reported back.
     own_count: Arc<Mutex<isize>>,
-    /// The providers of the current value, kept while it stands.
-    providers: Mutex<Vec<Retained<DataProvider>>>,
     changes: broadcast::Sender<Change>,
     runtime: tokio::runtime::Handle,
 }
@@ -138,45 +67,24 @@ impl std::fmt::Debug for MacClipboard {
     }
 }
 
-// SAFETY: the Objective-C objects held are only ever used through the
-// pasteboard, which takes calls from any thread.
-unsafe impl Send for MacClipboard {}
-unsafe impl Sync for MacClipboard {}
-
 /// Reads the pasteboard's current value: the text, the parts of the table's
 /// types, and the file URLs as local files.
 fn read_pasteboard() -> Option<Value> {
-    let pb = NSPasteboard::generalPasteboard();
+    let utis: Vec<&str> = TABLE.iter().map(|(_, u)| *u).collect();
+    let read = lp_macos::read(UTF8_TEXT, &utis, FILE_URL);
     let mut value = Value {
-        text: pb
-            .stringForType(&NSString::from_str(UTF8_TEXT))
-            .map(|s| s.to_string()),
+        text: read.text,
         parts: Vec::new(),
         files: Vec::new(),
     };
-    for (mime, uti) in TABLE {
-        if let Some(data) = pb.dataForType(&NSString::from_str(uti)) {
-            let bytes = data.to_vec();
-            if !bytes.is_empty() {
-                value.parts.push(Part::new(mime, bytes));
-            }
+    for (uti, bytes) in read.data {
+        if let Some(mime) = mime_for(&uti) {
+            value.parts.push(Part::new(mime, bytes));
         }
     }
-    if let Some(items) = pb.pasteboardItems() {
-        let file_url = NSString::from_str(FILE_URL);
-        for item in items.iter() {
-            let Some(s) = item.stringForType(&file_url) else {
-                continue;
-            };
-            let Some(url) = NSURL::URLWithString(&s) else {
-                continue;
-            };
-            let Some(path) = url.path() else { continue };
-            if let Ok(f) =
-                crate::clipboard_sync::local_file(std::path::Path::new(&path.to_string()))
-            {
-                value.files.push(f);
-            }
+    for path in read.file_paths {
+        if let Ok(f) = crate::clipboard_sync::local_file(&path) {
+            value.files.push(f);
         }
     }
     if value.is_empty() { None } else { Some(value) }
@@ -191,7 +99,6 @@ impl MacClipboard {
         let this = Arc::new(Self {
             last: Arc::new(Mutex::new(None)),
             own_count: Arc::new(Mutex::new(-1)),
-            providers: Mutex::new(Vec::new()),
             changes,
             runtime: tokio::runtime::Handle::current(),
         });
@@ -201,11 +108,10 @@ impl MacClipboard {
         std::thread::Builder::new()
             .name("pasteboard-poll".into())
             .spawn(move || {
-                let pb = NSPasteboard::generalPasteboard();
-                let mut seen = pb.changeCount();
+                let mut seen = lp_macos::change_count();
                 loop {
                     std::thread::sleep(POLL);
-                    let now = pb.changeCount();
+                    let now = lp_macos::change_count();
                     if now == seen {
                         continue;
                     }
@@ -221,6 +127,36 @@ impl MacClipboard {
             })
             .expect("spawn pasteboard thread");
         this
+    }
+
+    /// The provider for a value's lazy types: fetches by the id behind each
+    /// UTI, blocking the pasteboard's thread on the daemon's runtime.
+    fn provider(&self, fetch: Option<Arc<dyn Fetch>>, ids: HashMap<String, String>) -> Provider {
+        let runtime = self.runtime.clone();
+        Arc::new(move |uti: &str| {
+            let (id, fetch) = (ids.get(uti)?, fetch.as_ref()?);
+            let fut = fetch.fetch(id);
+            let fetched = if tokio::runtime::Handle::try_current().is_ok() {
+                tokio::task::block_in_place(|| runtime.block_on(fut))
+            } else {
+                runtime.block_on(fut)
+            };
+            let fetched = match fetched {
+                Ok(f) => f,
+                Err(e) => {
+                    tracing::debug!(%e, uti, "cannot fetch a promised clipboard type");
+                    return None;
+                }
+            };
+            if uti == FILE_URL {
+                return fetched.path.map(Provided::FileUrl);
+            }
+            match (fetched.bytes, fetched.path) {
+                (Some(b), _) => Some(Provided::Data(b.as_ref().clone())),
+                (None, Some(p)) => std::fs::read(p).ok().map(Provided::Data),
+                (None, None) => None,
+            }
+        })
     }
 }
 
@@ -246,60 +182,39 @@ impl Clipboard for MacClipboard {
     }
 
     fn set_value(&self, value: &Incoming) -> Result<(), Error> {
-        let pb = NSPasteboard::generalPasteboard();
-        pb.clearContents();
-        let mut providers = Vec::new();
-        let mut items: Vec<Retained<ProtocolObject<dyn NSPasteboardWriting>>> = Vec::new();
-        let item = NSPasteboardItem::new();
-        if let Some(t) = &value.text
-            && !item.setString_forType(&NSString::from_str(t), &NSString::from_str(UTF8_TEXT))
-        {
-            return Err(Error::Io("NSPasteboard refused the string".to_owned()));
-        }
+        let mut first = WriteItem {
+            text: value.text.clone().map(|t| (UTF8_TEXT.to_owned(), t)),
+            ..WriteItem::default()
+        };
         for p in &value.parts {
             if let Some(uti) = uti_for(&p.mime) {
-                item.setData_forType(&NSData::with_bytes(&p.bytes), &NSString::from_str(uti));
+                first.data.push((uti.to_owned(), p.bytes.as_ref().clone()));
             }
         }
-        let promised: HashMap<String, String> = value
-            .promises
-            .iter()
-            .filter_map(|p| uti_for(&p.mime).map(|u| (u.to_owned(), p.file.id.clone())))
-            .collect();
-        if !promised.is_empty() {
-            let utis: Vec<Retained<NSString>> =
-                promised.keys().map(|u| NSString::from_str(u)).collect();
-            let provider = DataProvider::new(ProviderIvars {
-                fetch: value.fetch.clone(),
-                ids: promised,
-                runtime: self.runtime.clone(),
-            });
-            item.setDataProvider_forTypes(
-                ProtocolObject::from_ref(&*provider),
-                &NSArray::from_retained_slice(&utis),
-            );
-            providers.push(provider);
+        let mut ids: HashMap<String, String> = HashMap::new();
+        for p in &value.promises {
+            if let Some(uti) = uti_for(&p.mime) {
+                first.lazy.push(uti.to_owned());
+                ids.insert(uti.to_owned(), p.file.id.clone());
+            }
         }
-        items.push(ProtocolObject::from_retained(item));
+        if !first.lazy.is_empty() {
+            first.provider = Some(self.provider(value.fetch.clone(), ids));
+        }
+        let mut items = vec![first];
+        // One item per promised file, each with its own provider.
         for f in &value.files {
-            let item = NSPasteboardItem::new();
-            let provider = DataProvider::new(ProviderIvars {
-                fetch: value.fetch.clone(),
-                ids: HashMap::from([(FILE_URL.to_owned(), f.id.clone())]),
-                runtime: self.runtime.clone(),
+            items.push(WriteItem {
+                lazy: vec![FILE_URL.to_owned()],
+                provider: Some(self.provider(
+                    value.fetch.clone(),
+                    HashMap::from([(FILE_URL.to_owned(), f.id.clone())]),
+                )),
+                ..WriteItem::default()
             });
-            item.setDataProvider_forTypes(
-                ProtocolObject::from_ref(&*provider),
-                &NSArray::from_retained_slice(&[NSString::from_str(FILE_URL)]),
-            );
-            providers.push(provider);
-            items.push(ProtocolObject::from_retained(item));
         }
-        if !pb.writeObjects(&NSArray::from_retained_slice(&items)) {
-            return Err(Error::Io("NSPasteboard refused the items".to_owned()));
-        }
-        *lock(&self.own_count) = pb.changeCount();
-        *lock(&self.providers) = providers;
+        let count = lp_macos::write(&items).map_err(Error::Io)?;
+        *lock(&self.own_count) = count;
         *lock(&self.last) = Some(Value {
             text: value.text.clone(),
             parts: value.parts.clone(),

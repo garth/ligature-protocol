@@ -1,0 +1,25 @@
+[package]
+name = "lp-macos"
+description = "Ligature Protocol: the macOS pasteboard behind a safe API, for the daemon's clipboard"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2.workspace = true
+objc2-foundation.workspace = true
+objc2-app-kit.workspace = true
+
+# Not the workspace lints: the pasteboard's lazy data provider is an Objective-C
+# class, whose initialisation and thread marking need `unsafe`. The daemon's
+# clipboard code stays safe by calling this crate. On any other platform the
+# crate is empty.
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "allow"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }

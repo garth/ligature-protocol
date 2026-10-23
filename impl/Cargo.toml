@@ -8,6 +8,7 @@ members = [
     "crates/ligatured",
     "crates/lpctl",
     "crates/ligature-android",
+    "crates/lp-macos",
     "crates/lp-vectors",
     # Non-core integrations. The protocol never depends on these.
     "integrations/wireguard-integration",
@@ -67,6 +68,7 @@ rustix = { version = "1", features = ["fs", "event", "pipe"] }
 # Linux notifications over the session bus (milestone 3, LP-91).
 zbus = { version = "6", default-features = false, features = ["tokio", "proxy"] }
 futures-util = { version = "0.3", default-features = false }
+lp-macos = { path = "crates/lp-macos" }
 objc2 = "0.6"
 objc2-foundation = "0.3"
 objc2-app-kit = "0.3"

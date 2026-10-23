@@ -226,7 +226,10 @@ pub fn run_main_loop() -> ! {
     let run_loop = NSRunLoop::mainRunLoop();
     loop {
         let until = NSDate::dateWithTimeIntervalSinceNow(1.0);
-        if !run_loop.runMode_beforeDate(NSDefaultRunLoopMode, &until) {
+        // SAFETY: the mode name is a constant Foundation exports for exactly
+        // this call.
+        let mode = unsafe { NSDefaultRunLoopMode };
+        if !run_loop.runMode_beforeDate(mode, &until) {
             std::thread::sleep(std::time::Duration::from_millis(200));
         }
     }

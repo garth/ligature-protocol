@@ -133,16 +133,24 @@ object Transfers {
     // Sending: content the share sheet handed us.
 
     /**
-     * Opens each URI for the node to read. A regular file is read through its
-     * descriptor; content of unknown size is copied to the cache first, since
-     * the descriptor says the exact size. Returns the files and what to close
-     * when the transfer ends, or null if nothing could be opened.
+     * Opens each URI for the node to read. Only a `content:` URI of another
+     * app's provider is opened: a share intent or a clip can carry any URI,
+     * and `file:` paths or this app's own provider would read with this
+     * app's rights, its key file included (LP-127). A regular file is read
+     * through its descriptor; content of unknown size is copied to the cache
+     * first, since the descriptor says the exact size. Returns the files and
+     * what to close when the transfer ends, or null if nothing could be
+     * opened.
      */
     fun open(context: Context, uris: List<Uri>): Pair<List<OutgoingFile>, List<AutoCloseable>>? {
         val resolver = context.contentResolver
         val files = ArrayList<OutgoingFile>()
         val handles = ArrayList<AutoCloseable>()
         for (uri in uris) {
+            if (!isShareable(uri)) {
+                Log.w(TAG, "refusing to open $uri: not another app's content")
+                continue
+            }
             val name = displayName(context, uri)
             val mime = resolver.getType(uri) ?: ""
             val modified = modifiedAt(context, uri)
@@ -174,6 +182,12 @@ object Transfers {
         }
         return files to handles
     }
+
+    /** Whether [uri] is content another app serves, as opposed to a path or our own provider. */
+    fun isShareable(uri: Uri): Boolean =
+        uri.scheme == "content" &&
+            !uri.authority.isNullOrEmpty() &&
+            uri.authority != ClipboardProvider.AUTHORITY
 
     /**
      * The provider's modification time in Unix seconds: MediaStore's
@@ -217,7 +231,7 @@ object Transfers {
         val direction = if (info.outgoing) context.getString(R.string.transfer_to, info.peerName)
         else context.getString(R.string.transfer_from, info.peerName)
         val what = if (info.filesTotal == 1u) info.firstName
-        else context.getString(R.string.transfer_files, info.filesTotal.toInt())
+        else context.resources.getQuantityString(R.plurals.transfer_files, info.filesTotal.toInt(), info.filesTotal.toInt())
         val outcome = info.outcome
         if (outcome == null) {
             val cancel = PendingIntent.getBroadcast(

@@ -203,6 +203,10 @@ impl std::fmt::Debug for Node {
     }
 }
 
+/// How long a content provider read waits for a promised part or file to
+/// arrive before answering with nothing (LP-127).
+const CLIPBOARD_FETCH_TIMEOUT: Duration = Duration::from_secs(300);
+
 #[uniffi::export]
 impl Node {
     /// Opens or creates the state under `config.data_dir`, binds the QUIC
@@ -345,7 +349,7 @@ impl Node {
                     }
                 }
             });
-        });
+        })?;
         Ok(node)
     }
 
@@ -420,22 +424,7 @@ impl Node {
         let transfer = self.with_runtime(|rt| {
             let _guard = rt.enter();
             self.files.push(&peer, list)
-        })?;
-        Ok(transfer.id())
-    }
-
-    /// Fetches `ids`, which `peer` offered earlier, into the download folder.
-    /// Returns the transfer id.
-    ///
-    /// # Errors
-    ///
-    /// As [`Self::send_files`].
-    pub fn get_files(&self, peer: String, ids: Vec<String>) -> Result<String, LpError> {
-        let peer = PublicKey::parse(peer.trim())?;
-        let transfer = self.with_runtime(|rt| {
-            let _guard = rt.enter();
-            self.files.fetch(&peer, ids, Destination::Downloads)
-        })?;
+        })??;
         Ok(transfer.id())
     }
 
@@ -476,7 +465,7 @@ impl Node {
         let person = self.with_runtime(|rt| {
             let _guard = rt.enter();
             self.daemon.init(name, None)
-        })?;
+        })??;
         self.host.on_event(Event::StatusChanged);
         Ok(person.to_string())
     }
@@ -518,7 +507,7 @@ impl Node {
         let daemon = self.daemon.clone();
         self.with_runtime(|rt| {
             rt.block_on(async move { ligatured::control::revoke_and_push(&daemon, &key).await })
-        })?;
+        })??;
         self.host.on_event(Event::StatusChanged);
         Ok(())
     }
@@ -593,11 +582,26 @@ impl Node {
 
     /// What the app's content provider serves for `key`: the bytes of a
     /// pushed part, or a promised part or file fetched now from the device
-    /// that announced it. `None` when the key is gone or the fetch failed.
+    /// that announced it. `None` when the key is gone, the fetch failed or
+    /// took longer than [`CLIPBOARD_FETCH_TIMEOUT`], or the node has
+    /// stopped. Called from a binder thread; other node calls are not held
+    /// up while it waits.
     #[must_use]
     pub fn clipboard_item(&self, key: String) -> Option<crate::ClipItemData> {
         let clipboard = self.clipboard.clone();
-        self.with_runtime(|rt| rt.block_on(async move { clipboard.item(&key).await }))
+        self.with_runtime(|rt| {
+            rt.block_on(async move {
+                match tokio::time::timeout(CLIPBOARD_FETCH_TIMEOUT, clipboard.item(&key)).await {
+                    Ok(item) => item,
+                    Err(_) => {
+                        tracing::warn!(key, "clipboard item fetch timed out");
+                        None
+                    }
+                }
+            })
+        })
+        .ok()
+        .flatten()
     }
 
     /// Asks every connected device that offers the clipboard for its current
@@ -621,6 +625,7 @@ impl Node {
                 asked
             })
         })
+        .unwrap_or(0)
     }
 
     /// Fetches the files the clipboard currently promises into Downloads,
@@ -645,7 +650,7 @@ impl Node {
         let transfer = self.with_runtime(|rt| {
             let _guard = rt.enter();
             self.files.fetch(&peer, ids, Destination::Downloads)
-        })?;
+        })??;
         Ok(Some(transfer.id()))
     }
 
@@ -678,7 +683,7 @@ impl Node {
     pub fn set_notifications_emitting(&self, emitting: bool) {
         self.notifications.set_emits(emitting);
         if let Some(sync) = self.daemon.notification_sync() {
-            self.with_runtime(|rt| rt.block_on(sync.advertise()));
+            let _ = self.with_runtime(|rt| rt.block_on(sync.advertise()));
         }
     }
 
@@ -694,14 +699,8 @@ impl Node {
         self.with_runtime(|rt| {
             let _guard = rt.enter();
             self.daemon.restart_discovery()
-        })
+        })?
         .map_err(LpError::from)
-    }
-
-    /// Whether the host can set the clipboard right now. While it cannot,
-    /// the capability is withdrawn from peers.
-    pub fn set_clipboard_reachable(&self, reachable: bool) {
-        self.clipboard.set_reachable(reachable);
     }
 
     /// Starts a ceremony with this device as the newcomer. The offer and the
@@ -735,7 +734,7 @@ impl Node {
                     .map_err(|e| e.to_string());
                 finish(&finished, &host_done, result);
             });
-        });
+        })?;
         Ok(pairing)
     }
 
@@ -773,7 +772,7 @@ impl Node {
                     .map_err(|e| e.to_string());
                 finish(&finished, &host, result);
             });
-        });
+        })?;
         Ok(pairing)
     }
 
@@ -812,7 +811,8 @@ impl Node {
                     host.on_event(Event::PairingCode { code });
                 }
             });
-        });
+        })
+        .ok();
         (
             Prompt {
                 code: code_tx,
@@ -822,13 +822,25 @@ impl Node {
         )
     }
 
-    fn with_runtime<R>(&self, f: impl FnOnce(&tokio::runtime::Runtime) -> R) -> R {
-        let guard = self
+    /// Runs `f` with a handle to the node's runtime. The lock protecting the
+    /// runtime is held only to take the handle, never while `f` waits on the
+    /// network, so one call blocking on a fetch stalls no other (LP-127).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LpError::Internal`] once [`Self::stop`] has taken the
+    /// runtime down: a provider or activity call that lands then gets an
+    /// error, not a panic.
+    fn with_runtime<R>(&self, f: impl FnOnce(&tokio::runtime::Handle) -> R) -> Result<R, LpError> {
+        let handle = self
             .runtime
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let rt = guard.as_ref().expect("node stopped");
-        f(rt)
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .map(tokio::runtime::Runtime::handle)
+            .cloned()
+            .ok_or_else(|| LpError::Internal("node stopped".to_owned()))?;
+        Ok(f(&handle))
     }
 }
 

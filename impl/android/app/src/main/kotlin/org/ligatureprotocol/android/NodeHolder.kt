@@ -38,6 +38,7 @@ import org.ligatureprotocol.core.Pairing
 import org.ligatureprotocol.core.PublishedDownload
 import org.ligatureprotocol.core.Status
 import java.io.File
+import java.util.concurrent.Executors
 
 /** A ceremony as the screen shows it. */
 data class PairingState(
@@ -87,7 +88,20 @@ object NodeHolder : Host {
     @Volatile
     private var listenerConnected = false
 
+    /**
+     * One thread for every node call that waits on the network or the disk
+     * (revoking, asking for clipboards, opening shared files, starting and
+     * stopping), so none of them runs on the main thread or a binder thread
+     * (LP-127). Results reach the caller through a callback.
+     */
+    private val worker = Executors.newSingleThreadExecutor { Thread(it, "ligature-host") }
+
     val isRunning: Boolean get() = node != null
+
+    /** Runs [block] on the worker thread. */
+    fun async(block: () -> Unit) {
+        worker.execute(block)
+    }
 
     @Synchronized
     fun start(context: Context) {
@@ -120,6 +134,12 @@ object NodeHolder : Host {
         pairing = null
         node?.stop()
         node = null
+        synchronized(this) {
+            clipHandles.forEach { runCatching { it.close() } }
+            clipHandles = emptyList()
+            previousClipHandles.forEach { runCatching { it.close() } }
+            previousClipHandles = emptyList()
+        }
         _state.update { UiState() }
     }
 
@@ -132,12 +152,13 @@ object NodeHolder : Host {
         _state.update { it.copy(status = status, devices = devices, lastClipboard = last) }
     }
 
-    fun createPerson(name: String) = call { it.init(name) }
+    fun createPerson(name: String) = async { call { it.init(name) } }
 
     /** The network came up or changed: start discovery again on it. */
-    fun restartDiscovery() = call { it.restartDiscovery() }
+    fun restartDiscovery() = async { call { it.restartDiscovery() } }
 
-    fun revoke(key: String) = call { it.revoke(key) }
+    /** Revokes a device: the node pushes the revocation to every peer first. */
+    fun revoke(key: String) = async { call { it.revoke(key) } }
 
     /** Starts the ceremony with this phone as the newcomer. */
     fun startJoin() = call {
@@ -175,7 +196,7 @@ object NodeHolder : Host {
      * it to the person's other devices. Returns how many of them offer the
      * clipboard right now.
      */
-    fun clipboardChanged(text: String): Int {
+    private fun clipboardChanged(text: String): Int {
         val n = node ?: return 0
         n.clipboardChanged(text)
         refresh()
@@ -185,27 +206,47 @@ object NodeHolder : Host {
     /**
      * Reads the clipboard, if Android lets us, with every representation the
      * clip carries (milestone 5): the text, the HTML, and the content URIs
-     * opened for the node. Returns how many devices offer the clipboard, or
-     * null when the clipboard holds nothing readable.
+     * opened for the node. The read happens on the calling thread, since it
+     * is the caller's focus that permits it; the opens and the send happen on
+     * the worker, and [onDone] is then called there with how many devices
+     * offer the clipboard, or null when the clipboard holds nothing readable.
      */
-    fun readAndSend(context: Context): Int? {
-        val n = node ?: return 0
-        val read = readClipboardValue(context) ?: return null
-        clipHandles.forEach { runCatching { it.close() } }
-        clipHandles = read.handles
-        n.clipboardChangedValue(read.text, read.html, read.contents)
-        refresh()
-        return runCatching { n.status().clipboardPeers.size }.getOrDefault(0)
+    fun readAndSend(context: Context, onDone: (Int?) -> Unit = {}) {
+        val n = node ?: return onDone(0)
+        val clip = readClip(context) ?: return onDone(null)
+        async {
+            val read = openClip(context, clip)
+            if (read == null) {
+                onDone(null)
+                return@async
+            }
+            synchronized(this) {
+                // The node may still be sending the previous clip's files
+                // from their descriptors: keep one generation back open.
+                previousClipHandles.forEach { runCatching { it.close() } }
+                previousClipHandles = clipHandles
+                clipHandles = read.handles
+            }
+            n.clipboardChangedValue(read.text, read.html, read.contents)
+            refresh()
+            onDone(runCatching { n.status().clipboardPeers.size }.getOrDefault(0))
+        }
     }
 
-    /** Asks every connected device for its clipboard (**Receive now**). */
-    fun requestClipboard(): Int = node?.requestClipboard()?.toInt() ?: 0
+    /** Asks every connected device for its clipboard (**Receive now**); [onDone] gets how many. */
+    fun requestClipboard(onDone: (Int) -> Unit) = async {
+        onDone(runCatching { node?.requestClipboard()?.toInt() }.getOrNull() ?: 0)
+    }
 
     /** Fetches the files the clipboard promises into Downloads (**Save**). */
-    fun saveClipboardFiles(): String? = runCatching { node?.saveClipboardFiles() }.getOrNull()
+    fun saveClipboardFiles() = async { runCatching { node?.saveClipboardFiles() } }
 
-    /** The provider asks for an item's bytes or file. */
-    fun clipboardItem(key: String): ClipItemData? = node?.clipboardItem(key)
+    /**
+     * The provider asks for an item's bytes or file: a promised one is
+     * fetched now, on the binder thread that asked, bounded by the node's
+     * timeout. Null once the node has stopped.
+     */
+    fun clipboardItem(key: String): ClipItemData? = runCatching { node?.clipboardItem(key) }.getOrNull()
 
     /** What the provider knows about a key: type, name and size. */
     @Synchronized
@@ -213,11 +254,15 @@ object NodeHolder : Host {
 
     private var clipItems: Map<String, ClipItem> = emptyMap()
     private var clipHandles: List<AutoCloseable> = emptyList()
+    private var previousClipHandles: List<AutoCloseable> = emptyList()
 
-    /** Text handed to the app (the share sheet): on the clipboard here and everywhere. */
-    fun sendText(text: String): Int {
+    /**
+     * Text handed to the app (the share sheet), after the user confirmed it:
+     * on the clipboard here and everywhere. [onDone] gets the device count.
+     */
+    fun sendText(text: String, onDone: (Int) -> Unit) = async {
         setClipboard(text)
-        return clipboardChanged(text)
+        onDone(clipboardChanged(text))
     }
 
     // Files (milestone 4).
@@ -233,14 +278,23 @@ object NodeHolder : Host {
     }
 
     /**
-     * Sends the content behind [uris] to [peer]. Opens each one and keeps it
-     * open until the transfer's last event. Returns a message for the user.
+     * Sends the content behind [uris] to [peer]: opens each one on the worker
+     * (a provider without a size is copied first) and keeps it open until the
+     * transfer's last event. [onDone] gets a message for the user.
      */
-    fun sendFiles(context: Context, peer: String, uris: List<android.net.Uri>): String {
-        val n = node ?: return context.getString(R.string.sent_to_none)
-        val (files, handles) = Transfers.open(context, uris)
-            ?: return context.getString(R.string.no_file_opened)
-        return try {
+    fun sendFiles(context: Context, peer: String, uris: List<android.net.Uri>, onDone: (String) -> Unit) = async {
+        val n = node
+        if (n == null) {
+            onDone(context.getString(R.string.sent_to_none))
+            return@async
+        }
+        val opened = Transfers.open(context, uris)
+        if (opened == null) {
+            onDone(context.getString(R.string.no_file_opened))
+            return@async
+        }
+        val (files, handles) = opened
+        val message = try {
             val transfer = n.sendFiles(peer, files)
             Transfers.keepOpen(transfer, handles)
             context.resources.getQuantityString(R.plurals.sending_files, files.size, files.size)
@@ -249,6 +303,7 @@ object NodeHolder : Host {
             Log.w(TAG, "send failed", e)
             e.message ?: e.toString()
         }
+        onDone(message)
     }
 
     fun cancelTransfer(transfer: String) {
@@ -260,8 +315,10 @@ object NodeHolder : Host {
     /** The listener connected or disconnected: the capability's `emits` follows. */
     fun setNotificationsEmitting(emitting: Boolean) {
         listenerConnected = emitting
-        node?.setNotificationsEmitting(emitting)
-        if (::appContext.isInitialized) refreshNotificationAccess(appContext)
+        async {
+            runCatching { node?.setNotificationsEmitting(emitting) }
+            if (::appContext.isInitialized) refreshNotificationAccess(appContext)
+        }
     }
 
     fun notificationPosted(notification: LocalNotification) {
@@ -272,8 +329,8 @@ object NodeHolder : Host {
         node?.notificationRemoved(id)
     }
 
-    fun notificationCopyDismissed(origin: String, id: String) = call {
-        it.notificationCopyDismissed(origin, id)
+    fun notificationCopyDismissed(origin: String, id: String) = async {
+        call { it.notificationCopyDismissed(origin, id) }
     }
 
     /** Re-reads whether access is granted and the app list, for the screen. */
@@ -324,14 +381,6 @@ object NodeHolder : Host {
     private const val KEY_SEEN = "notifications.seen"
     private const val KEY_EXCLUDED = "notifications.excluded"
 
-    /** Reads the primary clip if Android lets us (focused, or the background permission). */
-    fun readClipboard(context: Context): String? {
-        val manager = context.getSystemService(ClipboardManager::class.java)
-        val clip = runCatching { manager.primaryClip }.getOrNull() ?: return null
-        if (clip.itemCount == 0) return null
-        return clip.getItemAt(0).coerceToText(context)?.toString()?.takeIf { it.isNotEmpty() }
-    }
-
     /** A clip as read: its text, HTML and the content opened for the node. */
     class ClipRead(
         val text: String?,
@@ -341,11 +390,12 @@ object NodeHolder : Host {
     )
 
     /**
-     * Reads the primary clip with every representation it carries, opening
-     * each content URI for the node to read. A clip of this app's own
-     * provider is what a peer sent and is not read back.
+     * Reads the primary clip, if Android lets us, as it is: the text, the
+     * HTML and the content URIs it carries. A clip of this app's own
+     * provider is what a peer sent and is not read back. Nothing is opened
+     * here; [openClip] does that, off the caller's thread.
      */
-    fun readClipboardValue(context: Context): ClipRead? {
+    private fun readClip(context: Context): Triple<String?, String?, List<Uri>>? {
         val manager = context.getSystemService(ClipboardManager::class.java)
         val clip = runCatching { manager.primaryClip }.getOrNull() ?: return null
         if (clip.itemCount == 0) return null
@@ -364,6 +414,13 @@ object NodeHolder : Host {
         if (text == null && uris.isEmpty()) {
             text = clip.getItemAt(0).coerceToText(context)?.toString()?.takeIf { it.isNotEmpty() }
         }
+        if (text == null && html == null && uris.isEmpty()) return null
+        return Triple(text, html, uris)
+    }
+
+    /** Opens the content URIs of a clip for the node to read. */
+    private fun openClip(context: Context, clip: Triple<String?, String?, List<Uri>>): ClipRead? {
+        val (text, html, uris) = clip
         val (contents, handles) = Transfers.open(context, uris) ?: (emptyList<OutgoingFile>() to emptyList())
         if (text == null && html == null && contents.isEmpty()) return null
         return ClipRead(text, html, contents, handles)
@@ -427,7 +484,7 @@ object NodeHolder : Host {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val title = if (files.size == 1) appContext.getString(R.string.clip_file_title, files[0].name)
-        else appContext.getString(R.string.clip_files_title, files.size)
+        else appContext.resources.getQuantityString(R.plurals.clip_files_title, files.size, files.size)
         val notification = Notification.Builder(appContext, Transfers.CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_tile)
             .setContentTitle(title)
@@ -533,6 +590,11 @@ object NodeHolder : Host {
             block(n)
             _state.update { it.copy(lastError = null) }
         } catch (e: LpException) {
+            Log.w(TAG, "call failed", e)
+            _state.update { it.copy(lastError = e.message ?: e.toString()) }
+        } catch (e: RuntimeException) {
+            // A call that landed between stop() and node = null, or a
+            // binding error: shown, never fatal.
             Log.w(TAG, "call failed", e)
             _state.update { it.copy(lastError = e.message ?: e.toString()) }
         }

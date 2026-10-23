@@ -6,7 +6,12 @@
     <string name="notification_channel">Ligature node</string>
     <string name="notification_title">Ligature is running</string>
     <string name="notification_action_send">Send clipboard</string>
-    <string name="sent_to">Sent to %1$d device(s)</string>
+    <plurals name="sent_to">
+        <item quantity="one">Sent to %1$d device</item>
+        <item quantity="other">Sent to %1$d devices</item>
+    </plurals>
+    <string name="share_text_title">Send this text to your devices?</string>
+    <string name="share_text_send">Send</string>
     <string name="sent_to_none">No device is connected</string>
     <string name="clipboard_empty">The clipboard holds no text</string>
     <string name="notifications_channel_prefix">Notifications from</string>
@@ -23,7 +28,10 @@
     </plurals>
     <string name="transfer_to">to %1$s</string>
     <string name="transfer_from">from %1$s</string>
-    <string name="transfer_files">%1$d files</string>
+    <plurals name="transfer_files">
+        <item quantity="one">%1$d file</item>
+        <item quantity="other">%1$d files</item>
+    </plurals>
     <string name="transfer_progress">%1$s of %2$s</string>
     <string name="transfer_cancel">Cancel</string>
     <string name="transfer_received">Received %1$s</string>
@@ -31,8 +39,14 @@
     <string name="transfer_cancelled">Cancelled %1$s</string>
     <string name="transfer_failed">Could not transfer %1$s</string>
     <string name="clip_file_title">%1$s is on the clipboard</string>
-    <string name="clip_files_title">%1$d files are on the clipboard</string>
+    <plurals name="clip_files_title">
+        <item quantity="one">%1$d file is on the clipboard</item>
+        <item quantity="other">%1$d files are on the clipboard</item>
+    </plurals>
     <string name="clip_files_text">Copied on another device. Save them to Downloads here.</string>
     <string name="clip_save">Save</string>
-    <string name="asked_n">Asked %1$d devices for their clipboard</string>
+    <plurals name="asked_n">
+        <item quantity="one">Asked %1$d device for its clipboard</item>
+        <item quantity="other">Asked %1$d devices for their clipboard</item>
+    </plurals>
 </resources>

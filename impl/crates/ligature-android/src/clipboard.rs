@@ -79,12 +79,6 @@ impl HostClipboard {
         let _ = self.changes.send(Change { value });
     }
 
-    /// Whether the host can currently set the clipboard. While it cannot,
-    /// the capability is withdrawn from peers.
-    pub fn set_reachable(&self, reachable: bool) {
-        self.reachable.store(reachable, Ordering::SeqCst);
-    }
-
     /// What the provider serves for `key`: a part's bytes, or a promised
     /// part or file fetched now. `None` for a key that is not on the
     /// clipboard any more, or a fetch that failed.

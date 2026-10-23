@@ -42,21 +42,35 @@ class NodeService : Service() {
     }
 
     private fun networkUp() {
-        if (NodeHolder.isRunning) {
+        if (NodeHolder.isRunning || starting) {
             NodeHolder.restartDiscovery()
             return
         }
-        try {
-            NodeHolder.start(this)
-        } catch (e: Exception) {
-            Log.e("ligature", "node failed to start", e)
-            stopSelf()
-            return
-        }
-        clipboard = getSystemService(ClipboardManager::class.java).also {
-            it.addPrimaryClipChangedListener(clipListener)
+        // Opening the store (with its verification pass) and binding the
+        // sockets is disk and network work: off the main thread (LP-127).
+        starting = true
+        NodeHolder.async {
+            val started = try {
+                NodeHolder.start(this)
+                true
+            } catch (e: Exception) {
+                Log.e("ligature", "node failed to start", e)
+                false
+            }
+            mainThread.post {
+                starting = false
+                if (!started) {
+                    stopSelf()
+                    return@post
+                }
+                clipboard = getSystemService(ClipboardManager::class.java).also {
+                    it.addPrimaryClipChangedListener(clipListener)
+                }
+            }
         }
     }
+
+    private var starting = false
 
     private val clipListener = ClipboardManager.OnPrimaryClipChangedListener {
         // Fires only when Android lets this app read: in the foreground, or
@@ -88,7 +102,9 @@ class NodeService : Service() {
     override fun onDestroy() {
         connectivity?.unregisterNetworkCallback(networkCallback)
         clipboard?.removePrimaryClipChangedListener(clipListener)
-        NodeHolder.stop()
+        // The node's shutdown waits up to two seconds for its tasks: not on
+        // the main thread.
+        NodeHolder.async { NodeHolder.stop() }
         multicastLock?.release()
         super.onDestroy()
     }

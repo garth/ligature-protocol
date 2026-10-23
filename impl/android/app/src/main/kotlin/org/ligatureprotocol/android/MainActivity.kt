@@ -13,6 +13,7 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -30,6 +31,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // The system bars follow the theme, light or dark; the screen pads
+        // itself with safeDrawingPadding.
+        enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
@@ -80,18 +84,22 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun sendClipboard() {
-        val message = when (val n = NodeHolder.readAndSend(this)) {
-            null -> getString(R.string.clipboard_empty)
-            0 -> getString(R.string.sent_to_none)
-            else -> getString(R.string.sent_to, n)
+        NodeHolder.readAndSend(this) { n ->
+            val message = when (n) {
+                null -> getString(R.string.clipboard_empty)
+                0 -> getString(R.string.sent_to_none)
+                else -> resources.getQuantityString(R.plurals.sent_to, n, n)
+            }
+            runOnUiThread { Toast.makeText(this, message, Toast.LENGTH_SHORT).show() }
         }
-        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
 
     private fun receiveClipboard() {
-        val n = NodeHolder.requestClipboard()
-        val message = if (n == 0) getString(R.string.sent_to_none) else getString(R.string.asked_n, n)
-        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+        NodeHolder.requestClipboard { n ->
+            val message = if (n == 0) getString(R.string.sent_to_none)
+            else resources.getQuantityString(R.plurals.asked_n, n, n)
+            runOnUiThread { Toast.makeText(this, message, Toast.LENGTH_SHORT).show() }
+        }
     }
 
     private fun copy(text: String) {

@@ -39,8 +39,10 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 Each [release](https://github.com/garth/ligature-protocol/releases) carries
 `ligature-<version>-android.apk`, built by the release workflow and signed with the
 keystore in the repository secrets; sideload it the same way. The app's `versionName` is
-the workspace version in `impl/Cargo.toml` and its `versionCode` is derived from it
-(LP-85). `./gradlew assembleRelease` signs the release APK when `LIGATURE_ANDROID_KEYSTORE`,
+the workspace version in `impl/Cargo.toml` and its `versionCode` is derived from it: major,
+minor, patch and a stage digit (0 for `-alpha`, 1 for `-beta`, 2 for `-rc`, 9 for a
+release), so each version installs over the one before it (LP-85, LP-127).
+`./gradlew assembleRelease` signs the release APK when `LIGATURE_ANDROID_KEYSTORE`,
 `LIGATURE_ANDROID_KEYSTORE_PASSWORD`, `LIGATURE_ANDROID_KEY_ALIAS` and
 `LIGATURE_ANDROID_KEY_PASSWORD` name a keystore, and leaves it unsigned otherwise.
 

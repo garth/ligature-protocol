@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Compose draws everything; the platform theme only sets the window. -->
-    <style name="Theme.Ligature" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:windowLightStatusBar">true</item>
-    </style>
+    <style name="Theme.Ligature" parent="android:Theme.Material.Light.NoActionBar" />
 
     <style name="Theme.Ligature.Transparent" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowIsTranslucent">true</item>

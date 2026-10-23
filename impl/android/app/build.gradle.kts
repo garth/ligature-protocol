@@ -23,8 +23,19 @@ val workspaceVersion: String = cargoManifest.useLines { lines ->
     lines.dropWhile { it.trim() != "[workspace.package]" }
         .firstNotNullOf { Regex("^version\\s*=\\s*\"([^\"]+)\"").find(it)?.groupValues?.get(1) }
 }
-val workspaceVersionCode: Int = workspaceVersion.substringBefore('-').split('.').map { it.toInt() }
-    .let { (major, minor, patch) -> major * 1_000_000 + minor * 1_000 + patch }
+// major.minor.patch and a stage: 0 for -alpha, 1 for -beta, 2 for -rc, 9 for
+// a release, so 0.1.1-alpha installs before 0.1.1 and both before 0.1.2.
+val workspaceVersionCode: Int = run {
+    val (major, minor, patch) = workspaceVersion.substringBefore('-').split('.').map { it.toInt() }
+    val stage = when (workspaceVersion.substringAfter('-', "").substringBefore('.')) {
+        "" -> 9
+        "alpha" -> 0
+        "beta" -> 1
+        "rc" -> 2
+        else -> 3
+    }
+    major * 1_000_000 + minor * 10_000 + patch * 10 + stage
+}
 
 // The release signing key, from the environment when the release workflow (or
 // a developer) supplies one; otherwise the release APK is unsigned.
@@ -144,7 +155,6 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
-    implementation(libs.androidx.lifecycle.service)
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.foundation)

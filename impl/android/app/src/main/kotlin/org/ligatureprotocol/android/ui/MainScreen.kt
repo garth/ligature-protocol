@@ -28,6 +28,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -287,7 +289,11 @@ private fun NotificationsCard(
                             Text(app.label)
                             Text(app.packageName, style = MaterialTheme.typography.bodySmall)
                         }
-                        Switch(checked = app.enabled, onCheckedChange = { onToggle(app.packageName, it) })
+                        Switch(
+                            checked = app.enabled,
+                            onCheckedChange = { onToggle(app.packageName, it) },
+                            modifier = Modifier.semantics { contentDescription = "Send ${app.label} notifications" },
+                        )
                     }
                 }
                 TextButton(onClick = onSettings) { Text("Notification access settings") }

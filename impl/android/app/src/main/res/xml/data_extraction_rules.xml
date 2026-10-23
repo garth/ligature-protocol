@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The identity (keys.cbor beside the store under files/ligature) belongs to
+     this device alone: it is never copied to a cloud backup or to another
+     device by a device-to-device transfer (Android 12 and later; allowBackup
+     covers the rest). -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="ligature/" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="ligature/" />
+    </device-transfer>
+</data-extraction-rules>

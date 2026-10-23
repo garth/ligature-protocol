@@ -10,7 +10,8 @@ import android.widget.Toast
 
 /**
  * "Send to my devices" in the share sheet. Text goes to the clipboard of
- * every device, as before; files go to one device the user picks among those
+ * every device once the user has seen it and confirmed, since any app can
+ * send a share intent; files go to one device the user picks among those
  * that receive files (milestone 4).
  */
 class ShareActivity : Activity() {
@@ -27,15 +28,36 @@ class ShareActivity : Activity() {
         } else {
             null
         }
-        val message = when (text) {
-            null -> getString(R.string.clipboard_empty)
-            else -> {
-                val n = NodeHolder.sendText(text)
-                if (n == 0) getString(R.string.sent_to_none) else getString(R.string.sent_to, n)
-            }
+        if (text == null) {
+            Toast.makeText(this, getString(R.string.clipboard_empty), Toast.LENGTH_SHORT).show()
+            finish()
+            return
         }
-        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
-        finish()
+        confirmAndSendText(text)
+    }
+
+    private fun confirmAndSendText(text: String) {
+        val preview = if (text.length > PREVIEW_CHARS) text.take(PREVIEW_CHARS) + "…" else text
+        AlertDialog.Builder(this)
+            .setTitle(R.string.share_text_title)
+            .setMessage(preview)
+            .setPositiveButton(R.string.share_text_send) { _, _ ->
+                NodeHolder.sendText(text) { n ->
+                    val message = if (n == 0) getString(R.string.sent_to_none)
+                    else resources.getQuantityString(R.plurals.sent_to, n, n)
+                    runOnUiThread {
+                        Toast.makeText(applicationContext, message, Toast.LENGTH_SHORT).show()
+                        finish()
+                    }
+                }
+            }
+            .setNegativeButton(android.R.string.cancel) { _, _ -> finish() }
+            .setOnCancelListener { finish() }
+            .show()
+    }
+
+    private companion object {
+        const val PREVIEW_CHARS = 400
     }
 
     @Suppress("DEPRECATION")
@@ -70,9 +92,12 @@ class ShareActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle(resources.getQuantityString(R.plurals.send_files_title, uris.size, uris.size))
             .setItems(targets.map { it.second }.toTypedArray()) { _, which ->
-                val result = NodeHolder.sendFiles(this, targets[which].first, uris)
-                Toast.makeText(this, result, Toast.LENGTH_SHORT).show()
-                finish()
+                NodeHolder.sendFiles(this, targets[which].first, uris) { result ->
+                    runOnUiThread {
+                        Toast.makeText(applicationContext, result, Toast.LENGTH_SHORT).show()
+                        finish()
+                    }
+                }
             }
             .setOnCancelListener { finish() }
             .show()

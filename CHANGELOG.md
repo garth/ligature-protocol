@@ -10,6 +10,18 @@ release workflow publishes the section as the release notes with the installers.
 
 ### Fixed
 
+- Android: a paste of a promised part or file no longer holds up every other node call
+  while it is fetched, the fetch stops after five minutes or when the reader cancels, the
+  node starts and stops off the main thread, and a call that lands after the node has
+  stopped gets an error rather than a crash (LP-127).
+- Android: text shared to Ligature is shown and confirmed before it goes to every device,
+  and only another app's `content:` URIs are opened for sending, never a `file:` path or
+  the app's own provider; the identity is excluded from device-to-device transfer and
+  cloud backup by data extraction rules (LP-127).
+- Android: the status bar follows the dark theme, counts in messages are proper plurals,
+  the per-app notification switch has a label for screen readers, and the version code
+  distinguishes a pre-release from the release of the same number (LP-127).
+
 - A grant never leaves the device that made it: the pairing handover no longer carries the
   introducer's grants, and a grant a peer sends by gossip or in the ceremony is discarded
   (LP-128).

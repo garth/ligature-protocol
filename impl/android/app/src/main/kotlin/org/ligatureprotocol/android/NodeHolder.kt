@@ -399,8 +399,11 @@ object NodeHolder : Host {
         val clip = ClipData("Ligature", mimes.toTypedArray(), first)
         uris.drop(1).forEach { clip.addItem(ClipData.Item(it)) }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // A remote-device clip: the system's copy overlay then shows no
+            // preview, which would open the image URI and fetch it at once.
             clip.description.extras = PersistableBundle().apply {
                 putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, false)
+                putBoolean(ClipDescription.EXTRA_IS_REMOTE_DEVICE, true)
             }
         }
         val ok = runCatching { manager.setPrimaryClip(clip) }.isSuccess

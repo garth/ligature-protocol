@@ -144,7 +144,11 @@ and grants URI permissions, which the clipboard service hands to the pasting app
 URI asks the node (`Node::clipboard_item`) for the key: a pushed part's bytes come from
 memory through a pipe, a promised part or file is fetched then, from the device that
 announced it, and a file is opened from the clipboard cache under the app's cache directory
-(`Config::cache_dir`). Pasting is what moves the bytes, as on the desktops.
+(`Config::cache_dir`). Pasting is what moves the bytes, as on the desktops, with one
+exception the run found: the system's copy overlay asks the provider for a thumbnail the
+moment a clip is set, which would fetch an image at copy time, so a thumbnail request (one
+carrying `EXTRA_SIZE`) gets a placeholder image and only a plain read fetches. The clip is
+also marked as from a remote device (`EXTRA_IS_REMOTE_DEVICE`), which the overlay shows.
 
 **Reading takes what the clip holds.** `NodeHolder.readAndSend` reads the text, the HTML
 and every content URI of the primary clip at the moments the app may read (its screen

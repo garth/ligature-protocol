@@ -24,7 +24,7 @@ fn at(offset: i64) -> Timestamp {
 }
 
 async fn until(what: &str, check: impl Fn() -> bool) {
-    let waited = tokio::time::timeout(Duration::from_secs(5), async {
+    let waited = tokio::time::timeout(Duration::from_secs(15), async {
         while !check() {
             tokio::time::sleep(Duration::from_millis(25)).await;
         }

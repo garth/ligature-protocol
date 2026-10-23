@@ -20,3 +20,6 @@ data/
 
 # Release tarballs built by packaging/package.sh (LP-85)
 dist/
+
+# Claude Code local settings; the skills under .claude/skills are part of the project
+.claude/settings.local.json

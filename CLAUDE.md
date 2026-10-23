@@ -260,6 +260,27 @@ npx ajv compile --spec=draft2020 -c ajv-formats -s schemas/<name>.schema.json \
   mentions superseded ideas.
 - Security reports go through GitHub Security Advisories, not issues (`SECURITY.md`).
 
+## Available skills
+
+`.claude/skills/` holds the project's skills, one `SKILL.md` per directory, checked in
+(`.claude/settings.local.json` is local and ignored):
+
+- `developer`: the ticket-first, test-first workflow, the project's test shapes, the check
+  order and the tool-shell gotchas.
+- `qa-engineer`: the protocol's critical paths, the three-platform verification and CI.
+- `system-architect`: what needs an ADR, the invariants, crate boundaries, capability design
+  and dependency governance.
+- `technical-writer`: where each kind of text lives, its shape, the writing conventions,
+  Mermaid and markdownlint.
+- `update-dependencies`: where every version is pinned and the phases to move crates, the
+  toolchain, the Android stack and the workflow actions.
+- `security-audit`: a full dated audit or a read-only pre-release gate against the threat
+  model and a checklist for a peer-to-peer daemon and its app
+  (`/security-audit`, `/security-audit prerelease`).
+- `store`: the SQLite trust store's schema, migrations and what never goes in it.
+- `android-app`: the app's structure, what Android allows, Compose conventions and driving
+  the phone over adb.
+
 ## Working tickets
 
 The project's work is tracked in its Alba Ticket workspace (`nordstack.albaticket.com`,

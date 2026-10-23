@@ -1,0 +1,38 @@
+# Upgrading and uninstalling
+
+## Upgrading
+
+Install the new version on every device around the same time: while the project is alpha,
+a release may change what travels between devices, and a device of the previous version may
+not understand the new one.
+
+**Linux and macOS**: unpack the new tarball and run `./install.sh` again. It replaces the
+binaries and restarts the service; your keys and devices stay. A release that changes the
+store's layout brings it forward on the next start; the change is one way, so a copy of the
+data directory (see [Where things live](install.md#where-things-live)) beforehand is the way
+back.
+
+**Android**: install the new APK over the old one. The release APK is signed with the
+project's key, so the update keeps the app's identity and data. The version code grows with
+every release, including from a pre-release to the release of the same number.
+
+The [changelog](https://github.com/garth/ligature-protocol/blob/main/CHANGELOG.md) says what
+each release changed.
+
+## Uninstalling
+
+**Linux and macOS**: `./uninstall.sh` from the unpacked tarball stops and removes the service
+and the binaries. Your keys and store stay in the data directory and the logs where they
+were; delete them by hand for a fresh identity:
+
+```sh
+rm -r ~/.local/share/ligature                           # Linux
+rm -r ~/Library/Application\ Support/ligature ~/Library/Logs/ligature   # macOS
+```
+
+**Android**: uninstalling the app removes its keys and store with it; nothing is left
+behind, and nothing is backed up to a cloud account or transferred to a new phone.
+
+Before you retire a device, [revoke it](devices.md#revoking-a-device) from another: an
+uninstalled device cannot announce its own departure, and your other devices would keep
+expecting it.

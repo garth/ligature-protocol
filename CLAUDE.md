@@ -117,6 +117,10 @@ The reference implementation is Rust and is also the production implementation
 - `docs/adr/`: Nygard-format ADRs (Context / Decision / Consequences). Superseded ones
   live in `docs/adr/superseded/`.
 - `docs/glossary.md`, `docs/prior-art.md`.
+- `docs/guide/`: the user guide, one page per topic (install, first steps, clipboard,
+  notifications, files, devices, upgrade and uninstall, troubleshooting), written for people
+  who run the apps; it names what each platform cannot do rather than working around it,
+  and every command in it is checked against the built binaries.
 - `docs/security-audit/`: dated reports from the `security-audit` skill, the latest linked
   from `SECURITY.md` and the README; a Critical or High finding is named in one only once
   it is fixed or has an advisory.

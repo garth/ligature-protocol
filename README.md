@@ -238,6 +238,7 @@ Not planned: Apple phones and tablets, for the reasons in the
 
 ## Documentation
 
+- [User guide](docs/guide/index.md): installing the apps and using every feature
 - [Specification overview](docs/spec/00-overview.md)
 - [Shared devices and groups](docs/spec/10-shared-devices-and-groups.md)
 - [Milestone 1 plan: a Linux machine and a Mac share the clipboard](docs/milestones/01-clipboard-poc.md)

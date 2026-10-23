@@ -1,0 +1,133 @@
+# Install
+
+Every [release](https://github.com/garth/ligature-protocol/releases) carries one package
+per platform:
+
+| File | For |
+| --- | --- |
+| `ligature-<version>-linux-x86_64.tar.gz` | Linux on an Intel or AMD machine |
+| `ligature-<version>-linux-aarch64.tar.gz` | Linux on an ARM machine |
+| `ligature-<version>-macos-universal.tar.gz` | Any Mac, Intel or Apple silicon |
+| `ligature-<version>-android.apk` | Android 10 or later |
+
+Install the same version on every device: the protocol is still changing between releases.
+
+## Linux
+
+The daemon runs as a systemd user service and expects a Wayland session for the clipboard
+(Hyprland is the first target; any compositor with the `wlr-data-control` protocol should
+work) and a notification daemon on the session bus for notifications.
+
+1. Unpack the tarball and run the installer:
+
+   ```sh
+   tar xzf ligature-<version>-linux-x86_64.tar.gz
+   cd ligature-<version>-linux-x86_64
+   ./install.sh
+   ```
+
+   It copies `ligatured` and `lpctl` to `~/.local/bin`, installs the `ligatured` user unit
+   and starts it. Make sure `~/.local/bin` is on your `PATH`.
+
+2. Open the port. The service fixes the daemon's UDP port at 47471 so that one firewall rule
+   lets your other devices dial in. With ufw:
+
+   ```sh
+   sudo ufw allow 47471/udp
+   ```
+
+   Without the rule the machine can still dial your other devices, but they cannot dial it,
+   so it connects only when it finds them first.
+
+3. Check it:
+
+   ```sh
+   lpctl status
+   journalctl --user -u ligatured -f
+   ```
+
+The daemon does not need a graphical session to run: it finds the compositor's socket on its
+own, advertises the clipboard only while a compositor is reachable, and keeps gossiping and
+receiving files when none is.
+
+## macOS
+
+The daemon runs as a per-user launchd agent that starts at login.
+
+1. Unpack the tarball and run the installer:
+
+   ```sh
+   tar xzf ligature-<version>-macos-universal.tar.gz
+   cd ligature-<version>-macos-universal
+   ./install.sh
+   ```
+
+   It copies the binaries to `~/.local/bin`, writes
+   `~/Library/LaunchAgents/org.ligatureprotocol.ligatured.plist` and loads it. The port is
+   fixed at 47471 here too; if the macOS firewall is on, allow `ligatured` when it asks.
+
+2. The binaries are not signed or notarised. If macOS refuses to run them after a browser
+   download, clear the quarantine flag on the unpacked directory and run the installer
+   again:
+
+   ```sh
+   xattr -dr com.apple.quarantine .
+   ```
+
+3. Allow notifications once. The daemon shows your other devices' notifications through
+   AppleScript, which posts as Script Editor, and a Mac where Script Editor has never posted
+   drops them silently. Open Script Editor, run
+   `display notification "Ligature" with title "LP"` once and click **Allow**. From then on
+   the daemon's notifications show, with no restart.
+
+4. Check it:
+
+   ```sh
+   lpctl status
+   tail -f ~/Library/Logs/ligature/ligatured.log
+   ```
+
+## Android
+
+1. Allow installs from the source you use (your browser or file manager) and open the APK.
+   The release APK is signed with the project's key; an update installs over the previous
+   version and keeps your identity.
+2. Open Ligature. It starts the node as a foreground service, which shows a persistent
+   notification, and asks to post notifications on Android 13 and later: allow it, since
+   transfers, received files and the clipboard's **Save** all arrive as notifications.
+3. Tap **Battery settings** when the screen offers it and allow unrestricted battery use.
+   Without it Android stops the node when the phone has been idle for a while.
+4. For your other devices' notifications to leave the phone, tap **Notification access** and
+   enable Ligature; see [Notifications](notifications.md).
+
+The app needs no account and asks for nothing else at first run.
+
+## From source
+
+With a Rust toolchain:
+
+```sh
+git clone https://github.com/garth/ligature-protocol
+cd ligature-protocol/impl
+cargo build --release -p ligatured -p lpctl
+../packaging/install.sh target/release
+```
+
+The Android app builds from `impl/android` with the Android SDK and NDK; its
+[README](https://github.com/garth/ligature-protocol/blob/main/impl/android/README.md) has
+the steps.
+
+## Where things live
+
+| | Linux | macOS | Android |
+| --- | --- | --- | --- |
+| Binaries | `~/.local/bin` | `~/.local/bin` | the app |
+| Keys and store | `~/.local/share/ligature` | `~/Library/Application Support/ligature` | the app's private storage |
+| Control socket | `$XDG_RUNTIME_DIR/ligature` | `$TMPDIR/ligature` | none |
+| Logs | `journalctl --user -u ligatured` | `~/Library/Logs/ligature/ligatured.log` | logcat, tag `ligature` |
+| Received files | `XDG_DOWNLOAD_DIR`, else `~/Downloads` | `~/Downloads` | Downloads |
+
+The key file holds your private keys and is readable by your user alone. There is no
+configuration file: `ligatured --help` lists the few options (`--data-dir`, `--runtime-dir`,
+`--device-name`, `--port`), each also settable through an environment variable, and the
+service sets `LIGATURE_PORT=47471`.

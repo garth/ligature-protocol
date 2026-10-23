@@ -119,7 +119,10 @@ initialisation and thread marking need it, and `ligatured` forbids it), behind a
 `write` and `change_count`; the daemon's provider closure holds the value's fetcher and a runtime
 handle it blocks on. The plan's `NSFilePromiseProvider` is not used: a fetched file URL is enough
 for Finder and needs no completion blocks. This code is checked by CI's macOS build and the run,
-since the Linux machine cannot compile for the Mac.
+since the Linux machine cannot compile for the Mac. The run found that the pasteboard delivers a
+request for a lazily offered type to the owning process's main thread, which a `#[tokio::main]`
+daemon never services (Preview spun for ever), so on macOS `ligatured` runs its work on another
+thread and parks its main thread in the Cocoa run loop (`lp_macos::run_main_loop`).
 
 **`lpctl clipboard put` and `paste`** exist for the run: `put <mime> <path>` puts one typed
 part on the local clipboard as if copied, and `paste <mime> <out>` has the daemon write what

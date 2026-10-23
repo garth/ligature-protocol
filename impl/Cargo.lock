@@ -974,7 +974,7 @@ dependencies = [
 
 [[package]]
 name = "ligature-android"
-version = "0.1.0-alpha"
+version = "0.1.1-alpha"
 dependencies = [
  "ligatured",
  "lp-core",
@@ -990,7 +990,7 @@ dependencies = [
 
 [[package]]
 name = "ligatured"
-version = "0.1.0-alpha"
+version = "0.1.1-alpha"
 dependencies = [
  "ciborium",
  "clap",
@@ -1041,7 +1041,7 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "lp-core"
-version = "0.1.0-alpha"
+version = "0.1.1-alpha"
 dependencies = [
  "base64",
  "ciborium",
@@ -1054,7 +1054,7 @@ dependencies = [
 
 [[package]]
 name = "lp-crypto"
-version = "0.1.0-alpha"
+version = "0.1.1-alpha"
 dependencies = [
  "ciborium",
  "ed25519-dalek",
@@ -1068,7 +1068,7 @@ dependencies = [
 
 [[package]]
 name = "lp-identity"
-version = "0.1.0-alpha"
+version = "0.1.1-alpha"
 dependencies = [
  "ciborium",
  "getrandom 0.4.3",
@@ -1085,7 +1085,7 @@ dependencies = [
 
 [[package]]
 name = "lp-macos"
-version = "0.1.0-alpha"
+version = "0.1.1-alpha"
 dependencies = [
  "objc2",
  "objc2-app-kit",
@@ -1094,7 +1094,7 @@ dependencies = [
 
 [[package]]
 name = "lp-transport"
-version = "0.1.0-alpha"
+version = "0.1.1-alpha"
 dependencies = [
  "getrandom 0.4.3",
  "lp-core",
@@ -1109,7 +1109,7 @@ dependencies = [
 
 [[package]]
 name = "lp-vectors"
-version = "0.1.0-alpha"
+version = "0.1.1-alpha"
 dependencies = [
  "ed25519-dalek",
  "getrandom 0.4.3",
@@ -1121,7 +1121,7 @@ dependencies = [
 
 [[package]]
 name = "lpctl"
-version = "0.1.0-alpha"
+version = "0.1.1-alpha"
 dependencies = [
  "clap",
  "ligatured",
@@ -2855,7 +2855,7 @@ dependencies = [
 
 [[package]]
 name = "wireguard-integration"
-version = "0.1.0-alpha"
+version = "0.1.1-alpha"
 dependencies = [
  "lp-core",
 ]

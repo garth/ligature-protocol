@@ -8,6 +8,8 @@ release workflow publishes the section as the release notes with the installers.
 
 ## [Unreleased]
 
+## [0.1.1-alpha] - 2026-10-23
+
 ### Fixed
 
 - A revocation counts only when it verifies against the person it names and that person is

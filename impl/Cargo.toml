@@ -15,18 +15,18 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0-alpha"
+version = "0.1.1-alpha"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/ligature-protocol/ligature-protocol"
 rust-version = "1.89"
 
 [workspace.dependencies]
-lp-core = { path = "crates/lp-core", version = "0.1.0-alpha" }
-lp-identity = { path = "crates/lp-identity", version = "0.1.0-alpha" }
-lp-crypto = { path = "crates/lp-crypto", version = "0.1.0-alpha" }
-lp-transport = { path = "crates/lp-transport", version = "0.1.0-alpha" }
-lp-vectors = { path = "crates/lp-vectors", version = "0.1.0-alpha" }
+lp-core = { path = "crates/lp-core", version = "0.1.1-alpha" }
+lp-identity = { path = "crates/lp-identity", version = "0.1.1-alpha" }
+lp-crypto = { path = "crates/lp-crypto", version = "0.1.1-alpha" }
+lp-transport = { path = "crates/lp-transport", version = "0.1.1-alpha" }
+lp-vectors = { path = "crates/lp-vectors", version = "0.1.1-alpha" }
 
 # Crypto, encoding, runtime, store (LP-27). Versions are pinned by Cargo.lock;
 # bumps are deliberate commits of their own.
@@ -42,7 +42,7 @@ base64 = "0.22"
 tempfile = "3"
 gethostname = "1"
 if-addrs = "0.15"
-ligatured = { path = "crates/ligatured", version = "0.1.0-alpha" }
+ligatured = { path = "crates/ligatured", version = "0.1.1-alpha" }
 jsonschema = { version = "0.59", default-features = false }
 time = { version = "0.3", features = ["std", "formatting", "parsing", "serde-well-known", "macros"] }
 tokio = { version = "1.53", features = ["rt-multi-thread", "net", "sync", "time", "macros", "fs", "io-util", "signal"] }
@@ -68,7 +68,7 @@ rustix = { version = "1", features = ["fs", "event", "pipe"] }
 # Linux notifications over the session bus (milestone 3, LP-91).
 zbus = { version = "6", default-features = false, features = ["tokio", "proxy"] }
 futures-util = { version = "0.3", default-features = false }
-lp-macos = { path = "crates/lp-macos", version = "0.1.0-alpha" }
+lp-macos = { path = "crates/lp-macos", version = "0.1.1-alpha" }
 objc2 = "0.6"
 objc2-foundation = "0.3"
 objc2-app-kit = "0.3"

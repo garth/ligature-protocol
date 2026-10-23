@@ -186,7 +186,11 @@ impl ClipboardSync {
                 "clipboard set from a device that is not mine".to_owned(),
             ));
         }
-        if set.text.len() as u64 > MAX_TEXT_BYTES {
+        // Until milestone 5's LP-107 lands, only the text of a value is applied.
+        let Some(text) = set.text.as_deref() else {
+            return Ok(false);
+        };
+        if text.len() as u64 > MAX_TEXT_BYTES {
             return Err(Error::Decode("clipboard text too large".to_owned()));
         }
         {
@@ -195,15 +199,15 @@ impl ClipboardSync {
                 return Ok(false);
             }
         }
-        if !self.filter.should_apply(&set.text) {
+        if !self.filter.should_apply(text) {
             return Ok(false);
         }
-        if self.clipboard.read_text().ok().flatten().as_deref() == Some(set.text.as_str()) {
+        if self.clipboard.read_text().ok().flatten().as_deref() == Some(text) {
             *self.lock(&self.latest) = Some(set.set_at);
             return Ok(false);
         }
-        self.filter.note_set(&set.text);
-        self.clipboard.set_text(&set.text)?;
+        self.filter.note_set(text);
+        self.clipboard.set_text(text)?;
         *self.lock(&self.latest) = Some(set.set_at);
         *self.lock(&self.applied) += 1;
         crate::grants::record_implicit(&self.daemon, peer);

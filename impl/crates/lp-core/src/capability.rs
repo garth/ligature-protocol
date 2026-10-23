@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::PublicKey;
+use crate::files::FileDescriptor;
 use crate::wire::{Bytes, Timestamp, TypeName};
 
 /// Type name of the manifest message on the `manifest` stream (ADR 0036).
@@ -12,8 +13,47 @@ pub const MANIFEST_TYPE: &str = "org.ligatureprotocol.manifest";
 pub const CLIPBOARD_TYPE: &str = "org.ligatureprotocol.capability.clipboard";
 /// Type name of the clipboard `set` message.
 pub const CLIPBOARD_SET_TYPE: &str = "org.ligatureprotocol.capability.clipboard.set";
+/// Type name of the clipboard `get` message.
+pub const CLIPBOARD_GET_TYPE: &str = "org.ligatureprotocol.capability.clipboard.get";
 
-/// `clipboard.set`: the sender's clipboard now holds this text. Spec chapter
+/// One representation of a clipboard selection: its bytes, pushed, or a file
+/// descriptor to fetch them by, announced. Spec chapter 05 section 3b.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipboardPart {
+    /// The representation's content type.
+    pub mime: String,
+    /// The bytes, when pushed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bytes: Option<Bytes>,
+    /// The descriptor to fetch by, when announced; its `sha256` is required.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<FileDescriptor>,
+}
+
+impl ClipboardPart {
+    /// A pushed part.
+    #[must_use]
+    pub fn pushed(mime: &str, bytes: Vec<u8>) -> Self {
+        Self {
+            mime: mime.to_owned(),
+            bytes: Some(Bytes(bytes)),
+            file: None,
+        }
+    }
+
+    /// An announced part.
+    #[must_use]
+    pub fn announced(mime: &str, file: FileDescriptor) -> Self {
+        Self {
+            mime: mime.to_owned(),
+            bytes: None,
+            file: Some(file),
+        }
+    }
+}
+
+/// `clipboard.set`: the sender's clipboard now holds this value. Spec chapter
 /// 05 section 3b; `schemas/capability.clipboard.schema.json`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,17 +61,17 @@ pub struct ClipboardSet {
     /// Always [`CLIPBOARD_SET_TYPE`].
     #[serde(rename = "type")]
     pub message_type: TypeName,
-    /// Content type; `text/plain` in this version.
-    #[serde(default = "text_plain")]
-    pub mime: String,
-    /// The content.
-    pub text: String,
+    /// The plain-text representation, whenever the source offers one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    /// The other representations, pushed or announced; at most one per mime.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<ClipboardPart>,
+    /// A selection of files, always announced.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<FileDescriptor>,
     /// When the sender's clipboard took this value; the newest wins.
     pub set_at: Timestamp,
-}
-
-fn text_plain() -> String {
-    "text/plain".to_owned()
 }
 
 impl ClipboardSet {
@@ -40,9 +80,45 @@ impl ClipboardSet {
     pub fn now(text: &str) -> Self {
         Self {
             message_type: TypeName::new(CLIPBOARD_SET_TYPE),
-            mime: text_plain(),
-            text: text.to_owned(),
+            text: Some(text.to_owned()),
+            parts: Vec::new(),
+            files: Vec::new(),
             set_at: Timestamp::now(),
+        }
+    }
+
+    /// An empty `set` taken now: the clipboard emptied.
+    #[must_use]
+    pub fn empty() -> Self {
+        Self {
+            message_type: TypeName::new(CLIPBOARD_SET_TYPE),
+            text: None,
+            parts: Vec::new(),
+            files: Vec::new(),
+            set_at: Timestamp::now(),
+        }
+    }
+
+    /// Whether the value has no text, parts or files.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.text.is_none() && self.parts.is_empty() && self.files.is_empty()
+    }
+}
+
+/// `clipboard.get`: asks the peer for its current value, answered with a
+/// `set`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClipboardGet {
+    /// Always [`CLIPBOARD_GET_TYPE`].
+    #[serde(rename = "type")]
+    pub message_type: TypeName,
+}
+
+impl Default for ClipboardGet {
+    fn default() -> Self {
+        Self {
+            message_type: TypeName::new(CLIPBOARD_GET_TYPE),
         }
     }
 }

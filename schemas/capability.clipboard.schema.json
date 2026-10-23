@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ligatureprotocol.org/schemas/capability.clipboard.schema.json",
   "title": "org.ligatureprotocol.capability.clipboard",
-  "description": "DRAFT. The clipboard capability (spec chapter 05 section 3b): user-scoped, text only in this version. The descriptor's params say how much text the device accepts. The capability's stream (purpose org.ligatureprotocol.capability.clipboard, ADR 0036) carries set messages in both directions: the sender's clipboard changed to this text at this time. The receiver applies the newest by setAt and ignores a set equal to what it holds. The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "description": "DRAFT. The clipboard capability (spec chapter 05 section 3b): user-scoped. A clipboard holds one selection in several representations at once; a set carries the plain text and a list of parts, each a MIME type with either the bytes (pushed, within the receiver's maxBytes) or a file descriptor of the files capability (announced, fetched over a files transfer only when an application pastes). A selection of files is always announced. A get asks the peer for its current value, answered with a set. The receiver applies the newest set by setAt and never re-sends what it just applied. The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
   "$defs": {
     "params": {
       "type": "object",
@@ -11,8 +11,8 @@
         "maxBytes": {
           "type": "integer",
           "minimum": 1,
-          "default": 1048576,
-          "description": "The largest text, in UTF-8 bytes, this device accepts in one set. Never more than the frame limit of ADR 0036."
+          "default": 524288,
+          "description": "The push bound: the largest total of text and pushed part bytes this device accepts in one set. Never more than the frame limit of ADR 0036 less 64 KiB of headroom; a part above what fits is announced instead."
         },
         "mimeTypes": {
           "type": "array",
@@ -22,30 +22,87 @@
           "default": [
             "text/plain"
           ],
-          "description": "The content types this device offers and accepts. Only text/plain in this version."
+          "description": "The content types this device accepts and can put on its clipboard. A sender includes only parts whose mime the receiver lists; text/plain travels as text regardless."
+        },
+        "fetch": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether this device holds a promise for an announced part and fetches it over a files transfer when an application pastes. A device without it is sent only what fits in maxBytes and no file parts."
         }
       }
     },
+    "part": {
+      "type": "object",
+      "description": "One representation of the selection: the bytes themselves, or a descriptor of the files capability to fetch them by, with its sha256 required.",
+      "required": [
+        "mime"
+      ],
+      "properties": {
+        "mime": {
+          "type": "string",
+          "description": "The representation's content type."
+        },
+        "bytes": {
+          "type": "string",
+          "contentEncoding": "base64url",
+          "description": "The representation, pushed. Base64url unpadded in JSON, a byte string in CBOR."
+        },
+        "file": {
+          "allOf": [
+            {
+              "$ref": "capability.files.schema.json#/$defs/file"
+            },
+            {
+              "type": "object",
+              "required": [
+                "sha256"
+              ]
+            }
+          ],
+          "description": "The representation, announced: the sender offers it under this id for the availability window, and the receiver fetches it on paste and checks the hash."
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "bytes"
+          ]
+        },
+        {
+          "required": [
+            "file"
+          ]
+        }
+      ]
+    },
     "set": {
       "type": "object",
-      "description": "The sender's clipboard now holds this text.",
+      "description": "The sender's clipboard now holds this value. With neither text, parts nor files it says the clipboard emptied.",
       "required": [
         "type",
-        "text",
         "setAt"
       ],
       "properties": {
         "type": {
           "const": "org.ligatureprotocol.capability.clipboard.set"
         },
-        "mime": {
-          "type": "string",
-          "default": "text/plain",
-          "description": "Content type of text; only text/plain in this version."
-        },
         "text": {
           "type": "string",
-          "description": "The clipboard content."
+          "description": "The plain-text representation, present whenever the source offers plain text."
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/part"
+          },
+          "description": "The other representations, pushed or announced; at most one per mime."
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "capability.files.schema.json#/$defs/file"
+          },
+          "description": "A selection of files, always announced: fetched over a files transfer on paste."
         },
         "setAt": {
           "type": "string",
@@ -53,11 +110,26 @@
           "description": "When the sender's clipboard took this value; the newest wins."
         }
       }
+    },
+    "get": {
+      "type": "object",
+      "description": "Asks the peer for its current clipboard value; the peer answers with a set, empty when it holds nothing it may send.",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.clipboard.get"
+        }
+      }
     }
   },
   "oneOf": [
     {
       "$ref": "#/$defs/set"
+    },
+    {
+      "$ref": "#/$defs/get"
     }
   ]
 }

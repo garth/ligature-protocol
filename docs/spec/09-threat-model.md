@@ -108,7 +108,9 @@ to a store (chapter 05 sections 3b and 3c). A transferred file is written only t
 destination the receiving device chose, by default its download folder, under a name the
 receiver reduces to a base name, so a sender can never choose a path on the receiver, and
 what a device offers is served only by an id it announced, never listed (chapter 05
-section 3d). Open question: whether a
+section 3d). A large clipboard value is announced rather than pushed, so its bytes reach
+only the device on which an application pastes it, and the receiver's copy of a fetched
+value lives in a cache it clears when its clipboard moves on (section 3b). Open question: whether a
 device's bare public key, seen by anyone who connects, is itself an identifier worth hiding
 behind a per-epoch value.
 

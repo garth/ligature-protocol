@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 
 use jsonschema::{Retrieve, Uri, Validator};
 use lp_core::PublicKey;
-use lp_core::capability::{CLIPBOARD_TYPE, Descriptor, Manifest, Scope};
+use lp_core::capability::{
+    CLIPBOARD_TYPE, ClipboardGet, ClipboardPart, ClipboardSet, Descriptor, Manifest, Scope,
+};
 use lp_core::envelope::{Envelope, FactId};
 use lp_core::facts::{
     DeviceFact, DeviceKind, GrantBasis, GrantFact, PersonFact, Registration, RevocationFact,
@@ -242,6 +244,52 @@ fn a_wrong_message_fails_validation() {
         "key": "nope", "kind": "binding", "displayName": "x", "platform": "linux",
         "createdAt": "2026-01-01T00:00:00Z"
     })));
+}
+
+#[test]
+fn clipboard_messages_validate_against_the_clipboard_schema() {
+    let schemas = LocalSchemas::load();
+    let hash = "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU".to_owned();
+    // Text only, as milestone 2 sent it.
+    check(
+        &schemas,
+        "capability.clipboard",
+        &ClipboardSet::now("hello"),
+    );
+    // Text with a pushed HTML part and an announced PNG part.
+    let mut png = FileDescriptor::new("p1", "clipboard.png", 3_000_000);
+    png.mime = "image/png".to_owned();
+    png.sha256 = Some(hash.clone());
+    let mut rich = ClipboardSet::now("hello");
+    rich.parts = vec![
+        ClipboardPart::pushed("text/html", b"<b>hello</b>".to_vec()),
+        ClipboardPart::announced("image/png", png.clone()),
+    ];
+    check(&schemas, "capability.clipboard", &rich);
+    // A selection of files, always announced, with the paths as text.
+    let mut files = ClipboardSet::now("/home/me/a.txt\n/home/me/b.txt");
+    files.files = vec![
+        FileDescriptor::new("f1", "a.txt", 10),
+        FileDescriptor::new("f2", "b.txt", 20),
+    ];
+    check(&schemas, "capability.clipboard", &files);
+    // Emptied, and a get.
+    check(&schemas, "capability.clipboard", &ClipboardSet::empty());
+    check(&schemas, "capability.clipboard", &ClipboardGet::default());
+    // An announced part needs its hash, and a part needs bytes or a file.
+    let validator = schemas.validator("capability.clipboard");
+    let no_hash = serde_json::json!({
+        "type": "org.ligatureprotocol.capability.clipboard.set",
+        "setAt": "2026-10-22T00:00:00Z",
+        "parts": [{"mime": "image/png", "file": {"id": "p1", "name": "x.png", "size": 1}}]
+    });
+    assert!(validator.iter_errors(&no_hash).next().is_some());
+    let no_content = serde_json::json!({
+        "type": "org.ligatureprotocol.capability.clipboard.set",
+        "setAt": "2026-10-22T00:00:00Z",
+        "parts": [{"mime": "image/png"}]
+    });
+    assert!(validator.iter_errors(&no_content).next().is_some());
 }
 
 #[test]

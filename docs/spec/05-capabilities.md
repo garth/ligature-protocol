@@ -80,13 +80,42 @@ once (which is several sessions under chapter 03).
 ([schema](../../schemas/capability.clipboard.schema.json)) is the first family specified.
 It is user-scoped: a binding offers it, and the same person's other bindings use it
 without a prompt (section 4). A device advertises it only while it can reach its local
-clipboard; the descriptor's `params` carry `maxBytes`, the largest text it accepts, and
-`mimeTypes`, which is `text/plain` only in this version. On the capability's stream each
-side sends a `set` message (the text and `setAt`, when the sender's clipboard took that
-value) whenever its local clipboard changes. The receiver applies a `set` newer than what it
-holds and ignores one equal to its current content, so two devices setting each other never
-loop. Open question: other content types (images, files), and whether a device should be
-able to ask for the current value rather than wait for a change.
+clipboard. The descriptor's `params` carry `mimeTypes`, the content types the device
+accepts and can put on its clipboard; `maxBytes`, the push bound, 512 KiB by default and
+never more than the frame limit of chapter 03 less 64 KiB of headroom; and `fetch`, whether
+the device holds a promise for announced content and fetches it on paste.
+
+A clipboard holds one selection in several representations at once (plain text and HTML
+from a browser, PNG and TIFF for an image, a URI list for files). On the capability's
+stream each side sends a `set` whenever its local clipboard changes: `setAt`, when the
+clipboard took the value; `text`, the plain-text representation, present whenever the
+source offers plain text so every receiver gets something; `parts`, the other
+representations, each a `mime` with either the `bytes` or a file descriptor of section 3d;
+and `files`, descriptors of a selection of files. A sender includes only parts whose `mime`
+the receiver lists, with HTML as the interoperable rich-text form (RTF travels beside it
+where the source has it, never alone) and no conversion between formats on the wire. A `set`
+with neither `text`, `parts` nor `files` says the clipboard emptied.
+
+**Push small, announce large.** Parts whose bytes fit within the receiver's `maxBytes`,
+largest first until the budget is spent, are pushed in the `set`; the rest are announced,
+each as a `file` descriptor with its `id`, `size`, `mime` and a required `sha256`. Files on
+the clipboard are always announced. The receiver puts a promise for each announced part on
+its local clipboard and, only when an application pastes that type, fetches the bytes with a
+`files` transfer it starts (section 3d, a `request` for the id), delivered to the clipboard
+rather than the download folder, and checked against the announced hash. The sender keeps
+announced content on offer until its clipboard changes or an hour passes, then withdraws
+it, so a later request is declined as `gone`; a receiver whose fetch fails, or whose
+connection to the sender is lost, drops its promises and leaves its clipboard holding what
+it was pushed. A device that advertises `fetch` false is sent only what fits in `maxBytes`
+and no file parts.
+
+The receiver applies a `set` newer than what it holds and ignores one equal to its current
+content, where equality is the hash of the representation set (each part's `mime` and the
+SHA-256 of its bytes, or its announced hash, in `mime` order, then the files by name), so
+two devices setting each other never loop. A `get` on the same stream asks the peer for its
+current value, which it answers with a `set` built the same way, or an empty one; a device
+sends it on connecting so one that was away holds the latest copy. A device learns an id
+only from a `set` it was sent: the sender's offers are never listed.
 
 ## 3c. Notifications
 

@@ -70,6 +70,12 @@ can answer at once. `ClipboardSync::request` sends a `get` on demand, for the ph
 **Counters count content.** `counters()` counts `set` messages with content sent and
 applied; empty answers to `get` are not counted, which keeps the milestone 1 test exact.
 
+**A milestone 2 peer is told apart by its descriptor.** `ClipboardParams::rich` is set when
+the peer's descriptor carries `fetch`, which only this version writes. A `get` goes only to
+such a peer (an older one cannot decode it and would end the stream), and an older peer is
+sent only sets that carry text, since its decoder requires it; the phone check against the
+owner's un-updated daemon found both.
+
 **Types in `lp-core`.** `ClipboardSet` has an optional `text`, `parts` and `files`;
 `ClipboardPart` is pushed (`bytes`) or announced (`file`); `ClipboardGet` and the untagged
 `ClipboardMessage` decode the stream by shape; `ClipboardParams` carries the descriptor's

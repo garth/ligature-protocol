@@ -146,6 +146,9 @@ pub struct ClipboardParams {
     /// Whether the device holds a promise for an announced part and fetches
     /// it on paste.
     pub fetch: bool,
+    /// Whether the descriptor is of this version (it carries `fetch`): a
+    /// device of milestone 2 takes text-only sets and no `get`.
+    pub rich: bool,
 }
 
 impl ClipboardParams {
@@ -163,6 +166,7 @@ impl ClipboardParams {
             max_bytes: Self::DEFAULT_MAX_BYTES,
             mime_types: vec![Self::TEXT_PLAIN.to_owned()],
             fetch: false,
+            rich: false,
         }
     }
 
@@ -194,7 +198,10 @@ impl ClipboardParams {
                             .filter_map(|i| i.as_text().map(str::to_owned))
                             .collect();
                     }
-                    (Some("fetch"), ciborium::Value::Bool(b)) => params.fetch = *b,
+                    (Some("fetch"), ciborium::Value::Bool(b)) => {
+                        params.fetch = *b;
+                        params.rich = true;
+                    }
                     _ => {}
                 }
             }

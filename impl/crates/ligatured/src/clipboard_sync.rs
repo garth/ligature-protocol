@@ -176,6 +176,7 @@ impl ClipboardSync {
             max_bytes: self.config.max_bytes.min(ClipboardParams::MAX_MAX_BYTES),
             mime_types: self.clipboard.mime_types(),
             fetch: self.clipboard.holds_promises() && self.daemon.files_sync().is_some(),
+            rich: true,
         }
     }
 
@@ -186,6 +187,12 @@ impl ClipboardSync {
             .as_ref()
             .map(|a| a.incoming.promises.clone())
             .unwrap_or_default()
+    }
+
+    /// The peer whose promises the local clipboard currently holds.
+    #[must_use]
+    pub fn promised_from(&self) -> Option<PublicKey> {
+        lock(&self.applied_value).as_ref().map(|a| a.peer)
     }
 
     /// The files the local clipboard currently promises, for `lpctl`.
@@ -207,6 +214,7 @@ impl ClipboardSync {
         let (tx, mut rx) = mpsc::channel::<ClipboardMessage>(8);
         lock(&self.senders).insert(peer, tx);
         let conn = conn.clone();
+        let sync = self.clone();
         tokio::spawn(async move {
             let mut stream = match open_on(&conn, CLIPBOARD_TYPE).await {
                 Ok(s) => s,
@@ -215,10 +223,19 @@ impl ClipboardSync {
                     return;
                 }
             };
-            if stream
-                .send(&ClipboardMessage::Get(ClipboardGet::default()))
-                .await
-                .is_err()
+            // Ask for the peer's value, once its manifest says it understands
+            // a get: a milestone 2 peer would end the stream on one.
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+            let mut params = sync.peer_params(&peer);
+            while params.is_none() && tokio::time::Instant::now() < deadline {
+                tokio::time::sleep(Duration::from_millis(25)).await;
+                params = sync.peer_params(&peer);
+            }
+            if params.is_some_and(|p| p.rich)
+                && stream
+                    .send(&ClipboardMessage::Get(ClipboardGet::default()))
+                    .await
+                    .is_err()
             {
                 return;
             }
@@ -375,6 +392,10 @@ impl ClipboardSync {
         let Some(set) = self.build_for(&params) else {
             return;
         };
+        if !params.rich && set.text.is_none() {
+            // A milestone 2 peer decodes only a set with text.
+            return;
+        }
         if tx.send(ClipboardMessage::Set(set)).await.is_ok() {
             *lock(&self.sent) += 1;
             tracing::debug!(%peer, "clipboard sent");

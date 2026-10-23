@@ -8,7 +8,7 @@ release workflow publishes the section as the release notes with the installers.
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-10-23
+## [0.1.0-alpha] - 2026-10-23
 
 ### Added
 

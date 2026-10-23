@@ -224,6 +224,8 @@ follow them.
    reach the phone shown and answered on the desktops, a message or a call placed through
    the phone from a desktop, and any device's player driven from the others
    ([plan](docs/milestones/06-phone-and-media.md)).
+7. **One keyboard and mouse across the desktops, the phone as a touchpad.** Planned: the
+   first device-scoped capability ([plan](docs/milestones/07-shared-input.md)).
 
 Not planned: Apple phones and tablets, for the reasons in the
 [platform notes](docs/spec/08-platform-notes.md#4-ios-and-ipados).
@@ -239,6 +241,7 @@ Not planned: Apple phones and tablets, for the reasons in the
 - [Milestone 4 plan: file transfer among a person's devices](docs/milestones/04-files.md)
 - [Milestone 5 plan: the clipboard carries rich text, images and files](docs/milestones/05-rich-clipboard.md)
 - [Milestone 6 plan: the phone's SMS and calls, and media control](docs/milestones/06-phone-and-media.md)
+- [Milestone 7 plan: one keyboard and mouse across the desktops](docs/milestones/07-shared-input.md)
 - [Architecture decisions](docs/adr/)
 - [Glossary](docs/glossary.md)
 - [Prior art](docs/prior-art.md)

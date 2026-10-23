@@ -79,3 +79,47 @@ params and `clipboard_descriptor_with` builds the descriptor, while the mileston
 
 **`lpctl clipboard get`** prints the text and, on standard error, each other part with its
 type and size and whether it is a promise, and each promised file; `set` still sets text.
+
+## LP-108: the desktop clipboards
+
+**The Linux helper owns a data-control source.** `wl-clipboard-rs` reads a selection and
+copies bytes it holds, but cannot serve a type on request, so the helper
+(`ligatured clipboard-helper`) keeps its `Watcher` for reading and adds a second Wayland
+connection of its own through `wayland-client`, binding `ext-data-control` or, failing
+that, `wlr-data-control`, with one data device per seat. A `set` from the daemon becomes a
+source offering the pushed parts (a text under the five plain-text names applications ask
+for) and the promised types; a `send` for a pushed type writes the bytes from the helper's
+copy, and one for a promised type asks the daemon (`fetch` over the helper's stdio, matched
+by id, waited for up to two minutes) and writes what comes back, in a thread per request
+with `O_NONBLOCK` cleared. The source loop polls the connection and a wake pipe, so a `set`
+from the daemon interrupts it. A promised file list is one promised `text/uri-list` whose
+fetch brings every file into the cache and answers with their `file:` URIs; a `text/uri-list`
+read from another application becomes the value's files when its URIs are local paths.
+
+**The helper tells its own selection apart by the offered types.** The compositor reports
+the helper's own selection to its watcher like any other; the helper skips a change whose
+set of types equals what it offered, and reads again once its source is cancelled. Frames
+between the daemon and the helper are bounded at 256 MiB rather than the wire's 1 MiB,
+since a clipboard value is not a wire message.
+
+**The Mac keeps the pasteboard's own laziness.** `MacClipboard` maps types through a table
+(`public.html`, `public.rtf`, `public.png`, `public.tiff`, with `public.utf8-plain-text` for
+the text and `public.file-url` for files), writes a value as `NSPasteboardItem`s (the text
+and pushed parts as data, a lazy `NSPasteboardItemDataProvider` for the announced types, and
+one item per promised file whose `public.file-url` provider fetches the file into the cache
+and answers with its URL), and skips its own `changeCount` when polling. The provider is an
+Objective-C class defined with `objc2::define_class!` holding the value's fetcher and a
+runtime handle it blocks on. The plan's `NSFilePromiseProvider` is not used: a fetched file
+URL is enough for Finder and needs no completion blocks. This code is checked by CI's macOS
+build and the run, since the Linux machine cannot compile for the Mac.
+
+**`lpctl clipboard put` and `paste`** exist for the run: `put <mime> <path>` puts one typed
+part on the local clipboard as if copied, and `paste <mime> <out>` has the daemon write what
+an application would get, fetching a promise, to a file, since a value can exceed a control
+frame. The fake clipboard's paste fetches; a platform clipboard's answers from the pushed
+parts, as its promises are served to applications by the platform.
+
+**A nested compositor for the run.** The desktop checks ran against a nested Hyprland on its
+own socket (`Hyprland --socket lp-test --wayland-fd N` with a socket handed over), so the
+machine's real clipboard and the owner's daemon were untouched; `LIGATURE_CLIPBOARD_CACHE`
+names the cache directory so two daemons on one machine do not share one.

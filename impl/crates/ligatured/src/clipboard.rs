@@ -25,6 +25,9 @@ use tokio::sync::broadcast;
 /// The plain-text type, carried as `text` rather than a part.
 pub const TEXT_PLAIN: &str = "text/plain";
 
+/// Overrides where fetched clipboard content is cached (tests and runs).
+pub const CACHE_DIR_ENV: &str = "LIGATURE_CLIPBOARD_CACHE";
+
 /// One representation of a local selection, with its bytes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Part {
@@ -219,6 +222,9 @@ pub struct Fetched {
 /// A future returned by a fetch.
 pub type FetchFuture<'a> = Pin<Box<dyn Future<Output = Result<Fetched, Error>> + Send + 'a>>;
 
+/// A future returned by a paste.
+pub type PasteFuture<'a> = Pin<Box<dyn Future<Output = Result<Vec<u8>, Error>> + Send + 'a>>;
+
 /// Fetches a promised id from the peer that announced it. The clipboard
 /// implementation calls it when an application asks for that type; a second
 /// call for the same id is answered from what the first fetched.
@@ -344,6 +350,29 @@ pub trait Clipboard: Send + Sync {
     /// Whether this clipboard holds promises (`fetch` in the descriptor).
     fn holds_promises(&self) -> bool {
         false
+    }
+    /// What an application pasting `mime` would get, for diagnostics. The
+    /// default answers from the pushed content; a clipboard that holds
+    /// promises in the daemon's own process fetches them.
+    fn paste(&self, mime: &str) -> PasteFuture<'_> {
+        let mime = mime.to_owned();
+        Box::pin(async move {
+            let value = self
+                .read_value()?
+                .ok_or_else(|| Error::Io("the clipboard is empty".to_owned()))?;
+            if mime.eq_ignore_ascii_case(TEXT_PLAIN) {
+                return value
+                    .text
+                    .map(String::into_bytes)
+                    .ok_or_else(|| Error::Io("no text on the clipboard".to_owned()));
+            }
+            value
+                .parts
+                .iter()
+                .find(|p| p.mime.eq_ignore_ascii_case(&mime))
+                .map(|p| p.bytes.as_ref().clone())
+                .ok_or_else(|| Error::Io(format!("{mime} is not on the clipboard")))
+        })
     }
 }
 
@@ -649,6 +678,11 @@ impl Clipboard for FakeClipboard {
     fn holds_promises(&self) -> bool {
         true
     }
+
+    fn paste(&self, mime: &str) -> PasteFuture<'_> {
+        let mime = mime.to_owned();
+        Box::pin(async move { FakeClipboard::paste(self, &mime).await })
+    }
 }
 
 /// The platform's clipboard, started: Wayland through the helper process on
@@ -674,6 +708,9 @@ pub fn platform_clipboard() -> Option<Arc<dyn Clipboard>> {
 /// macOS, the system's temporary directory elsewhere.
 #[must_use]
 pub fn platform_cache_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os(CACHE_DIR_ENV).filter(|d| !d.is_empty()) {
+        return PathBuf::from(dir);
+    }
     #[cfg(target_os = "linux")]
     {
         if let Some(dir) = std::env::var_os("XDG_RUNTIME_DIR").filter(|d| !d.is_empty()) {

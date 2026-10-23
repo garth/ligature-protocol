@@ -36,6 +36,8 @@ fn control_messages_validate() {
         types::PAIR_ABORT,
         types::CLIPBOARD_GET,
         types::CLIPBOARD_SET,
+        types::CLIPBOARD_PUT,
+        types::CLIPBOARD_PASTE,
         types::NOTIFY,
         types::FILES_SEND,
         types::FILES_GET,

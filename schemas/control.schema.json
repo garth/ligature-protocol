@@ -29,6 +29,8 @@
         "org.ligatureprotocol.control.pair.abort",
         "org.ligatureprotocol.control.clipboard.get",
         "org.ligatureprotocol.control.clipboard.set",
+        "org.ligatureprotocol.control.clipboard.put",
+        "org.ligatureprotocol.control.clipboard.paste",
         "org.ligatureprotocol.control.notify",
         "org.ligatureprotocol.control.files.send",
         "org.ligatureprotocol.control.files.get",
@@ -90,6 +92,10 @@
           "type": "string",
           "description": "clipboard.set: the text to put on the local clipboard (diagnostics and the loopback run)."
         },
+        "mime": {
+          "type": "string",
+          "description": "clipboard.put: the type of the part read from paths[0]. clipboard.paste: the type to paste into paths[0], fetched if promised."
+        },
         "title": {
           "type": "string",
           "description": "notify: the title of a test notification posted from this device to every displaying peer."
@@ -103,7 +109,7 @@
           "items": {
             "type": "string"
           },
-          "description": "files.send: absolute paths of the files to push. files.offer: one absolute path to offer."
+          "description": "files.send: absolute paths of the files to push. files.offer: one absolute path to offer. clipboard.put: the file whose bytes form the part. clipboard.paste: the file to write the pasted bytes to."
         },
         "ids": {
           "type": "array",

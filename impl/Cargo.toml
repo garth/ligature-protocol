@@ -60,6 +60,10 @@ qrcode = { version = "0.14", default-features = false }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 wl-clipboard-rs = "0.9"
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+rustix = { version = "1", features = ["fs", "event", "pipe"] }
 # Linux notifications over the session bus (milestone 3, LP-91).
 zbus = { version = "6", default-features = false, features = ["tokio", "proxy"] }
 futures-util = { version = "0.3", default-features = false }

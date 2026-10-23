@@ -42,6 +42,10 @@ pub mod types {
     pub const CLIPBOARD_GET: &str = "org.ligatureprotocol.control.clipboard.get";
     /// Set the local clipboard's text (diagnostics and the loopback run).
     pub const CLIPBOARD_SET: &str = "org.ligatureprotocol.control.clipboard.set";
+    /// Put one typed part, read from a file, on the local clipboard (diagnostics).
+    pub const CLIPBOARD_PUT: &str = "org.ligatureprotocol.control.clipboard.put";
+    /// Paste one type from the local clipboard to a file, fetching it if promised (diagnostics).
+    pub const CLIPBOARD_PASTE: &str = "org.ligatureprotocol.control.clipboard.paste";
     /// Post a test notification from this device to every displaying peer.
     pub const NOTIFY: &str = "org.ligatureprotocol.control.notify";
     /// Start a ceremony as the introducer.
@@ -114,6 +118,9 @@ pub struct Request {
     /// `files.send`, `files.offer`: absolute paths of the files.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub paths: Option<Vec<String>>,
+    /// `clipboard.put`, `clipboard.paste`: the content type.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mime: Option<String>,
     /// `files.get`: the ids to fetch; `files.withdraw`: the one id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ids: Option<Vec<String>>,
@@ -731,6 +738,56 @@ pub async fn handle(
                 ErrorBody::new("bad-request", "clipboard.set needs text"),
             )),
         },
+        types::CLIPBOARD_PUT => match (
+            daemon.clipboard(),
+            request.mime.as_deref(),
+            request.paths.as_deref().and_then(|p| p.first()),
+        ) {
+            (Some(c), Some(mime), Some(path)) => match std::fs::read(path) {
+                Ok(bytes) => {
+                    let mut value = crate::clipboard::Incoming::text("");
+                    value.text = None;
+                    value.parts = vec![crate::clipboard::Part::new(mime, bytes)];
+                    c.set_value(&value)
+                        .and_then(|()| Response::ok(id, &Empty {}))
+                }
+                Err(e) => Err(Error::Io(format!("{path}: {e}"))),
+            },
+            (None, _, _) => Ok(Response::error(
+                id,
+                ErrorBody::new("not-found", "no clipboard on this daemon"),
+            )),
+            _ => Ok(Response::error(
+                id,
+                ErrorBody::new("bad-request", "clipboard.put needs mime and one path"),
+            )),
+        },
+        types::CLIPBOARD_PASTE => match (
+            daemon.clipboard(),
+            request.mime.as_deref(),
+            request.paths.as_deref().and_then(|p| p.first()),
+        ) {
+            (Some(c), Some(mime), Some(path)) => match c.paste(mime).await {
+                Ok(bytes) => match std::fs::write(path, &bytes) {
+                    Ok(()) => Response::ok(
+                        id,
+                        &ClipboardPasted {
+                            size: bytes.len() as u64,
+                        },
+                    ),
+                    Err(e) => Err(Error::Io(format!("{path}: {e}"))),
+                },
+                Err(e) => Err(e),
+            },
+            (None, _, _) => Ok(Response::error(
+                id,
+                ErrorBody::new("not-found", "no clipboard on this daemon"),
+            )),
+            _ => Ok(Response::error(
+                id,
+                ErrorBody::new("bad-request", "clipboard.paste needs mime and one path"),
+            )),
+        },
         types::NOTIFY => match (daemon.notification_sync(), request.title.as_deref()) {
             (Some(sync), Some(title)) => {
                 let notification = crate::notifications::Notification {
@@ -981,6 +1038,14 @@ pub struct ClipboardPartInfo {
     pub size: u64,
     /// Whether it is a promise still to be fetched.
     pub promised: bool,
+}
+
+/// The `clipboard.paste` result: the bytes went to the path asked for,
+/// since a clipboard value can exceed a control frame.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClipboardPasted {
+    /// How many bytes were written.
+    pub size: u64,
 }
 
 /// An empty result.

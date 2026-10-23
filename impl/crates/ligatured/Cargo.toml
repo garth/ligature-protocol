@@ -29,6 +29,10 @@ jsonschema.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 wl-clipboard-rs.workspace = true
+wayland-client.workspace = true
+wayland-protocols.workspace = true
+wayland-protocols-wlr.workspace = true
+rustix.workspace = true
 zbus.workspace = true
 futures-util.workspace = true
 

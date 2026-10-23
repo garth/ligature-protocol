@@ -10,8 +10,8 @@ use clap::{Parser, Subcommand};
 use std::sync::{Arc, Mutex};
 
 use ligatured::control::{
-    Caps, Client, ClipboardText, Devices, Empty, Event, InitResult, Offers, Request, Transfers,
-    types,
+    Caps, Client, ClipboardPasted, ClipboardText, Devices, Empty, Event, InitResult, Offers,
+    Request, Transfers, types,
 };
 use ligatured::daemon::Status;
 use ligatured::files_sync::{FileState, TransferEnd, TransferProgress};
@@ -142,6 +142,21 @@ enum ClipboardAction {
     Set {
         /// The text.
         text: String,
+    },
+    /// Put one typed part, read from a file, on the clipboard (diagnostics).
+    Put {
+        /// The content type, such as image/png.
+        mime: String,
+        /// The file whose bytes form the part.
+        path: PathBuf,
+    },
+    /// Paste one type from the clipboard into a file, fetching it if
+    /// promised (diagnostics).
+    Paste {
+        /// The content type.
+        mime: String,
+        /// Where the daemon writes the bytes.
+        out: PathBuf,
     },
 }
 
@@ -306,6 +321,19 @@ async fn run(options: &Options, locations: &Locations) -> Result<(), Error> {
                 let mut req = Request::new(types::CLIPBOARD_SET, 0);
                 req.text = Some(text.clone());
                 let _: Empty = client.request(req).await?;
+            }
+            ClipboardAction::Put { mime, path } => {
+                let mut req = Request::new(types::CLIPBOARD_PUT, 0);
+                req.mime = Some(mime.clone());
+                req.paths = Some(vec![absolute(path)?]);
+                let _: Empty = client.request(req).await?;
+            }
+            ClipboardAction::Paste { mime, out } => {
+                let mut req = Request::new(types::CLIPBOARD_PASTE, 0);
+                req.mime = Some(mime.clone());
+                req.paths = Some(vec![absolute(out)?]);
+                let pasted: ClipboardPasted = client.request(req).await?;
+                eprintln!("{} written to {}", human(pasted.size), out.display());
             }
         },
         Command::Notify { title, body } => {

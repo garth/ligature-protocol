@@ -4,8 +4,7 @@
 > [Releases page](https://github.com/garth/ligature-protocol/releases), tagged
 > `vX.Y.Z-alpha`: the reference implementation shares the clipboard, notifications and
 > files between a Linux machine, a Mac and an Android phone (milestones 1 to 5). Nothing is
-> stable yet: the specification is a draft, the wire format may change between releases,
-> and the `org.ligatureprotocol` type names use a placeholder domain.
+> stable yet: the specification is a draft and the wire format may change between releases.
 
 Ligature Protocol binds the devices a person owns, and the devices a household shares,
 into one trusted group, whatever they run: Linux and macOS desktops and laptops, Android
@@ -111,7 +110,7 @@ Headscale/WireGuard configurations for users who want a full home-network overla
 | `docs/milestones/` | One plan per milestone, with the non-protocol decisions made while implementing it |
 | `docs/security-audit/` | Dated security audits, the latest linked below and from `SECURITY.md` |
 | `docs/glossary.md`, `docs/prior-art.md` | Terminology and related work |
-| `schemas/` | Draft JSON Schemas for LP's records and messages (`org.ligatureprotocol.*` type names, placeholder domain) |
+| `schemas/` | Draft JSON Schemas for LP's records and messages (`org.ligatureprotocol.*` type names) |
 | `impl/` | Rust reference implementation (cargo workspace) |
 | `vectors/` | Conformance vectors any implementation can run |
 

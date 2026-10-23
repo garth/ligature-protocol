@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ligatureprotocol.org/schemas/capability.files.schema.json",
   "title": "org.ligatureprotocol.capability.files",
-  "description": "DRAFT. The files capability (spec chapter 05 section 3d): user-scoped, two directions. The descriptor's params say whether the device sends (offers content and answers fetches), receives (accepts pushed files), the largest chunk it takes and how many files it takes at once from one peer. A transfer is a control stream (purpose org.ligatureprotocol.capability.files, ADR 0036) carrying request, offer, accept and decline, and one data stream per accepted file, same purpose, carrying begin, chunk and end from the sender and received or failed from the receiver. The file definition is standalone so other capability schemas can reference it. The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "description": "DRAFT. The files capability (spec chapter 05 section 3d): user-scoped, two directions. The descriptor's params say whether the device sends (offers content and answers fetches), receives (accepts pushed files), the largest chunk it takes and how many files it takes at once from one peer. A transfer is a control stream (purpose org.ligatureprotocol.capability.files, ADR 0036) carrying request, offer, accept and decline, and one data stream per accepted file, same purpose, carrying begin, chunk and end from the sender and received or failed from the receiver. The file definition is standalone so other capability schemas can reference it.",
   "$defs": {
     "params": {
       "type": "object",

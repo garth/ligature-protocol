@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ligatureprotocol.org/schemas/person.schema.json",
   "title": "org.ligatureprotocol.person",
-  "description": "DRAFT. The payload of a person fact: the master key, the self-chosen display name, and the self-signing and user-signing public keys with the master key's signatures over them. Carried in an envelope signed by the self-signing key; handed over in the pairing ceremony that establishes the person role and gossiped like any other fact (spec chapters 01 and 06). The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "description": "DRAFT. The payload of a person fact: the master key, the self-chosen display name, and the self-signing and user-signing public keys with the master key's signatures over them. Carried in an envelope signed by the self-signing key; handed over in the pairing ceremony that establishes the person role and gossiped like any other fact (spec chapters 01 and 06).",
   "$defs": {
     "publicKey": {
       "type": "string",

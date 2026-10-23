@@ -159,7 +159,7 @@ any device can verify without a server. The unit of gossip; identified by the SH
 its payload bytes.
 
 **Type name**: The reverse-DNS identifier of a schema or capability type, such as
-`org.ligatureprotocol.capability.clipboard`. The domain is a placeholder until registered.
+`org.ligatureprotocol.capability.clipboard`, under the project's domain `ligatureprotocol.org`.
 
 **User-device binding**: One person's account on one device: its own key, signed with the
 `binding` role, member of their device set, owner of their user-scoped capabilities there.

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ligatureprotocol.org/schemas/capability.schema.json",
   "title": "org.ligatureprotocol.capability",
-  "description": "DRAFT. A manifest: the full list of capabilities a device currently offers. A later manifest from the same peer replaces this one; when the session ends every capability in it is withdrawn. The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "description": "DRAFT. A manifest: the full list of capabilities a device currently offers. A later manifest from the same peer replaces this one; when the session ends every capability in it is withdrawn.",
   "$defs": {
     "typeName": {
       "type": "string",

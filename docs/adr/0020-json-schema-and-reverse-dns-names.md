@@ -1,6 +1,6 @@
 # 0020. JSON Schema for records and messages, reverse-DNS type names
 
-**Status:** Proposed
+**Status:** Proposed; the domain in item 2 was registered on 2026-10-23 (LP-135)
 **Date:** 2026-10-17
 **Supersedes:** [ADR 0007](superseded/0007-atproto-lexicons.md)
 

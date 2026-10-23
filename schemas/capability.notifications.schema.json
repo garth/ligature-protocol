@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ligatureprotocol.org/schemas/capability.notifications.schema.json",
   "title": "org.ligatureprotocol.capability.notifications",
-  "description": "DRAFT. The notifications capability (spec chapter 05 section 3c): user-scoped, two directions. The descriptor's params say whether the device emits (forwards what its apps post), displays (shows what it is sent), and how large an icon it accepts. The capability's stream (purpose org.ligatureprotocol.capability.notifications, ADR 0036) carries post, icon and dismiss messages in both directions. The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "description": "DRAFT. The notifications capability (spec chapter 05 section 3c): user-scoped, two directions. The descriptor's params say whether the device emits (forwards what its apps post), displays (shows what it is sent), and how large an icon it accepts. The capability's stream (purpose org.ligatureprotocol.capability.notifications, ADR 0036) carries post, icon and dismiss messages in both directions.",
   "$defs": {
     "publicKey": {
       "type": "string",

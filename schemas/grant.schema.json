@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ligatureprotocol.org/schemas/grant.schema.json",
   "title": "org.ligatureprotocol.grant",
-  "description": "DRAFT. The payload of a grant authorising one device to use a capability offered by another, carried in an envelope signed by the grantor's key. Held by the device that issued it; not shared (spec chapters 05 and 10). The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "description": "DRAFT. The payload of a grant authorising one device to use a capability offered by another, carried in an envelope signed by the grantor's key. Held by the device that issued it; not shared (spec chapters 05 and 10).",
   "$defs": {
     "publicKey": {
       "type": "string",

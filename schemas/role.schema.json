@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ligatureprotocol.org/schemas/role.schema.json",
   "title": "org.ligatureprotocol.role",
-  "description": "DRAFT. The payload of a role signature made in the pairing ceremony (spec chapter 02 section 3), carried in an envelope signed by the introducer's self-signing key (roles binding and principal) or by the user-signing key (role person). The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "description": "DRAFT. The payload of a role signature made in the pairing ceremony (spec chapter 02 section 3), carried in an envelope signed by the introducer's self-signing key (roles binding and principal) or by the user-signing key (role person).",
   "$defs": {
     "publicKey": {
       "type": "string",

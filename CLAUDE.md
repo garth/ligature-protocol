@@ -19,8 +19,9 @@ between a Linux machine, a Mac and an Android phone on one LAN; the phone receiv
 clipboard automatically and sends on a tap, since Android lets only a focused app read it;
 large clipboard content is fetched only when pasted; the Mac displays
 notifications but cannot read its own; files land in each device's download folder, from
-`lpctl files` on the desktops and the share sheet on the phone) and nothing beyond them,
-and the `org.ligatureprotocol` type names use a placeholder domain.
+`lpctl files` on the desktops and the share sheet on the phone) and nothing beyond them.
+The project's domain is `ligatureprotocol.org`, so the `org.ligatureprotocol` type names
+and the schema `$id`s are official.
 
 ## Architecture decisions
 
@@ -66,7 +67,7 @@ The authoritative record is `docs/adr/`. Summary, in layer order:
    live: a manifest on connect, updates during the session, withdrawn on disconnect,
    never persisted. No required off-device state at all. (ADR 0016)
 6. **Schemas**: JSON Schema 2020-12 under `schemas/`, one file per type; reverse-DNS type
-   names `org.ligatureprotocol.*` (placeholder domain). Keys are multibase strings,
+   names `org.ligatureprotocol.*` under the project's domain. Keys are multibase strings,
    timestamps RFC 3339, bytes base64url in JSON and byte strings in CBOR. Wire encoding is
    CBOR. Every signed fact travels in an envelope (type, payload bytes, signer, signature
    over `"ligature/fact/1" || type || payload`); verify the bytes as received, then
@@ -262,9 +263,8 @@ npx ajv compile --spec=draft2020 -c ajv-formats -s schemas/<name>.schema.json \
   accepted. Do not add wire formats or state machines to the spec without an accepted ADR.
 - New capability families each need a schema under `schemas/` and a section in
   `docs/spec/05-capabilities.md`.
-- The `org.ligatureprotocol` type names and the `ligatureprotocol.org` schema `$id`s are
-  placeholders, still so in the alpha releases; register the domain or rename before the
-  first release that is not alpha.
+- `ligatureprotocol.org` is the project's registered domain: the `org.ligatureprotocol`
+  type names and the schema `$id`s are official and never renamed.
 - Device security is out of scope (ADR 0024): never add lock, idle, local-authentication
   or local-store-protection requirements to the spec. The protocol defines authority (who
   is authenticated behind a request) and trust (which keys are recognised), and takes a

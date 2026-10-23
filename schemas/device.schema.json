@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ligatureprotocol.org/schemas/device.schema.json",
   "title": "org.ligatureprotocol.device",
-  "description": "DRAFT. The payload of a device record: a device principal or a user-device binding described by its owner, carried in an envelope signed by the device's own key. Role signatures that make it trusted are separate role facts; revocations are separate revocation facts (ADR 0035). The key is the identifier; there is no separate deviceId. Capabilities are not part of this record: they are announced live in a capability manifest (spec chapters 02, 05, 06). The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "description": "DRAFT. The payload of a device record: a device principal or a user-device binding described by its owner, carried in an envelope signed by the device's own key. Role signatures that make it trusted are separate role facts; revocations are separate revocation facts (ADR 0035). The key is the identifier; there is no separate deviceId. Capabilities are not part of this record: they are announced live in a capability manifest (spec chapters 02, 05, 06).",
   "$defs": {
     "publicKey": {
       "type": "string",

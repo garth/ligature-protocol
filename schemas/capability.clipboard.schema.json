@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ligatureprotocol.org/schemas/capability.clipboard.schema.json",
   "title": "org.ligatureprotocol.capability.clipboard",
-  "description": "DRAFT. The clipboard capability (spec chapter 05 section 3b): user-scoped. A clipboard holds one selection in several representations at once; a set carries the plain text and a list of parts, each a MIME type with either the bytes (pushed, within the receiver's maxBytes) or a file descriptor of the files capability (announced, fetched over a files transfer only when an application pastes). A selection of files is always announced. A get asks the peer for its current value, answered with a set. The receiver applies the newest set by setAt and never re-sends what it just applied. The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "description": "DRAFT. The clipboard capability (spec chapter 05 section 3b): user-scoped. A clipboard holds one selection in several representations at once; a set carries the plain text and a list of parts, each a MIME type with either the bytes (pushed, within the receiver's maxBytes) or a file descriptor of the files capability (announced, fetched over a files transfer only when an application pastes). A selection of files is always announced. A get asks the peer for its current value, answered with a set. The receiver applies the newest set by setAt and never re-sends what it just applied.",
   "$defs": {
     "params": {
       "type": "object",

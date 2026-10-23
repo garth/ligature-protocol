@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ligatureprotocol.org/schemas/envelope.schema.json",
   "title": "org.ligatureprotocol.envelope",
-  "description": "DRAFT. The one container for every signed fact (ADR 0035). The payload is the encoded fact as bytes and is never re-encoded; the signature is Ed25519 over the byte concatenation of the ASCII prefix \"ligature/fact/1\", the type and the payload. Verifiers check the bytes as received, then decode the payload and validate it against the schema the type names. The fact identifier is the SHA-256 of the payload bytes. The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "description": "DRAFT. The one container for every signed fact (ADR 0035). The payload is the encoded fact as bytes and is never re-encoded; the signature is Ed25519 over the byte concatenation of the ASCII prefix \"ligature/fact/1\", the type and the payload. Verifiers check the bytes as received, then decode the payload and validate it against the schema the type names. The fact identifier is the SHA-256 of the payload bytes.",
   "$defs": {
     "publicKey": {
       "type": "string",

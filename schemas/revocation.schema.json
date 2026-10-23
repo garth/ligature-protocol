@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ligatureprotocol.org/schemas/revocation.schema.json",
   "title": "org.ligatureprotocol.revocation",
-  "description": "DRAFT. The payload of a revocation or key abandonment (spec chapters 02 and 07), carried in an envelope signed by the self-signing key of the person named in `person`, which that person's introducers hold. It counts on a device only when that person is the device's owner, or `subject` is that person's own master key (an abandonment), or a verified binding or principal role of that person covers `subject` (ADR 0039). The domain ligatureprotocol.org is a placeholder; it is not yet registered.",
+  "description": "DRAFT. The payload of a revocation or key abandonment (spec chapters 02 and 07), carried in an envelope signed by the self-signing key of the person named in `person`, which that person's introducers hold. It counts on a device only when that person is the device's owner, or `subject` is that person's own master key (an abandonment), or a verified binding or principal role of that person covers `subject` (ADR 0039).",
   "$defs": {
     "publicKey": {
       "type": "string",

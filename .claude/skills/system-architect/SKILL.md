@@ -82,7 +82,7 @@ CLAUDE.md.
   does, or announced and fetched over `files` as the clipboard does; never a bigger frame.
 - Nothing about a capability is persisted: manifests are live, withdrawn on disconnect.
 - Names are `org.ligatureprotocol.capability.<family>` and type names
-  `…capability.<family>.<message>` (placeholder domain).
+  `…capability.<family>.<message>`, under the project's domain `ligatureprotocol.org`.
 
 ## Dependency governance
 

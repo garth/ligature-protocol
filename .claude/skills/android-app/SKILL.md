@@ -12,33 +12,40 @@ stays in Rust.
 
 ## Structure
 
-| Kotlin                                                               | Role                                                                                                                            |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `LigatureApp`, `NodeHolder`                                          | Process-wide node, created once, configured with the data and cache directories                                                 |
-| `NodeService`                                                        | Foreground service of type `connectedDevice`, holds the multicast lock, started at boot (`BootReceiver`) and when the app opens |
-| `MainActivity`, `ui/MainScreen`, `ui/QrCode`                         | The one screen: status, devices, the pairing offer as a QR code, Send and Receive now, Save                                     |
-| `SendClipboardActivity`, `SendClipboardTileService`, `ShareActivity` | The moments the app may read the clipboard: a focused activity, the quick-settings tile, the share sheet                        |
-| `ClipboardProvider`                                                  | The `ContentProvider` serving announced parts and files; a thumbnail request gets a placeholder, a real read fetches            |
-| `NotificationListener`                                               | The listener that emits the phone's notifications and will serve media sessions                                                 |
-| `Transfers`                                                          | One progress notification per transfer with Cancel, then Sent or Received                                                       |
+| Kotlin                                              | Role                                                                                                                                                                                                         |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `LigatureApp`                                       | The `Application`; registers nothing but the process                                                                                                                                                         |
+| `NodeHolder`                                        | The process-wide node, created once on first use with the data and cache directories, and the app's state: the clipboard reads, the files notification with its Save action, the host callbacks              |
+| `NodeService`                                       | Foreground service of type `connectedDevice`, holds the multicast lock, started at boot (`BootReceiver`) and when the app opens; reads the clipboard itself only when `READ_CLIPBOARD_IN_BACKGROUND` is held |
+| `MainActivity`, `ui/MainScreen`, `ui/QrCode`        | The one screen: status, devices, the pairing offer as a QR code, Send; asks for `POST_NOTIFICATIONS` at launch and sends the clipboard when it gains focus                                                   |
+| `SendClipboardActivity`, `SendClipboardTileService` | A transparent activity that sends once it has focus, and the quick-settings tile that starts it                                                                                                              |
+| `ShareActivity`                                     | The share sheet target: sends the shared text or streams to a chosen device, without touching the clipboard                                                                                                  |
+| `ClipboardProvider`                                 | The `ContentProvider` serving announced parts and files; `openTypedAssetFile` answers a thumbnail request with a placeholder, `openFile` fetches                                                             |
+| `NotificationListener`                              | The listener that emits the phone's notifications and will serve media sessions                                                                                                                              |
+| `Transfers`                                         | One progress notification per transfer with Cancel, then Sent or Received                                                                                                                                    |
 
-The Rust side (`ligature-android/src`): `node.rs` (the `Node` the Kotlin calls, a Tokio
-runtime, `with_runtime`), `clipboard.rs` (`HostClipboard`), `notifications.rs`,
-`files.rs` (MediaStore pending rows written through `/proc/self/fd`), and the `Host` trait
-the app implements. The Kotlin bindings are generated into `app/build/generated/uniffi/`
+The Rust side (`ligature-android/src`): `lib.rs` (the `Host` trait the app implements and
+the exported types), `node.rs` (the `Node` the Kotlin calls, a Tokio runtime,
+`with_runtime`), `clipboard.rs` (`HostClipboard`), `notifications.rs`, `files.rs`
+(MediaStore pending rows written through `/proc/self/fd`), `logging.rs` (the log to the
+host) and `error.rs`. The Kotlin bindings are generated into `app/build/generated/uniffi/`
 and never committed; a change to an exported type or function regenerates them on the next
 Gradle build.
 
 ## What Android allows, and the app's answers
 
 - The clipboard is readable only by a focused app or the keyboard. Receiving is automatic;
-  sending is on a tap (tile, notification action, the screen, the share sheet), and
-  automatic only with `READ_CLIPBOARD_IN_BACKGROUND` on a platform-signed build, which an
-  official LineageOS build cannot be. Do not try to read it from the service.
-- Files land in MediaStore's Downloads as pending rows, finished after the hash check;
-  names clash by MediaStore's numbering.
-- Notifications need `POST_NOTIFICATIONS` on 13 and later; the foreground service needs its
-  type declared; battery optimisation must be off for the node to live in the background.
+  sending happens when the app or the tile's activity gains focus, and automatically from
+  the service only with `READ_CLIPBOARD_IN_BACKGROUND` on a platform-signed build, which an
+  official LineageOS build cannot be (`NodeHolder` checks the permission before reading).
+  Nothing else reads it: the share sheet sends what was shared.
+- Files land in MediaStore's Downloads as pending rows, finished after the hash check; a
+  clashing name gets a numbered suffix chosen by the app (`Transfers.freeName`), since
+  MediaStore's own renaming is not relied on. The clipboard's files are fetched into
+  Downloads by the Save action on the files notification.
+- Notifications need `POST_NOTIFICATIONS` on 13 and later, asked for by `MainActivity` at
+  launch; the foreground service needs its type declared; battery optimisation must be off
+  for the node to live in the background.
 - New permissions are opt-in from the app's own settings (milestone 6 adds SMS, calls and
   contacts that way): never requested at first run, and the capability's descriptor reflects
   what is held so the manifest changes live.
@@ -47,10 +54,10 @@ Gradle build.
 
 ## Compose conventions
 
-Material 3 components, one screen in `ui/`, state hoisted from the node through the
-service, `safeDrawingPadding` on the root, strings inline for now (no `strings.xml` beyond
-the app name until the app has a second language). Keep the screen plain; the app is a host
-for the node, not a product surface yet.
+Material 3 components, one screen in `ui/`, state hoisted from `NodeHolder`,
+`safeDrawingPadding` on the root, user-visible strings in `res/values/strings.xml` (one
+language today). Keep the screen plain; the app is a host for the node, not a product
+surface yet.
 
 ## Build and run
 
@@ -71,8 +78,13 @@ password are set (the release workflow does), and unsigned otherwise.
   notification shade is not in that dump, so `adb exec-out screencap -p`, read the PNG, and
   tap by coordinates. Transfer and clipboard notifications sit in the collapsed Silent
   group: expand the group, then the notification, before its action shows.
-- Put text on the clipboard and send it:
-  `adb shell "am start -a android.intent.action.SEND -t text/plain --es android.intent.extra.TEXT 'words' -n org.ligatureprotocol.android/.ShareActivity"`.
+- Send text as if shared from another app (quoted as one shell string):
+
+  ```sh
+  adb shell "am start -a android.intent.action.SEND -t text/plain \
+    --es android.intent.extra.TEXT 'words' -n org.ligatureprotocol.android/.ShareActivity"
+  ```
+
 - `adb logcat -s ligature` for the node's log; `debug_logging` in the node config raises it.
 - If adb says `unauthorized`, `adb kill-server` makes the phone prompt again. The owner's
   phone is a Pixel 8 Pro on LineageOS and enumerates on one USB port only; see the device

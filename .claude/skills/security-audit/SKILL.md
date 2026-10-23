@@ -22,8 +22,8 @@ The repository is public and `SECURITY.md` routes vulnerabilities through GitHub
 Advisories, never issues. So: a Critical or High finding is fixed, or reported through an
 advisory, **before** a report naming it is committed; the report records it as resolved or
 as reported privately, with the advisory's reference and no exploit detail. A Medium or
-lower finding may be recorded openly. The project is pre-alpha and unaudited, and the
-report says so.
+lower finding may be recorded openly. The project is alpha, and the report says so and
+names the audits before it.
 
 ## Process
 
@@ -227,17 +227,17 @@ Answers: is it safe to tag what is on this branch?
    `git log --oneline "$BASE"..HEAD`), and a clean working tree (`git status --porcelain`);
    uncommitted work is not releasable.
 3. **Run the checklist**, all fifteen items, weighted to the changed surface, without skipping the rest.
-4. **Classify** each finding against the baseline: New, Regressed, Unchanged–Deferred,
-   Unchanged–Open, Resolved.
+4. **Classify** each finding against the baseline: New, Regressed, Unchanged-Deferred,
+   Unchanged-Open, Resolved.
 5. **Dependencies**: `cargo deny check advisories` in `impl/`, compared with the baseline;
    an advisory is a blocker when the vulnerable code is reachable from a peer or a file.
 6. **Verdict**, first matching rule wins:
    - **NO-GO**: a New or Regressed Critical or High; any open Critical; a reachable New or
      Regressed High advisory; a deferred finding materially worse; a dirty tree touching
      security-relevant code.
-   - **GO WITH CONDITIONS**: an Unchanged–Open High never formally deferred, or a New or
+   - **GO WITH CONDITIONS**: an Unchanged-Open High never formally deferred, or a New or
      Regressed Medium.
-   - **GO**: nothing New or Regressed above Low, every remaining High Unchanged–Deferred
+   - **GO**: nothing New or Regressed above Low, every remaining High Unchanged-Deferred
      with a recorded reason.
 
 Output in the conversation, verdict first, then why, blocking issues with remediation,

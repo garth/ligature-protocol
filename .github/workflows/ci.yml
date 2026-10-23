@@ -109,8 +109,7 @@ jobs:
       - uses: DavidAnson/markdownlint-cli2-action@v24
         with:
           globs: |
-            *.md
-            docs/**/*.md
+            **/*.md
 
   schemas:
     name: JSON Schema compile

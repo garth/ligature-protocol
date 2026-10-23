@@ -27,19 +27,20 @@ versions are pinned by `Cargo.lock` and "bumps are deliberate commits of their o
 | CI tooling from npm                                              | `ci.yml`: `ajv-cli@5.0.0`, `ajv-formats@3.0.1`; the markdownlint action's major                          |
 | The project's own version                                        | `impl/Cargo.toml` `[workspace.package] version`, moved only by `scripts/release.sh`                      |
 
-## Phase 1 — crates within their ranges
+## Phase 1: crates within their ranges
 
 From `impl/`, on a clean tree:
 
 ```sh
-cargo update --workspace          # Cargo.lock to the newest versions the ranges allow
+cargo update                      # Cargo.lock to the newest versions the ranges allow
 cargo deny check                  # advisories, licences, bans, sources
 ```
 
-`cargo update` prints each change; keep the list for the report. `cargo-outdated` and
+Plain `cargo update`: with `--workspace` it touches only the workspace members' own entries
+and moves nothing. It prints each change; keep the list for the report. `cargo-outdated` and
 `cargo-edit` are not installed; a range bump is an edit to `[workspace.dependencies]`.
 
-## Phase 2 — crate majors
+## Phase 2: crate majors
 
 1. List candidates: compare each `[workspace.dependencies]` range with the crate's latest on
    crates.io (`cargo search <name>` or the registry page).
@@ -49,8 +50,8 @@ cargo deny check                  # advisories, licences, bans, sources
    with `wayland-protocols` and `wayland-protocols-wlr`; `objc2` with `objc2-foundation`
    and `objc2-app-kit`; `uniffi` with the Kotlin it generates and the `bindgen` binary;
    `zbus` with `futures-util`; `ed25519-dalek` with `getrandom` and `sha2`).
-3. Apply safe majors by editing the range, then `cargo update --workspace`, then the code
-   changes the migration needs, in one pass per crate group.
+3. Apply safe majors by editing the range, then `cargo update`, then the code changes the
+   migration needs, in one pass per crate group.
 4. Hold back a major that needs real migration work and say which breaking change blocks it.
 5. Special cases:
    - **`uniffi`**: regenerate the Kotlin (`./gradlew assembleDebug` does) and check the
@@ -63,16 +64,18 @@ cargo deny check                  # advisories, licences, bans, sources
    - **`deny.toml`**: an advisory ignore must still be the crate it names; remove it when the
      dependency is gone.
 
-## Phase 3 — Rust toolchain
+## Phase 3: Rust toolchain
 
 Stable moves on its own through mise (`mise exec rust@stable`); `rust-version` is the
 floor. Raise it only when a crate or a language feature needs it, and say so in the commit.
 After a stable release, run clippy: new lints arrive with `-D warnings` and CI will fail on
 them before anything else.
 
-## Phase 4 — Android
+## Phase 4: Android
 
-1. **Gradle plugins and libraries**: edit `libs.versions.toml`. AGP, Kotlin and the Compose
+1. **Gradle plugins and libraries**: edit `libs.versions.toml`. A major of the Android
+   Gradle plugin, Gradle, the NDK or `compileSdk` is its own ticket with the migration read
+   first (LP-130 holds the current set). AGP, Kotlin and the Compose
    compiler move together (the Kotlin Compose plugin version equals Kotlin's); the Compose
    BOM sets the Compose libraries. Read the AGP release notes for the Gradle version it
    needs, then bump `gradle-wrapper.properties` (`./gradlew wrapper --gradle-version X`).
@@ -88,7 +91,7 @@ them before anything else.
 5. Build: `./gradlew assembleDebug` from `impl/android`, then install on the phone and run
    the first-run checks of its README.
 
-## Phase 5 — GitHub Actions and CI tooling
+## Phase 5: GitHub Actions and CI tooling
 
 For each `uses:` in both workflows, check the latest major (`gh api repos/<owner>/<repo>/
 releases?per_page=5 --jq '.[].tag_name'`) and the runtime it declares
@@ -100,7 +103,7 @@ changed path semantics at v5 and hash checking at v8). Bump `ajv-cli` and `ajv-f
 The runner labels (`ubuntu-latest`, `ubuntu-24.04-arm`, `macos-latest`) migrate on
 GitHub's schedule; a run's annotations announce it.
 
-## Phase 6 — verification
+## Phase 6: verification
 
 All of these, from `impl/` unless said otherwise, must pass:
 
@@ -111,14 +114,14 @@ cargo test --workspace
 cargo deny check
 cargo ndk -t arm64-v8a -t x86_64 build -p ligature-android --release     # the Android library
 (cd android && ./gradlew assembleDebug)                                   # the APK, bindings regenerated
-npx --yes markdownlint-cli2 "*.md" "docs/**/*.md"                         # from the repository root
+npx --yes markdownlint-cli2 "**/*.md"                                     # from the repository root
 ```
 
 A flaky test is looped before it is blamed on an update; the two-node and multi-daemon
 tests talk over real sockets and mDNS. If an update breaks something that cannot be fixed
 quickly, revert that crate's range and report it as held back.
 
-## Phase 7 — report
+## Phase 7: report
 
 - Crates moved within ranges (count and the notable ones), majors applied (old to new),
   majors held back and why.

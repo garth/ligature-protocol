@@ -13,14 +13,22 @@ These carry the trust model and the user's data; a change near one needs a test 
   exporter, confirm on both sides, a second ceremony refused), role signatures (`binding`,
   `principal`, `person`), a stranger kept for pairing only and dropped otherwise.
 - **Revocation**: a gossiped signed fact, revocations first at every session start, a
-  revoked device refused at the next connection, the revoked key still listed as revoked.
+  revocation counted only when it verifies against the person it names and that person is
+  the owner, or the subject is their own key or device (ADR 0039, LP-120), a revoked device
+  refused at the next connection and its live session closed the moment the revocation is
+  learnt (LP-122), the revoked key still listed as revoked.
 - **Gossip and facts**: byte-exact signature verification, unknown fields ignored, a newer
   fact replacing an older, a quarantined fact never acted on, the vectors in `vectors/`.
 - **Sessions**: one connection per device pair; crossed dials settled the same on both
-  ends; a peer found again while connected never replaces the live connection (LP-117); a
-  disconnect withdraws the peer's manifest, promises and offers; reconnect after a restart.
-- **Capabilities**: the manifest on connect and on change, audience filtering, the implicit
-  same-person grant, nothing sent before mutual authentication.
+  ends; a peer discovered at an address of a live connection is not redialled (LP-117, the
+  guard is in discovery; a dial by hand still replaces); a stranger's streams other than the
+  pairing offer held until the ceremony admits it and reset when it is dropped (ADR 0038,
+  LP-121); a disconnect withdraws the peer's manifest, promises and offers; reconnect after
+  a restart.
+- **Capabilities**: the manifest on connect and on change, the implicit same-person grant,
+  a message from another person's device refused, nothing sent before mutual
+  authentication. Audience filtering of manifests is not implemented yet (LP-134) and has
+  no test.
 - **Clipboard**: the echo rule over the representation set, push within `maxBytes` and
   announce above it, a promise fetched only on paste and recorded as applied before the
   platform gets it (LP-107), `get` on connect only to a peer of the new shape, promises
@@ -52,10 +60,10 @@ clipboard only when focused) is recorded in chapter 08, not worked around.
 ## CI is the second machine
 
 CI runs the Rust checks on Ubuntu and macOS, builds the Android library and APK, cargo-deny,
-markdownlint and the schema compile. A test that passes here and fails on the Ubuntu runner
-has so far meant a timing race the slower runner exposes: read the failed run's log
-(`gh run view <id> --log-failed`), find the point of failure, and reproduce by looping the
-test locally before changing anything.
+markdownlint and the schema compile. A test that passes here and fails on a runner (Ubuntu
+and macOS have both done it) has so far meant a timing race the slower runner exposes: read
+the failed run's log (`gh run view <id> --log-failed`), find the point of failure, and
+reproduce by looping the test locally before changing anything.
 
 ## What is not tested
 

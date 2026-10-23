@@ -63,8 +63,14 @@ async fn a_peer_that_went_away_is_redialled_at_its_last_address() {
         Recognition::MyBinding { introducer: true }
     );
     // A's event loop has noted where B was.
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    assert_eq!(a.last_addrs(), vec![(*b.binding().public(), b_addr)]);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while a.last_addrs() != vec![(*b.binding().public(), b_addr)] {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "A noted B's address"
+        );
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
 
     // B drops A: A sees the session end.
     b.manager().drop_peer(a.binding().public());

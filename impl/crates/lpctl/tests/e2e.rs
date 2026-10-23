@@ -3,6 +3,7 @@
 //! clipboard both ways, and revoke. The automated stand-in for the
 //! two-machine run.
 
+use std::io::BufRead as _;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -28,23 +29,43 @@ fn ligatured() -> PathBuf {
 struct Daemon {
     child: Child,
     data: PathBuf,
+    log: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Daemon {
-    fn start(data: &Path, name: &str) -> Self {
-        std::fs::create_dir_all(data).unwrap();
-        let child = Command::new(ligatured())
+    /// Starts a real daemon that touches nothing of the owner's: fake
+    /// clipboard and notification backends, its own home (so its download
+    /// folder is under the test's directory) and its own clipboard cache,
+    /// with its log copied to the test's stderr under its name (LP-126).
+    fn start(root: &Path, name: &str) -> Self {
+        let data = root.join("data").join(name);
+        let home = root.join("home").join(name);
+        std::fs::create_dir_all(&data).unwrap();
+        std::fs::create_dir_all(&home).unwrap();
+        let mut child = Command::new(ligatured())
             .args(["--device-name", name])
-            .env("LIGATURE_DATA_DIR", data)
+            .env("LIGATURE_DATA_DIR", &data)
             .env("LIGATURE_FAKE_CLIPBOARD", "1")
+            .env("LIGATURE_FAKE_NOTIFICATIONS", "1")
+            .env("LIGATURE_CLIPBOARD_CACHE", home.join("cache"))
+            .env("HOME", &home)
             .env("RUST_LOG", "info")
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .spawn()
             .expect("start ligatured");
+        let stderr = child.stderr.take().unwrap();
+        let tag = name.to_owned();
+        let log = std::thread::spawn(move || {
+            for line in std::io::BufReader::new(stderr).lines() {
+                let Ok(line) = line else { break };
+                eprintln!("[{tag}] {line}");
+            }
+        });
         let d = Self {
             child,
-            data: data.to_path_buf(),
+            data,
+            log: Some(log),
         };
         d.wait_for_socket();
         d
@@ -85,7 +106,21 @@ impl Drop for Daemon {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+        if let Some(log) = self.log.take() {
+            let _ = log.join();
+        }
     }
+}
+
+/// Whether `status` output lists a peer by `name`. Other devices on the LAN
+/// (the owner's own daemon, for one) connect as strangers and may appear in
+/// the count, so the tests look for names, never exact counts.
+fn lists_peer(status: &str, name: &str) -> bool {
+    status
+        .lines()
+        .skip_while(|l| !l.starts_with("peers:"))
+        .skip(1)
+        .any(|l| l.contains(name))
 }
 
 fn until(what: &str, timeout: Duration, mut check: impl FnMut() -> bool) {
@@ -99,8 +134,8 @@ fn until(what: &str, timeout: Duration, mut check: impl FnMut() -> bool) {
 #[test]
 fn two_daemons_pair_share_the_clipboard_both_ways_and_revoke() {
     let root = tempfile::tempdir().unwrap();
-    let a = Daemon::start(&root.path().join("data/a"), "linux-box");
-    let b = Daemon::start(&root.path().join("data/b"), "mac-box");
+    let a = Daemon::start(root.path(), "linux-box");
+    let b = Daemon::start(root.path(), "mac-box");
 
     // A becomes Alice's first device.
     let init = a.ctl_ok(&["init", "--name", "Alice"]);
@@ -159,8 +194,8 @@ fn two_daemons_pair_share_the_clipboard_both_ways_and_revoke() {
 
     // They find each other over mDNS and connect.
     until("a and b connected", Duration::from_secs(30), || {
-        a.ctl_ok(&["status"]).contains("peers:       1")
-            && b.ctl_ok(&["status"]).contains("peers:       1")
+        lists_peer(&a.ctl_ok(&["status"]), "mac-box")
+            && lists_peer(&b.ctl_ok(&["status"]), "linux-box")
     });
     until(
         "clipboard offered both ways",
@@ -192,11 +227,11 @@ fn two_daemons_pair_share_the_clipboard_both_ways_and_revoke() {
     a.ctl_ok(&["revoke", &b_key]);
     assert!(a.ctl_ok(&["devices"]).contains("REVOKED"));
     until("b dropped by a", Duration::from_secs(30), || {
-        a.ctl_ok(&["status"]).contains("peers:       0")
+        !lists_peer(&a.ctl_ok(&["status"]), "mac-box")
     });
-    // Give B's redial a chance; A must still have no peer.
-    std::thread::sleep(Duration::from_secs(4));
-    assert!(a.ctl_ok(&["status"]).contains("peers:       0"));
+    // B redials every ten seconds; past one such tick, A still refuses it.
+    std::thread::sleep(Duration::from_secs(12));
+    assert!(!lists_peer(&a.ctl_ok(&["status"]), "mac-box"));
     drop(a);
     drop(b);
 }

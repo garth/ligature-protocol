@@ -445,6 +445,9 @@ struct FakeState {
     incoming: Option<Incoming>,
 }
 
+/// What [`FakeClipboard::on_set`] runs.
+type SetHook = Box<dyn Fn(&Incoming) + Send + Sync>;
+
 /// An in-memory clipboard for tests and the loopback run: holds a value
 /// with promises, and `paste` fetches one like an application would.
 pub struct FakeClipboard {
@@ -452,6 +455,11 @@ pub struct FakeClipboard {
     changes: broadcast::Sender<Change>,
     available: Mutex<bool>,
     mime_types: Vec<String>,
+    /// Runs inside `set_value`, as a platform reading the value at once
+    /// would (a provider asked for a thumbnail, a clipboard manager).
+    on_set: Mutex<Option<SetHook>>,
+    /// Makes the next `set_value` fail, as a platform refusing a value.
+    refuse_next: std::sync::atomic::AtomicBool,
 }
 
 impl std::fmt::Debug for FakeClipboard {
@@ -473,6 +481,8 @@ impl Default for FakeClipboard {
                 "image/png".to_owned(),
                 "text/uri-list".to_owned(),
             ],
+            on_set: Mutex::new(None),
+            refuse_next: std::sync::atomic::AtomicBool::new(false),
         }
     }
 }
@@ -496,7 +506,25 @@ impl FakeClipboard {
                 .chain(mime_types.iter().copied())
                 .map(str::to_owned)
                 .collect(),
+            on_set: Mutex::new(None),
+            refuse_next: std::sync::atomic::AtomicBool::new(false),
         })
+    }
+
+    /// Runs `f` inside every later `set_value`, before the value is stored:
+    /// what a platform that reads the value the moment it lands does, so a
+    /// test can check what the daemon has recorded by then (LP-107).
+    pub fn on_set(&self, f: impl Fn(&Incoming) + Send + Sync + 'static) {
+        *self
+            .on_set
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Box::new(f));
+    }
+
+    /// Makes the next `set_value` fail, as a platform that refuses the value.
+    pub fn refuse_next_set(&self) {
+        self.refuse_next
+            .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// The user copied `text` in some application.
@@ -655,6 +683,20 @@ impl Clipboard for FakeClipboard {
     }
 
     fn set_value(&self, value: &Incoming) -> Result<(), Error> {
+        if let Some(f) = self
+            .on_set
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+        {
+            f(value);
+        }
+        if self
+            .refuse_next
+            .swap(false, std::sync::atomic::Ordering::SeqCst)
+        {
+            return Err(Error::Io("the fake clipboard refused the value".to_owned()));
+        }
         // What the platform reads back is the pushed content; promises
         // are served on paste and never read back as bytes.
         let read_back = Value {

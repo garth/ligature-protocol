@@ -155,8 +155,14 @@ async fn restart_keeps_the_pairing_and_catches_up_on_revocations() {
     let conn = laptop.manager().connect(loopback_of(&phone)).await.unwrap();
     assert_eq!(conn.peer(), &phone_key);
     assert!(laptop.recognise(conn.peer()).unwrap().is_trusted());
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    assert_eq!(phone.manager().peers(), vec![laptop_key]);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while phone.manager().peers() != vec![laptop_key] {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the phone holds the laptop"
+        );
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
 
     // The laptop goes down; the phone revokes a third device meanwhile.
     laptop.shutdown();

@@ -18,11 +18,33 @@ fn at(offset: i64) -> Timestamp {
     Timestamp::from_unix(1_760_000_000 + offset).unwrap()
 }
 
+async fn until(what: &str, check: impl Fn() -> bool) {
+    let waited = tokio::time::timeout(Duration::from_secs(5), async {
+        while !check() {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await;
+    assert!(waited.is_ok(), "{what}");
+}
+
+/// A daemon driven by hand: its streams are admitted without the event loop
+/// (LP-121), so a test dials and gossips directly.
 fn daemon(name: &str) -> (Arc<Daemon>, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let loc = Locations::resolve(Some(dir.path()), None);
     let (d, _events) = Daemon::open(loc, "127.0.0.1:0".parse().unwrap(), Some(name)).unwrap();
-    d.manager().admit_all(); // this test drives the manager without the event loop (LP-121)
+    d.manager().admit_all();
+    (d, dir)
+}
+
+/// A daemon with the real event loop, which admits trusted peers and refuses
+/// the rest, as `run` does.
+fn daemon_with_loop(name: &str) -> (Arc<Daemon>, tempfile::TempDir) {
+    let dir = tempfile::tempdir().unwrap();
+    let loc = Locations::resolve(Some(dir.path()), None);
+    let (d, events) = Daemon::open(loc, "127.0.0.1:0".parse().unwrap(), Some(name)).unwrap();
+    ligatured::run::spawn_connection_events(Arc::clone(&d), events);
     (d, dir)
 }
 
@@ -31,7 +53,7 @@ async fn a_revocation_made_on_one_device_reaches_the_others() {
     let alice = PersonKeys::generate().unwrap();
     let person = facts::person_fact(&alice, "Alice", 1, at(0)).unwrap();
     let (a, da) = daemon("a");
-    let (b, _db) = daemon("b");
+    let (b, _db) = daemon_with_loop("b");
     let (c, _dc) = daemon("c");
     let roles: Vec<_> = [&a, &b, &c]
         .iter()
@@ -82,27 +104,23 @@ async fn a_revocation_made_on_one_device_reaches_the_others() {
     );
 
     // B heard by push over the live connection.
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    assert_eq!(
-        b.recognise(c.binding().public()).unwrap(),
-        Recognition::Revoked,
-        "pushed to B"
-    );
+    until("pushed to B", || {
+        b.recognise(c.binding().public()).unwrap() == Recognition::Revoked
+    })
+    .await;
 
-    // C connects to B: authenticated, but B refuses it.
+    // C connects to B: authenticated, but B's event loop sees a revoked key
+    // on its Connected event and drops it without a hand from the test.
     let cb = c
         .manager()
         .connect(b.manager().endpoint().local_addr().unwrap())
         .await
         .unwrap();
     assert_eq!(cb.peer(), b.binding().public());
-    // B's side sees C's key on its Connected event and refuses it.
-    assert_eq!(
-        b.recognise(c.binding().public()).unwrap(),
-        Recognition::Revoked
-    );
-    b.manager().drop_peer(c.binding().public());
-    assert!(b.manager().peer(c.binding().public()).is_none());
+    until("B refused C", || {
+        b.manager().peer(c.binding().public()).is_none()
+    })
+    .await;
 
     // A fourth device that was offline learns on its next session with anyone.
     // It is one of Alice's bindings, known to the others, since a stranger is
@@ -275,8 +293,10 @@ async fn a_revocation_learnt_by_gossip_closes_the_live_session() {
         .await
         .unwrap();
     assert_eq!(cb.peer(), b.binding().public());
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    assert!(b.manager().peer(c.binding().public()).is_some());
+    until("B holds C's session", || {
+        b.manager().peer(c.binding().public()).is_some()
+    })
+    .await;
     assert_eq!(
         b.recognise(c.binding().public()).unwrap(),
         Recognition::MyBinding { introducer: true }

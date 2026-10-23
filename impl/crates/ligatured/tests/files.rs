@@ -400,6 +400,7 @@ async fn a_cancel_from_either_end_leaves_no_part_file_and_the_next_transfer_work
         .files
         .push(b.daemon.binding().public(), sources(&paths))
         .unwrap();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
     let on_b = loop {
         if let Some(t) = b
             .files
@@ -409,6 +410,10 @@ async fn a_cancel_from_either_end_leaves_no_part_file_and_the_next_transfer_work
         {
             break t;
         }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "B saw the transfer under way"
+        );
         tokio::time::sleep(Duration::from_millis(10)).await;
     };
     assert!(b.files.cancel(&on_b.transfer));

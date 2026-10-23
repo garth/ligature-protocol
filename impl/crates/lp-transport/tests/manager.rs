@@ -223,7 +223,11 @@ async fn streams_wait_for_admission_and_are_refused_under_restriction() {
     let (c_ep, c_key) = endpoint();
     let (c, _c_events) = Manager::start(c_ep);
     let conn = c.connect(b_addr).await.unwrap();
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while b.peer(c_key.public()).is_none() {
+        assert!(tokio::time::Instant::now() < deadline, "B accepted C");
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
     b.restrict(c_key.public());
     let mut held = open_on(&conn, StreamHeader::GOSSIP).await.unwrap();
     held.send(&GossipHave::new(vec![])).await.unwrap();

@@ -66,7 +66,10 @@ async fn capabilities_appear_update_and_are_withdrawn() {
         b.store().insert(&role).unwrap();
     }
 
-    // Drive both daemons' events the way `run` does.
+    // Drive both daemons' events with a loop of this test's own, which admits
+    // every stream (`admit_all`) and only announces to trusted peers; `run`'s
+    // loop also restricts strangers and notes addresses, which this test
+    // does not need.
     for (d, mut events) in [
         (
             a.clone(),

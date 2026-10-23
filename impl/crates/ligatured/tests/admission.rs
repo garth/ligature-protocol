@@ -78,11 +78,10 @@ async fn a_stranger_gets_no_gossip_and_is_dropped_when_the_ceremony_ends() {
     // when the ceremony ends.
     let ceremony = a.begin_ceremony();
     let conn = s.connect(a_addr).await.unwrap();
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    assert!(
-        a.manager().peer(s_key.public()).is_some(),
-        "kept for pairing while a ceremony runs"
-    );
+    until("kept for pairing while a ceremony runs", || {
+        a.manager().peer(s_key.public()).is_some()
+    })
+    .await;
     let mut gossip = open_on(&conn, StreamHeader::GOSSIP).await.unwrap();
     gossip.send(&GossipHave::new(vec![])).await.unwrap();
     // The stream is held: no answer within a wait, and the stranger stays.

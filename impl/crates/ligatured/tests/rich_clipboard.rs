@@ -382,3 +382,57 @@ async fn a_device_that_connects_later_gets_the_current_value_with_get() {
         d.daemon.shutdown();
     }
 }
+
+/// A value is recorded as applied before the platform gets it, so a read
+/// the moment it lands finds its promises; a platform that refuses the
+/// value leaves nothing recorded (LP-107).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_value_is_recorded_before_the_platform_gets_it_and_undone_if_refused() {
+    let alice = PersonKeys::generate().unwrap();
+    let hour = Duration::from_secs(3600);
+    let devices = join(
+        &alice,
+        vec![device(&alice, "a", hour), device(&alice, "b", hour)],
+    )
+    .await;
+    let (a, b) = (&devices[0], &devices[1]);
+
+    // B's platform reads the promises back the instant the value is set.
+    let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sync = b.sync.clone();
+    let seen_in_hook = seen.clone();
+    b.clipboard.on_set(move |incoming| {
+        if incoming.has_promises() {
+            seen_in_hook
+                .lock()
+                .unwrap()
+                .push((sync.promised_from(), sync.promised_files().len()));
+        }
+    });
+    let png = pattern(1024 * 1024, 3);
+    let mut image = Value::text("a picture");
+    image.parts = vec![Part::new("image/png", png)];
+    a.clipboard.user_copies_value(image);
+    until("promise on b", || !b.sync.promises().is_empty()).await;
+    let seen = seen.lock().unwrap().clone();
+    assert_eq!(seen.len(), 1, "the hook ran once for the announced value");
+    assert_eq!(
+        seen[0].0,
+        Some(*a.daemon.binding().public()),
+        "the sender was recorded before the platform was told"
+    );
+
+    // B's platform refuses the next value: nothing stays recorded.
+    b.clipboard.refuse_next_set();
+    let mut another = Value::text("another");
+    another.parts = vec![Part::new("image/png", pattern(1024 * 1024, 4))];
+    a.clipboard.user_copies_value(another);
+    until("the refused set was applied as nothing", || {
+        b.sync.counters().1 == 1 && b.sync.promised_from().is_none()
+    })
+    .await;
+    assert!(
+        b.sync.promises().is_empty(),
+        "a refused value leaves no promise"
+    );
+}

@@ -21,6 +21,16 @@ fn at(offset: i64) -> Timestamp {
     Timestamp::from_unix(1_760_000_000 + offset).unwrap()
 }
 
+async fn until(what: &str, check: impl Fn() -> bool) {
+    let waited = tokio::time::timeout(Duration::from_secs(5), async {
+        while !check() {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await;
+    assert!(waited.is_ok(), "{what}");
+}
+
 #[tokio::test]
 async fn two_stores_converge_and_the_revocation_lands_first() {
     // Alice's facts, split across two daemons that both already trust each other.
@@ -84,10 +94,11 @@ async fn two_stores_converge_and_the_revocation_lands_first() {
     assert_eq!(result.stored, 1, "the tv");
     assert_eq!(result.discarded, 0);
 
-    // Give B's handler a moment to finish storing.
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    until("B's handler finished storing", || {
+        b.store().ids().unwrap().len() == 6
+    })
+    .await;
     assert_eq!(a.store().ids().unwrap().len(), 6);
-    assert_eq!(b.store().ids().unwrap().len(), 6);
     assert!(
         lp_identity::trust::is_revoked(b.store(), alice.person(), phone.public()).unwrap(),
         "revocation reached B"
@@ -144,7 +155,10 @@ async fn a_tampered_fact_from_a_peer_is_discarded() {
     stream.send(&GossipFact::new(good.clone())).await.unwrap();
     stream.finish();
     while stream.recv::<GossipFact>().await.unwrap().is_some() {}
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    until("the good fact is stored", || {
+        !store.ids().unwrap().is_empty()
+    })
+    .await;
     let ids = store.ids().unwrap();
     assert_eq!(ids, vec![facts::id(&good)], "only the good fact was stored");
     let _ = exchange; // the same function runs on both sides

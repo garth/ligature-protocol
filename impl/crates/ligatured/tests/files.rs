@@ -727,17 +727,16 @@ async fn a_data_frame_over_the_bound_fails_the_file_and_leaves_nothing() {
         "no part file: {:?}",
         listing(b.downloads.path())
     );
-    // The receiver let go of the stream: reading its side ends in an error or
-    // nothing, never in a `received`.
+    // The receiver reset the stream with the transport's code for a frame it
+    // cannot decode (ADR 0038 decision 1): the sender sees code 4, never a
+    // `received`.
     let answer = tokio::time::timeout(Duration::from_secs(10), recv.read_to_end(64 * 1024))
         .await
         .expect("the stream ends in time");
+    let text = format!("{answer:?}");
     assert!(
-        answer
-            .as_ref()
-            .map(|bytes| bytes.is_empty())
-            .unwrap_or(true),
-        "no received message after a bad frame: {answer:?}"
+        text.contains("Reset(4)"),
+        "expected a reset with MALFORMED_CODE after a bad frame: {text}"
     );
     ctrl.finish();
     raw.shutdown();

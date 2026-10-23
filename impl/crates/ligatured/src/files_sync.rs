@@ -1445,6 +1445,11 @@ impl FilesSync {
                     break Err(FileState::Cancelled);
                 }
                 Err(e) => {
+                    if matches!(e, lp_core::Error::Decode(_)) {
+                        // A frame over the bound or one that does not decode:
+                        // the transport's code, not the family's (ADR 0038).
+                        stream.reset(lp_core::frame::MALFORMED_CODE);
+                    }
                     break Err(FileState::Failed {
                         reason: None,
                         message: e.to_string(),

@@ -2,17 +2,20 @@
 //! (LP-102): a push of several files lands them under the name rule, the
 //! receiver's `maxStreams` bounds how many run at once, a fetch of an
 //! offered id yields the same bytes and a withdrawn one is declined as gone,
-//! a cancel from either end leaves no part file, and a file whose bytes do not
-//! match its descriptor is refused.
+//! a cancel from either end leaves no part file, a file whose bytes do not
+//! match its descriptor is refused, a file whose landed bytes do not hash to
+//! the sender's `end` is dropped with its part file, and a data frame over the
+//! 1 MiB bound fails the file and leaves nothing behind (LP-133).
 
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use ligatured::daemon::Daemon;
-use ligatured::files::{Destination, DirectoryStore, FileSource};
+use ligatured::files::{Destination, DirectoryStore, FileSource, FileStore, Landed, Landing};
 use ligatured::files_sync::{FileState, FilesConfig, FilesSync, TransferEnd};
 use ligatured::run::spawn_connection_events;
+use lp_core::Error;
 use lp_core::facts::Role;
 use lp_core::files::{FILES_TYPE, FileDescriptor, Reason};
 use lp_core::paths::Locations;
@@ -45,6 +48,18 @@ struct Device {
 /// download directory with the given stream bound and a small chunk so a
 /// modest file takes hundreds of chunks.
 async fn pair(a_streams: u32, b_streams: u32) -> (Device, Device) {
+    let (a, b, _alice) = pair_with(a_streams, b_streams, |dir| DirectoryStore::new(dir)).await;
+    (a, b)
+}
+
+/// As [`pair`], with the second device's store made by `make_store` from
+/// its download directory, and the person returned so a test can trust a
+/// further key.
+async fn pair_with(
+    a_streams: u32,
+    b_streams: u32,
+    make_store: impl Fn(std::path::PathBuf) -> Arc<dyn FileStore>,
+) -> (Device, Device, PersonKeys) {
     let alice = PersonKeys::generate().unwrap();
     let person = facts::person_fact(&alice, "Alice", 1, at(0)).unwrap();
     let mut daemons = Vec::new();
@@ -79,8 +94,13 @@ async fn pair(a_streams: u32, b_streams: u32) -> (Device, Device) {
     let mut out = Vec::new();
     for ((daemon, events, data), streams) in daemons.into_iter().zip([a_streams, b_streams]) {
         let downloads = tempfile::tempdir().unwrap();
+        let store = if out.is_empty() {
+            DirectoryStore::new(downloads.path().to_path_buf())
+        } else {
+            make_store(downloads.path().to_path_buf())
+        };
         let files = daemon.attach_files(
-            DirectoryStore::new(downloads.path().to_path_buf()),
+            store,
             FilesConfig {
                 max_streams: streams,
                 max_chunk_bytes: 4096,
@@ -108,7 +128,59 @@ async fn pair(a_streams: u32, b_streams: u32) -> (Device, Device) {
             && b.daemon.registry().peers_offering(FILES_TYPE).len() == 1
     })
     .await;
-    (a, b)
+    (a, b, alice)
+}
+
+/// A download directory whose disk lies: the first byte of every file is
+/// flipped on the way in, so what lands never hashes to what was sent.
+struct CorruptingStore {
+    dir: std::path::PathBuf,
+}
+
+impl FileStore for CorruptingStore {
+    fn available(&self) -> bool {
+        std::fs::create_dir_all(&self.dir).is_ok()
+    }
+
+    fn open(&self, file: &FileDescriptor) -> Result<Box<dyn Landing>, Error> {
+        Ok(Box::new(CorruptingLanding {
+            inner: DirectoryStore::open_in(&self.dir, file)?,
+            flipped: false,
+        }))
+    }
+
+    fn describe(&self) -> String {
+        format!("{} (corrupting)", self.dir.display())
+    }
+}
+
+struct CorruptingLanding {
+    inner: Box<dyn Landing>,
+    flipped: bool,
+}
+
+impl Landing for CorruptingLanding {
+    fn write(&mut self, bytes: &[u8]) -> Result<(), Error> {
+        if self.flipped || bytes.is_empty() {
+            return self.inner.write(bytes);
+        }
+        self.flipped = true;
+        let mut lied = bytes.to_vec();
+        lied[0] ^= 0xff;
+        self.inner.write(&lied)
+    }
+
+    fn digest(&self) -> String {
+        self.inner.digest()
+    }
+
+    fn finish(self: Box<Self>, modified: Option<Timestamp>) -> Result<Landed, Error> {
+        self.inner.finish(modified)
+    }
+
+    fn abort(self: Box<Self>) {
+        self.inner.abort();
+    }
 }
 
 fn write_file(dir: &Path, name: &str, bytes: &[u8]) -> std::path::PathBuf {
@@ -485,6 +557,190 @@ async fn a_file_whose_bytes_do_not_match_its_descriptor_is_refused() {
         b.files.open_data_streams() == 0
     })
     .await;
+    a.daemon.shutdown();
+    b.daemon.shutdown();
+}
+
+/// A file whose landed bytes do not hash to the sender's `end` is refused as
+/// a hash mismatch: the part file goes, nothing is put in place, the sender
+/// is told, and the next transfer works. The receiver's disk is what lies
+/// here, since a sender hashes what it sends.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_file_whose_landed_bytes_do_not_match_the_hash_is_dropped_with_its_part_file() {
+    let (a, b, _alice) = pair_with(2, 2, |dir| Arc::new(CorruptingStore { dir })).await;
+    let bytes = pattern(10_000, 3);
+    let file = FileDescriptor::new("f1", "photo.bin", bytes.len() as u64);
+    let transfer = a
+        .files
+        .push(
+            b.daemon.binding().public(),
+            vec![(file, FileSource::Bytes(Arc::new(bytes)))],
+        )
+        .unwrap();
+    let outcome = transfer.wait().await;
+    assert_eq!(outcome.finished, Some(TransferEnd::Complete), "{outcome:?}");
+    assert!(
+        matches!(
+            &outcome.files[0].state,
+            FileState::Failed {
+                reason: Some(Reason::HashMismatch),
+                ..
+            }
+        ),
+        "the sender is told why: {outcome:?}"
+    );
+    let recorded = || {
+        b.files.transfers().iter().any(|t| {
+            matches!(
+                t.files[0].state,
+                FileState::Failed {
+                    reason: Some(Reason::HashMismatch),
+                    ..
+                }
+            )
+        })
+    };
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while !recorded() {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the receiver recorded the failure: {:?}",
+            b.files.transfers()
+        );
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    assert!(
+        listing(b.downloads.path()).is_empty(),
+        "no file and no part file: {:?}",
+        listing(b.downloads.path())
+    );
+    until("receiver's streams closed", || {
+        b.files.open_data_streams() == 0
+    })
+    .await;
+
+    // The other way still works: a's disk is honest.
+    let honest = FileDescriptor::new("f2", "ok.bin", 3);
+    let transfer = b
+        .files
+        .push(
+            a.daemon.binding().public(),
+            vec![(honest, FileSource::Bytes(Arc::new(vec![1, 2, 3])))],
+        )
+        .unwrap();
+    let outcome = transfer.wait().await;
+    assert!(
+        matches!(outcome.files[0].state, FileState::Received { .. }),
+        "{outcome:?}"
+    );
+    assert_eq!(listing(a.downloads.path()), ["ok.bin"]);
+    a.daemon.shutdown();
+    b.daemon.shutdown();
+}
+
+/// A data frame whose length prefix claims more than the 1 MiB bound is
+/// refused before any of it is read into memory: the file fails on the
+/// receiver, its part file goes, the data stream closes, and the sender's
+/// stream is stopped. The sender here is a bare peer the receiver trusts,
+/// since the daemon's own sender never encodes such a frame (ADR 0036).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_data_frame_over_the_bound_fails_the_file_and_leaves_nothing() {
+    use lp_core::files::{FilesBegin, FilesMessage, FilesOffer};
+    use lp_core::frame::{MAX_FRAME, StreamHeader, encode};
+    use lp_crypto::signing::SigningKey;
+    use lp_transport::manager::{Manager, open_on};
+    use lp_transport::quic::Endpoint;
+
+    let (a, b, alice) = pair_with(2, 2, |dir| DirectoryStore::new(dir)).await;
+    // A third binding of Alice's, driven by hand.
+    let raw_key = SigningKey::generate().unwrap();
+    b.daemon
+        .store()
+        .insert(&facts::role_fact(&alice, Role::Binding, *raw_key.public(), false, at(9)).unwrap())
+        .unwrap();
+    let ep = Endpoint::bind("127.0.0.1:0".parse().unwrap(), &raw_key).unwrap();
+    let (raw, _raw_events) = Manager::start(ep);
+    let conn = raw
+        .connect(b.daemon.manager().endpoint().local_addr().unwrap())
+        .await
+        .unwrap();
+
+    // The control stream: an offer of one 3 MiB file, accepted.
+    let file = FileDescriptor::new("big", "big.bin", 3 * 1024 * 1024);
+    let mut ctrl = open_on(&conn, FILES_TYPE).await.unwrap();
+    ctrl.send(&FilesMessage::Offer(FilesOffer {
+        transfer: "t-over".to_owned(),
+        files: vec![file],
+    }))
+    .await
+    .unwrap();
+    let answer = tokio::time::timeout(Duration::from_secs(10), ctrl.recv::<FilesMessage>())
+        .await
+        .expect("an answer in time")
+        .unwrap();
+    assert!(
+        matches!(answer, Some(FilesMessage::Accept(_))),
+        "accepted: {answer:?}"
+    );
+
+    // The data stream by hand: header, begin, then a frame claiming 2 MiB.
+    let (mut send, mut recv) = conn.raw().open_bi().await.unwrap();
+    send.write_all(&encode(&StreamHeader::new(FILES_TYPE), MAX_FRAME).unwrap())
+        .await
+        .unwrap();
+    send.write_all(
+        &encode(
+            &FilesMessage::Begin(FilesBegin {
+                transfer: "t-over".to_owned(),
+                id: "big".to_owned(),
+            }),
+            MAX_FRAME,
+        )
+        .unwrap(),
+    )
+    .await
+    .unwrap();
+    let claimed = (2 * 1024 * 1024u32).to_be_bytes();
+    send.write_all(&claimed).await.unwrap();
+    let _ = send.write_all(&[0u8; 4096]).await;
+
+    until("the receiver failed the file", || {
+        b.files
+            .transfers()
+            .iter()
+            .any(|t| t.transfer == "t-over" && matches!(t.files[0].state, FileState::Failed { .. }))
+    })
+    .await;
+    let progress = b
+        .files
+        .transfers()
+        .into_iter()
+        .find(|t| t.transfer == "t-over")
+        .unwrap();
+    assert_eq!(progress.files[0].done, 0, "nothing of the frame was taken");
+    until("receiver's streams closed", || {
+        b.files.open_data_streams() == 0
+    })
+    .await;
+    assert!(
+        listing(b.downloads.path()).is_empty(),
+        "no part file: {:?}",
+        listing(b.downloads.path())
+    );
+    // The receiver let go of the stream: reading its side ends in an error or
+    // nothing, never in a `received`.
+    let answer = tokio::time::timeout(Duration::from_secs(10), recv.read_to_end(64 * 1024))
+        .await
+        .expect("the stream ends in time");
+    assert!(
+        answer
+            .as_ref()
+            .map(|bytes| bytes.is_empty())
+            .unwrap_or(true),
+        "no received message after a bad frame: {answer:?}"
+    );
+    ctrl.finish();
+    raw.shutdown();
     a.daemon.shutdown();
     b.daemon.shutdown();
 }

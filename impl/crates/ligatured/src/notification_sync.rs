@@ -164,6 +164,19 @@ impl NotificationSync {
         });
     }
 
+    /// The hashes of the icons sent to `peer` in its current session, for
+    /// tests: an icon travels once per session.
+    #[must_use]
+    pub fn icons_sent_to(&self, peer: &PublicKey) -> Vec<String> {
+        let mut hashes: Vec<String> = self
+            .lock(&self.icons_sent)
+            .get(peer)
+            .map(|set| set.iter().cloned().collect())
+            .unwrap_or_default();
+        hashes.sort();
+        hashes
+    }
+
     /// A peer disconnected: its session's icons and stream go.
     pub fn detach(&self, peer: &PublicKey) {
         self.lock_senders().remove(peer);

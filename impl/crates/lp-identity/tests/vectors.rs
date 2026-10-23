@@ -328,6 +328,51 @@ fn generate_vectors_on_demand() {
             invalid("chain: wrong subordinate key for a revocation"),
         )
     });
+    write_if_missing(&facts_dir, "revocation-signed-by-outsider.json", || {
+        let fact = RevocationFact {
+            subject: *laptop.public(),
+            kind: RevocationKind::Revocation,
+            person: *alice.person(),
+            revoked_at: at(),
+        };
+        let env = facts::sign(keys.get("mallory"), &fact).unwrap();
+        fact_vector(
+            "A revocation of laptop-binding naming Alice as the revoking person but signed by mallory: the signature verifies, the signer is not Alice's self-signing key (ADR 0039).",
+            &[
+                "alice-master",
+                "alice-self",
+                "alice-user",
+                "laptop-binding",
+                "mallory",
+            ],
+            &fact,
+            &env,
+            Some(&person_env),
+            invalid("chain: signer is not Alice's self-signing key"),
+        )
+    });
+    write_if_missing(&facts_dir, "person-with-unknown-field.json", || {
+        // The known fields plus one no schema names, signed as those bytes.
+        let mut value = ciborium::Value::serialized(&person).unwrap();
+        let ciborium::Value::Map(entries) = &mut value else {
+            panic!("a fact encodes as a map");
+        };
+        entries.push((
+            ciborium::Value::Text("x-future".to_owned()),
+            ciborium::Value::Text("a field this version does not know".to_owned()),
+        ));
+        let mut payload = Vec::new();
+        ciborium::into_writer(&value, &mut payload).unwrap();
+        let env = facts::sign_payload(&alice.self_signing, &TypeName::new(PERSON_TYPE), payload);
+        fact_vector(
+            "Alice's person fact carrying a field no schema names: a decoder ignores it (ADR 0035), and input lists the known fields.",
+            &ALICE,
+            &person,
+            &env,
+            None,
+            Expect::Valid,
+        )
+    });
     write_if_missing(&facts_dir, "device-binding.json", || {
         let fact = DeviceFact {
             key: *laptop.public(),
@@ -516,7 +561,17 @@ fn every_fact_vector_behaves_as_expected() {
                     again.signature.0, v.signature.0,
                     "{name}: reproduce signature"
                 );
-                // The reference also reproduces the bytes; other implementations need not.
+                // The reference also reproduces the bytes; other implementations
+                // need not, and nothing can when the payload carries a field the
+                // reference does not know.
+                let known_fields_only = {
+                    let value: ciborium::Value = ciborium::from_reader(&v.payload.0[..]).unwrap();
+                    let in_payload = match value {
+                        ciborium::Value::Map(entries) => entries.len(),
+                        _ => 0,
+                    };
+                    in_payload == v.input.as_object().map_or(0, serde_json::Map::len)
+                };
                 let reencoded = match v.fact_type.as_str() {
                     PERSON_TYPE => {
                         encode(&serde_json::from_value::<PersonFact>(v.input.clone()).unwrap())
@@ -529,10 +584,17 @@ fn every_fact_vector_behaves_as_expected() {
                     }
                     _ => encode(&serde_json::from_value::<RoleFact>(v.input.clone()).unwrap()),
                 };
-                assert_eq!(
-                    reencoded, v.payload.0,
-                    "{name}: reference re-encodes identically"
-                );
+                if known_fields_only {
+                    assert_eq!(
+                        reencoded, v.payload.0,
+                        "{name}: reference re-encodes identically"
+                    );
+                } else {
+                    assert_ne!(
+                        reencoded, v.payload.0,
+                        "{name}: the unknown field is dropped on re-encoding, which is why the bytes as received are what is signed"
+                    );
+                }
             }
             Expect::Invalid { reason } => {
                 assert!(outcome.is_err(), "{name}: expected invalid ({reason})");

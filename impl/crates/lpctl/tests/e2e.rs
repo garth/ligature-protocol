@@ -29,6 +29,10 @@ fn ligatured() -> PathBuf {
 struct Daemon {
     child: Child,
     data: PathBuf,
+    socket: PathBuf,
+    /// What `lpctl` is given to find the daemon: the explicit data directory,
+    /// or the platform variables alone.
+    ctl_env: Vec<(&'static str, PathBuf)>,
     log: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -42,13 +46,63 @@ impl Daemon {
         let home = root.join("home").join(name);
         std::fs::create_dir_all(&data).unwrap();
         std::fs::create_dir_all(&home).unwrap();
-        let mut child = Command::new(ligatured())
-            .args(["--device-name", name])
+        let mut command = Command::new(ligatured());
+        command
             .env("LIGATURE_DATA_DIR", &data)
+            .env("LIGATURE_CLIPBOARD_CACHE", home.join("cache"))
+            .env("HOME", &home);
+        Self::spawn(
+            command,
+            name,
+            data.clone(),
+            data.join("control.sock"),
+            vec![("LIGATURE_DATA_DIR", data)],
+        )
+    }
+
+    /// Starts a daemon told nothing Ligature-specific about where to live: it
+    /// takes the platform defaults from `HOME`, `XDG_DATA_HOME` and
+    /// `XDG_RUNTIME_DIR`, all under the test's directory, and `lpctl` is
+    /// given the same three and nothing else.
+    fn start_with_platform_defaults(root: &Path, name: &str) -> Self {
+        let home = root.join("home").join(name);
+        let xdg_data = root.join("xdg").join(name);
+        let runtime = root.join("run").join(name);
+        for d in [&home, &xdg_data, &runtime] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        let mut command = Command::new(ligatured());
+        command
+            .env_remove("LIGATURE_DATA_DIR")
+            .env_remove("LIGATURE_RUNTIME_DIR")
+            .env_remove("LIGATURE_CLIPBOARD_CACHE")
+            .env("HOME", &home)
+            .env("XDG_DATA_HOME", &xdg_data)
+            .env("XDG_RUNTIME_DIR", &runtime);
+        Self::spawn(
+            command,
+            name,
+            xdg_data.join("ligature"),
+            runtime.join("ligature").join("control.sock"),
+            vec![
+                ("HOME", home),
+                ("XDG_DATA_HOME", xdg_data),
+                ("XDG_RUNTIME_DIR", runtime),
+            ],
+        )
+    }
+
+    fn spawn(
+        mut command: Command,
+        name: &str,
+        data: PathBuf,
+        socket: PathBuf,
+        ctl_env: Vec<(&'static str, PathBuf)>,
+    ) -> Self {
+        let mut child = command
+            .args(["--device-name", name])
             .env("LIGATURE_FAKE_CLIPBOARD", "1")
             .env("LIGATURE_FAKE_NOTIFICATIONS", "1")
-            .env("LIGATURE_CLIPBOARD_CACHE", home.join("cache"))
-            .env("HOME", &home)
             .env("RUST_LOG", "info")
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
@@ -65,6 +119,8 @@ impl Daemon {
         let d = Self {
             child,
             data,
+            socket,
+            ctl_env,
             log: Some(log),
         };
         d.wait_for_socket();
@@ -72,7 +128,7 @@ impl Daemon {
     }
 
     fn wait_for_socket(&self) {
-        let sock = self.data.join("control.sock");
+        let sock = &self.socket;
         let deadline = Instant::now() + Duration::from_secs(10);
         while !sock.exists() {
             assert!(
@@ -84,11 +140,14 @@ impl Daemon {
     }
 
     fn ctl(&self, args: &[&str]) -> std::process::Output {
-        Command::new(lpctl())
-            .env("LIGATURE_DATA_DIR", &self.data)
-            .args(args)
-            .output()
-            .expect("run lpctl")
+        let mut command = Command::new(lpctl());
+        command
+            .env_remove("LIGATURE_DATA_DIR")
+            .env_remove("LIGATURE_RUNTIME_DIR");
+        for (name, value) in &self.ctl_env {
+            command.env(name, value);
+        }
+        command.args(args).output().expect("run lpctl")
     }
 
     fn ctl_ok(&self, args: &[&str]) -> String {
@@ -234,4 +293,29 @@ fn two_daemons_pair_share_the_clipboard_both_ways_and_revoke() {
     assert!(!lists_peer(&a.ctl_ok(&["status"]), "mac-box"));
     drop(a);
     drop(b);
+}
+
+/// With no flag and no `LIGATURE_*` variable, the daemon lives in the
+/// platform's directories and `lpctl` finds it there (LP-85).
+#[test]
+fn lpctl_finds_a_daemon_at_the_platform_defaults_with_no_flag_or_variable() {
+    let root = tempfile::tempdir().unwrap();
+    let d = Daemon::start_with_platform_defaults(root.path(), "plain-box");
+    assert!(
+        d.socket.starts_with(root.path().join("run")),
+        "the socket is under XDG_RUNTIME_DIR: {}",
+        d.socket.display()
+    );
+    assert!(d.ctl_ok(&["status"]).contains("initialised: false"));
+    let init = d.ctl_ok(&["init", "--name", "Alice"]);
+    assert!(init.contains("created person Alice"), "{init}");
+    let status = d.ctl_ok(&["status"]);
+    assert!(status.contains("initialised: true"), "{status}");
+    assert!(status.contains("plain-box"), "{status}");
+    assert!(
+        d.data.join("store.sqlite").exists() && d.data.join("keys.cbor").exists(),
+        "state under XDG_DATA_HOME/ligature: {}",
+        d.data.display()
+    );
+    drop(d);
 }

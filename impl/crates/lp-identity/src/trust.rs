@@ -244,6 +244,63 @@ mod tests {
         assert!(r.is_trusted());
     }
 
+    /// Alice rotates her self-signing key: person fact version 2 carries the
+    /// new one. Once it is in the store, a binding signed with the new key is
+    /// recognised and one signed with the old key no longer is; version 1
+    /// arriving again afterwards changes nothing.
+    #[test]
+    fn a_newer_person_fact_replaces_an_older_one_whatever_the_order() {
+        let w = world();
+        let v1 = facts::person_fact(&w.alice, "Alice", 1, at(0)).unwrap();
+        let rotated = PersonKeys::from_keys(
+            w.alice.master.clone(),
+            SigningKey::generate().unwrap(),
+            w.alice.user_signing.clone(),
+        );
+        assert_eq!(rotated.person(), w.alice.person());
+        let v2 = facts::person_fact(&rotated, "Alice B", 2, at(5)).unwrap();
+        let phone = SigningKey::generate().unwrap();
+        let by_new_key =
+            facts::role_fact(&rotated, Role::Binding, *phone.public(), false, at(6)).unwrap();
+        w.store.insert(&by_new_key).unwrap();
+        // Before version 2: the laptop (old key) counts, the phone (new key) not.
+        assert_eq!(
+            recognise(&w.store, w.alice.person(), w.laptop.public()).unwrap(),
+            Recognition::MyBinding { introducer: true }
+        );
+        assert_eq!(
+            recognise(&w.store, w.alice.person(), phone.public()).unwrap(),
+            Recognition::Stranger
+        );
+        let newest = |store: &TrustStore| person_fact(store, w.alice.person()).unwrap().unwrap();
+        assert_eq!(newest(&w.store).display_name, "Alice");
+
+        w.store.insert(&v2).unwrap();
+        let fact = newest(&w.store);
+        assert_eq!(fact.version, 2);
+        assert_eq!(fact.display_name, "Alice B");
+        assert_eq!(fact.self_signing_key.key, *rotated.self_signing.public());
+        assert_eq!(
+            recognise(&w.store, w.alice.person(), phone.public()).unwrap(),
+            Recognition::MyBinding { introducer: false }
+        );
+        assert_eq!(
+            recognise(&w.store, w.alice.person(), w.laptop.public()).unwrap(),
+            Recognition::Stranger,
+            "a role under the old self-signing key no longer verifies"
+        );
+
+        // Version 1 again, later in the store's order: still version 2.
+        let id = w.store.insert(&v1).unwrap();
+        assert_eq!(id, facts::id(&v1), "the same bytes, already present");
+        assert_eq!(newest(&w.store).version, 2);
+        assert_eq!(
+            recognise(&w.store, w.alice.person(), phone.public()).unwrap(),
+            Recognition::MyBinding { introducer: false }
+        );
+        assert_eq!(persons(&w.store, w.alice.person()).unwrap().len(), 1);
+    }
+
     #[test]
     fn my_principal_is_recognised() {
         let w = world();

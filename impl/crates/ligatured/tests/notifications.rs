@@ -177,3 +177,237 @@ async fn a_notification_reaches_every_displaying_device_and_dismissals_fan_out()
         d.shutdown();
     }
 }
+
+/// An icon travels once per session: a second post with the same icon
+/// carries only its hash and is shown with the icon from the receiver's
+/// cache; after the receiver's session ends and a new one begins, the icon
+/// travels again (LP-133).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_icon_travels_once_per_session_and_again_after_a_reconnect() {
+    let alice = PersonKeys::generate().unwrap();
+    let person = facts::person_fact(&alice, "Alice", 1, at(0)).unwrap();
+    let mut daemons = Vec::new();
+    for name in ["phone", "linux"] {
+        let dir = tempfile::tempdir().unwrap();
+        let loc = Locations::resolve(Some(dir.path()), None);
+        let (d, events) = Daemon::open(loc, "127.0.0.1:0".parse().unwrap(), Some(name)).unwrap();
+        daemons.push((d, events, dir));
+    }
+    let roles: Vec<_> = daemons
+        .iter()
+        .enumerate()
+        .map(|(i, (d, _, _))| {
+            facts::role_fact(
+                &alice,
+                Role::Binding,
+                *d.binding().public(),
+                true,
+                at(1 + i as i64),
+            )
+            .unwrap()
+        })
+        .collect();
+    for (d, _, _) in &daemons {
+        d.store().insert(&person).unwrap();
+        for r in &roles {
+            d.store().insert(r).unwrap();
+        }
+        d.update_keys(|k| k.set_joined(*alice.person(), Some(&alice.self_signing)))
+            .unwrap();
+    }
+    let (linux, linux_events, _dl) = daemons.pop().unwrap();
+    let (phone, phone_events, _dp) = daemons.pop().unwrap();
+    let phone_n = FakeNotifications::new(true, true);
+    let linux_n = FakeNotifications::new(false, true);
+    let phone_sync = phone.attach_notifications(phone_n.clone());
+    let _linux_sync = linux.attach_notifications(linux_n.clone());
+    spawn_connection_events(phone.clone(), phone_events);
+    spawn_connection_events(linux.clone(), linux_events);
+    let phone_addr = phone.manager().endpoint().local_addr().unwrap();
+    let connected = || {
+        phone
+            .registry()
+            .peers_offering(lp_core::capability::NOTIFICATIONS_TYPE)
+            .len()
+            == 1
+            && linux
+                .registry()
+                .peers_offering(lp_core::capability::NOTIFICATIONS_TYPE)
+                .len()
+                == 1
+    };
+    linux.manager().connect(phone_addr).await.unwrap();
+    until("manifests exchanged", connected).await;
+
+    let icon = Icon::png(vec![0x89, b'P', b'N', b'G', 4, 5, 6]);
+    let post = |id: &str, body: &str| Notification {
+        id: id.to_owned(),
+        app_id: "org.example.chat".to_owned(),
+        app_name: "Chat".to_owned(),
+        title: Some("Bob".to_owned()),
+        body: Some(body.to_owned()),
+        posted_at: Timestamp::now(),
+        icon: Some(icon.clone()),
+    };
+    phone_n.post(post("1", "first"));
+    until("first shown on linux", || linux_n.shown().len() == 1).await;
+    assert_eq!(
+        phone_sync.icons_sent_to(linux.binding().public()),
+        vec![icon.hash.clone()],
+        "the icon went with the first post"
+    );
+    assert_eq!(linux_n.shown()[0].2.icon.as_ref(), Some(&icon));
+
+    // A second post, a different notification with the same icon: shown
+    // with the icon, which did not travel again.
+    phone_n.post(post("2", "second"));
+    until("second shown on linux", || linux_n.shown().len() == 2).await;
+    assert_eq!(
+        linux_n.shown()[1].2.icon.as_ref(),
+        Some(&icon),
+        "shown with the icon from the session's cache"
+    );
+    assert_eq!(
+        phone_sync.icons_sent_to(linux.binding().public()),
+        vec![icon.hash.clone()],
+        "still the one icon sent this session"
+    );
+    assert_eq!(phone_sync.counters().posted, 2);
+
+    // Linux's session ends: the phone forgets what Linux has seen.
+    linux.manager().drop_peer(phone.binding().public());
+    until("the phone saw linux leave", || {
+        phone.manager().peer(linux.binding().public()).is_none()
+    })
+    .await;
+    until("the icon is forgotten for linux", || {
+        phone_sync
+            .icons_sent_to(linux.binding().public())
+            .is_empty()
+    })
+    .await;
+
+    // A new session: the next post carries the icon again.
+    until("manifests withdrawn", || !connected()).await;
+    linux.manager().connect(phone_addr).await.unwrap();
+    until("manifests exchanged again", connected).await;
+    phone_n.post(post("3", "third"));
+    until("third shown on linux", || linux_n.shown().len() == 3).await;
+    assert_eq!(
+        linux_n.shown()[2].2.icon.as_ref(),
+        Some(&icon),
+        "shown with the icon, sent afresh"
+    );
+    assert_eq!(
+        phone_sync.icons_sent_to(linux.binding().public()),
+        vec![icon.hash.clone()],
+        "the icon travelled again in the new session"
+    );
+    phone.shutdown();
+    linux.shutdown();
+}
+
+/// What a displaying device holds when the origin's session ends: the copies
+/// it shows stay (the origin can no longer dismiss them; the user does),
+/// the session's icon cache and stream go, and a dismissal by the user
+/// still clears the other displaying device (LP-133).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn copies_stay_when_the_origin_disconnects_and_the_user_can_still_dismiss_them() {
+    let alice = PersonKeys::generate().unwrap();
+    let person = facts::person_fact(&alice, "Alice", 1, at(0)).unwrap();
+    let mut daemons = Vec::new();
+    for name in ["phone", "linux", "mac"] {
+        let dir = tempfile::tempdir().unwrap();
+        let loc = Locations::resolve(Some(dir.path()), None);
+        let (d, events) = Daemon::open(loc, "127.0.0.1:0".parse().unwrap(), Some(name)).unwrap();
+        daemons.push((d, events, dir));
+    }
+    let roles: Vec<_> = daemons
+        .iter()
+        .enumerate()
+        .map(|(i, (d, _, _))| {
+            facts::role_fact(
+                &alice,
+                Role::Binding,
+                *d.binding().public(),
+                true,
+                at(1 + i as i64),
+            )
+            .unwrap()
+        })
+        .collect();
+    for (d, _, _) in &daemons {
+        d.store().insert(&person).unwrap();
+        for r in &roles {
+            d.store().insert(r).unwrap();
+        }
+        d.update_keys(|k| k.set_joined(*alice.person(), Some(&alice.self_signing)))
+            .unwrap();
+    }
+    let (mac, mac_events, _dm) = daemons.pop().unwrap();
+    let (linux, linux_events, _dl) = daemons.pop().unwrap();
+    let (phone, phone_events, _dp) = daemons.pop().unwrap();
+    let phone_n = FakeNotifications::new(true, true);
+    let linux_n = FakeNotifications::new(false, true);
+    let mac_n = FakeNotifications::new(false, true);
+    let _phone_sync = phone.attach_notifications(phone_n.clone());
+    let linux_sync = linux.attach_notifications(linux_n.clone());
+    let _mac_sync = mac.attach_notifications(mac_n.clone());
+    spawn_connection_events(phone.clone(), phone_events);
+    spawn_connection_events(linux.clone(), linux_events);
+    spawn_connection_events(mac.clone(), mac_events);
+    for (a, b) in [(&phone, &linux), (&phone, &mac), (&linux, &mac)] {
+        a.manager()
+            .connect(b.manager().endpoint().local_addr().unwrap())
+            .await
+            .unwrap();
+    }
+    until("manifests exchanged", || {
+        [&phone, &linux, &mac].iter().all(|d| {
+            d.registry()
+                .peers_offering(lp_core::capability::NOTIFICATIONS_TYPE)
+                .len()
+                == 2
+        })
+    })
+    .await;
+
+    let posted = Notification {
+        id: "7".to_owned(),
+        app_id: "org.example.chat".to_owned(),
+        app_name: "Chat".to_owned(),
+        title: Some("Bob".to_owned()),
+        body: Some("still here?".to_owned()),
+        posted_at: Timestamp::now(),
+        icon: None,
+    };
+    phone_n.post(posted.clone());
+    until("shown on linux and mac", || {
+        linux_n.shown().len() == 1 && mac_n.shown().len() == 1
+    })
+    .await;
+
+    // The phone's session ends.
+    phone.shutdown();
+    until("linux and mac saw the phone leave", || {
+        linux.manager().peer(phone.binding().public()).is_none()
+            && mac.manager().peer(phone.binding().public()).is_none()
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(linux_n.shown().len(), 1, "the copy stays on linux");
+    assert_eq!(mac_n.shown().len(), 1, "and on the mac");
+
+    // The user dismisses the copy on Linux: the Mac clears its copy, and
+    // the phone, gone, is simply not told.
+    linux_n.user_dismisses_copy(phone.binding().public(), "7");
+    until("mac cleared its copy", || mac_n.shown().is_empty()).await;
+    assert_eq!(
+        linux_sync.counters().dismissed_out,
+        1,
+        "one dismissal, to the mac"
+    );
+    assert!(phone_n.dismissed_own().is_empty());
+    linux.shutdown();
+    mac.shutdown();
+}

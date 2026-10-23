@@ -27,7 +27,10 @@ subordinate key the role requires and that the role names that person.
 
 A vector whose `expect.outcome` is `invalid` must be rejected, at the signature, at
 decoding or at the chain as its description says. Its `reason` is for people;
-implementations need not match it.
+implementations need not match it. A valid payload may carry a field no schema names
+(`facts/person-with-unknown-field.json`): a decoder ignores it, `input` lists the known
+fields only, and re-encoding `input` cannot reproduce such a payload, which is why step 1
+verifies the bytes as received and never a re-encoding.
 
 ## Layout
 

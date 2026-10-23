@@ -156,3 +156,69 @@ async fn two_daemons_pair_through_their_control_channels() {
     phone.shutdown();
     laptop.shutdown();
 }
+
+/// One ceremony at a time: while a `pair.join` waits for an introducer, a
+/// second `pair.join` on the same daemon is refused; and a daemon that has
+/// an identity refuses to join at all.
+#[tokio::test]
+async fn a_second_join_is_refused_and_so_is_joining_once_initialised() {
+    let (laptop, mut laptop_ctl, dir) = start("laptop").await;
+    let loc = Locations::resolve(Some(dir.path()), None);
+    let mut second_ctl = Client::connect(&loc.control_socket()).await.unwrap();
+
+    // The first join shows its offer and waits.
+    let (offer_tx, offer_rx) = tokio::sync::oneshot::channel::<String>();
+    let offer_tx = Arc::new(Mutex::new(Some(offer_tx)));
+    let first = tokio::spawn(async move {
+        laptop_ctl
+            .call(Request::new(types::PAIR_JOIN, 0), |event: &Event| {
+                if event.event_type.as_str() == types::PAIR_OFFER
+                    && let Some(tx) = offer_tx.lock().unwrap().take()
+                {
+                    let _ = tx.send(event.offer.clone().unwrap());
+                }
+                None
+            })
+            .await
+    });
+    let offer = tokio::time::timeout(Duration::from_secs(5), offer_rx)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(offer.starts_with("ligature:pair/1?"));
+
+    // A second join on another client is answered with an error at once.
+    let response = tokio::time::timeout(
+        Duration::from_secs(5),
+        second_ctl.call(Request::new(types::PAIR_JOIN, 0), |_| None),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let error = response.error.expect("the second join is refused");
+    assert!(error.message.contains("already in progress"), "{error:?}");
+    assert!(
+        laptop.accepts_strangers(),
+        "the first join still waits for its introducer"
+    );
+    first.abort();
+
+    // A daemon with an identity never joins: its person is already decided.
+    let (phone, mut phone_ctl, _d2) = start("phone").await;
+    let mut init = Request::new(types::INIT, 0);
+    init.name = Some("Alice".to_owned());
+    let _: InitResult = phone_ctl.request(init).await.unwrap();
+    let response = tokio::time::timeout(
+        Duration::from_secs(5),
+        phone_ctl.call(Request::new(types::PAIR_JOIN, 0), |_| None),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let error = response
+        .error
+        .expect("an initialised daemon refuses to join");
+    assert_eq!(error.code, "already-initialised", "{error:?}");
+    phone.shutdown();
+    laptop.shutdown();
+}

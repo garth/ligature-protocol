@@ -331,3 +331,144 @@ async fn a_revocation_learnt_by_gossip_closes_the_live_session() {
         x.shutdown();
     }
 }
+
+/// Three trusted daemons on the real event loop, A, B and C, with B holding
+/// a live session it dialled to C.
+async fn three_with_b_dialled_to_c() -> (
+    (Arc<Daemon>, tempfile::TempDir),
+    (Arc<Daemon>, tempfile::TempDir),
+    (Arc<Daemon>, tempfile::TempDir),
+) {
+    let alice = PersonKeys::generate().unwrap();
+    let person = facts::person_fact(&alice, "Alice", 1, at(0)).unwrap();
+    let (a, da) = daemon_with_loop("a");
+    let (b, db) = daemon_with_loop("b");
+    let (c, dc) = daemon_with_loop("c");
+    let roles: Vec<_> = [&a, &b, &c]
+        .iter()
+        .enumerate()
+        .map(|(i, d)| {
+            facts::role_fact(
+                &alice,
+                Role::Binding,
+                *d.binding().public(),
+                true,
+                at(1 + i as i64),
+            )
+            .unwrap()
+        })
+        .collect();
+    for d in [&a, &b, &c] {
+        d.store().insert(&person).unwrap();
+        for r in &roles {
+            d.store().insert(r).unwrap();
+        }
+        d.update_keys(|k| k.set_joined(*alice.person(), Some(&alice.self_signing)))
+            .unwrap();
+        d.attach_clipboard(ligatured::clipboard::FakeClipboard::new());
+    }
+    let bc = b
+        .manager()
+        .connect(c.manager().endpoint().local_addr().unwrap())
+        .await
+        .unwrap();
+    assert_eq!(bc.peer(), c.binding().public());
+    until("C holds B's session", || {
+        c.manager().peer(b.binding().public()).is_some()
+    })
+    .await;
+    ((a, da), (b, db), (c, dc))
+}
+
+/// B dials A and learns in that exchange, as the dialer, that A revoked C:
+/// the session B holds with C closes at once (LP-122 on the dialer side).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_revocation_learnt_by_dialling_closes_the_live_session() {
+    let ((a, _da), (b, _db), (c, _dc)) = three_with_b_dialled_to_c().await;
+    // A revokes C while connected to nobody: nothing is pushed.
+    ligatured::control::revoke(&a, c.binding().public()).unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(
+        b.manager().peer(c.binding().public()).is_some(),
+        "B has not heard yet"
+    );
+
+    // B dials A: its own exchange brings the revocation home.
+    let ba = b
+        .manager()
+        .connect(a.manager().endpoint().local_addr().unwrap())
+        .await
+        .unwrap();
+    assert_eq!(ba.peer(), a.binding().public());
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while b.manager().peer(c.binding().public()).is_some()
+        || c.manager().peer(b.binding().public()).is_some()
+    {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "B still holds C's session after dialling A"
+        );
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    assert_eq!(
+        b.recognise(c.binding().public()).unwrap(),
+        Recognition::Revoked
+    );
+    assert!(
+        b.manager().peer(a.binding().public()).is_some(),
+        "A's session is unaffected"
+    );
+    for x in [&a, &b, &c] {
+        x.shutdown();
+    }
+}
+
+/// Revoking a device that is connected drops its session and forgets what
+/// it offered: its manifest leaves the registry and the clipboard no longer
+/// has a stream to it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn revoking_a_connected_device_forgets_its_capabilities() {
+    use lp_core::capability::CLIPBOARD_TYPE;
+    let ((a, _da), (b, _db), (c, _dc)) = three_with_b_dialled_to_c().await;
+    let b_sync = b.clipboard_sync().unwrap();
+    until("B and C offer each other the clipboard", || {
+        b.registry().peers_offering(CLIPBOARD_TYPE) == vec![*c.binding().public()]
+            && c.registry().peers_offering(CLIPBOARD_TYPE) == vec![*b.binding().public()]
+    })
+    .await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while !b_sync.request(c.binding().public()).await {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "B has a clipboard stream to C"
+        );
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+
+    // B revokes C itself (it is an introducer) and pushes it on.
+    ligatured::control::revoke_and_push(&b, c.binding().public())
+        .await
+        .unwrap();
+    until("C's session is gone", || {
+        b.manager().peer(c.binding().public()).is_none()
+    })
+    .await;
+    assert!(
+        b.registry()
+            .peers()
+            .iter()
+            .all(|p| p.peer != *c.binding().public()),
+        "C's manifest is forgotten"
+    );
+    assert!(
+        b.registry().peers_offering(CLIPBOARD_TYPE).is_empty(),
+        "nothing offers the clipboard any more"
+    );
+    assert!(
+        !b_sync.request(c.binding().public()).await,
+        "no stream to C remains"
+    );
+    for x in [&a, &b, &c] {
+        x.shutdown();
+    }
+}

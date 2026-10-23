@@ -9,7 +9,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use ligatured::clipboard::{Clipboard, FakeClipboard, Part, Value};
+use ligatured::clipboard::{Change, Clipboard, FakeClipboard, Incoming, Part, Value};
 use ligatured::clipboard_sync::{ClipboardConfig, ClipboardSync};
 use ligatured::daemon::Daemon;
 use ligatured::files::DirectoryStore;
@@ -57,6 +57,51 @@ fn device(
     Device,
     tokio::sync::mpsc::Receiver<lp_transport::manager::Event>,
 ) {
+    let clipboard = FakeClipboard::new();
+    device_with(alice, name, window, clipboard.clone(), clipboard)
+}
+
+/// A device whose clipboard takes what is pushed and holds no promise, as a
+/// platform without a lazy clipboard would: `fetch` is false in its
+/// descriptor. Reads and writes go to the fake inside.
+struct PlainClipboard(Arc<FakeClipboard>);
+
+impl Clipboard for PlainClipboard {
+    fn available(&self) -> bool {
+        self.0.available()
+    }
+    fn read_text(&self) -> Result<Option<String>, lp_core::Error> {
+        self.0.read_text()
+    }
+    fn set_text(&self, text: &str) -> Result<(), lp_core::Error> {
+        self.0.set_text(text)
+    }
+    fn subscribe(&self) -> tokio::sync::broadcast::Receiver<Change> {
+        self.0.subscribe()
+    }
+    fn read_value(&self) -> Result<Option<Value>, lp_core::Error> {
+        self.0.read_value()
+    }
+    fn set_value(&self, value: &Incoming) -> Result<(), lp_core::Error> {
+        self.0.set_value(value)
+    }
+    fn mime_types(&self) -> Vec<String> {
+        self.0.mime_types()
+    }
+}
+
+/// As [`device`], with `clipboard` as the clipboard the daemon drives and
+/// `fake` the one the test reads.
+fn device_with(
+    alice: &PersonKeys,
+    name: &str,
+    window: Duration,
+    clipboard: Arc<dyn Clipboard>,
+    fake: Arc<FakeClipboard>,
+) -> (
+    Device,
+    tokio::sync::mpsc::Receiver<lp_transport::manager::Event>,
+) {
     let data = tempfile::tempdir().unwrap();
     let loc = Locations::resolve(Some(data.path()), None);
     let (daemon, events) = Daemon::open(loc, "127.0.0.1:0".parse().unwrap(), Some(name)).unwrap();
@@ -72,9 +117,8 @@ fn device(
         },
     );
     let cache = tempfile::tempdir().unwrap();
-    let clipboard = FakeClipboard::new();
     let sync = daemon.attach_clipboard_with(
-        clipboard.clone(),
+        clipboard,
         ClipboardConfig {
             window,
             cache_dir: cache.path().join("clipboard"),
@@ -84,7 +128,7 @@ fn device(
     (
         Device {
             daemon,
-            clipboard,
+            clipboard: fake,
             sync,
             files,
             cache,
@@ -435,4 +479,139 @@ async fn a_value_is_recorded_before_the_platform_gets_it_and_undone_if_refused()
         b.sync.promises().is_empty(),
         "a refused value leaves no promise"
     );
+}
+
+/// A peer whose clipboard holds no promise (`fetch: false`) gets what fits
+/// the push bound and nothing announced: a large part is left out of its
+/// set rather than offered, and a text too large to push reaches it as an
+/// empty set. The sender offers nothing for it (LP-133).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_peer_that_holds_no_promises_gets_pushed_parts_only_and_nothing_announced() {
+    let alice = PersonKeys::generate().unwrap();
+    let hour = Duration::from_secs(3600);
+    let plain = FakeClipboard::new();
+    let devices = join(
+        &alice,
+        vec![
+            device(&alice, "a", hour),
+            device_with(
+                &alice,
+                "b",
+                hour,
+                Arc::new(PlainClipboard(plain.clone())),
+                plain,
+            ),
+        ],
+    )
+    .await;
+    let (a, b) = (&devices[0], &devices[1]);
+    assert!(!b.sync.params().fetch, "b advertises no fetch");
+    assert!(a.sync.params().fetch);
+    let mut b_transfers = b.files.subscribe();
+
+    // Text with a 1 MiB image: b gets the text, and the image is neither
+    // pushed (over the bound) nor announced (b could not fetch it).
+    let mut image = Value::text("a picture");
+    image.parts = vec![Part::new("image/png", pattern(1024 * 1024, 7))];
+    a.clipboard.user_copies_value(image);
+    until("text on b", || {
+        b.clipboard.read_text().unwrap().as_deref() == Some("a picture")
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let value = b.clipboard.read_value().unwrap().unwrap();
+    assert!(
+        value.parts.is_empty(),
+        "nothing pushed beyond the text: {value:?}"
+    );
+    assert!(b.sync.promises().is_empty(), "nothing announced to b");
+    assert!(
+        a.files.offers().is_empty(),
+        "a offers nothing for a peer that cannot fetch"
+    );
+    assert!(b.clipboard.paste("image/png").await.is_err());
+    assert_eq!(started(&mut b_transfers), 0);
+
+    // A small image within the bound is pushed like any part.
+    let mut small = Value::text("a small picture");
+    small.parts = vec![Part::new("image/png", pattern(4096, 9))];
+    a.clipboard.user_copies_value(small);
+    until("small image on b", || {
+        b.clipboard
+            .read_value()
+            .unwrap()
+            .is_some_and(|v| v.text.as_deref() == Some("a small picture") && v.parts.len() == 1)
+    })
+    .await;
+    assert_eq!(
+        b.clipboard.paste("image/png").await.unwrap(),
+        pattern(4096, 9)
+    );
+
+    // A text over the bound cannot be pushed and is not announced either:
+    // a sends b an empty set, which b ignores, keeping what it had.
+    let long: String = "x".repeat(600 * 1024);
+    a.clipboard.user_copies(&long);
+    until("a sent the empty set", || a.sync.counters().0 == 3).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        b.clipboard.read_text().unwrap().as_deref(),
+        Some("a small picture"),
+        "nothing of the text reached b, and b kept what it had"
+    );
+    assert!(b.sync.promises().is_empty());
+    assert!(a.files.offers().is_empty(), "a offers nothing for b");
+    assert_eq!(a.sync.counters(), (3, 0));
+    assert_eq!(b.sync.counters(), (0, 2), "the empty set was not applied");
+    for d in &devices {
+        d.daemon.shutdown();
+    }
+}
+
+/// A promise cannot outlive the session that would serve it: when the
+/// sender goes, its promises are dropped from the receiver's clipboard, the
+/// pushed text stays, and a paste of the promised type no longer fetches
+/// (LP-133).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn promises_are_dropped_when_the_sender_disconnects_and_the_text_stays() {
+    let alice = PersonKeys::generate().unwrap();
+    let hour = Duration::from_secs(3600);
+    let devices = join(
+        &alice,
+        vec![device(&alice, "a", hour), device(&alice, "b", hour)],
+    )
+    .await;
+    let (a, b) = (&devices[0], &devices[1]);
+    let mut b_transfers = b.files.subscribe();
+    let mut image = Value::text("a picture");
+    image.parts = vec![Part::new("image/png", pattern(1024 * 1024, 7))];
+    a.clipboard.user_copies_value(image);
+    until("promise on b", || !b.sync.promises().is_empty()).await;
+    assert_eq!(b.sync.promised_from(), Some(*a.daemon.binding().public()));
+
+    // a goes away.
+    a.daemon.shutdown();
+    until("b saw a leave", || {
+        b.daemon
+            .manager()
+            .peer(a.daemon.binding().public())
+            .is_none()
+    })
+    .await;
+    until("the promise is gone from b", || {
+        b.sync.promises().is_empty()
+    })
+    .await;
+    assert_eq!(b.sync.promised_from(), None);
+    assert_eq!(
+        b.clipboard.read_text().unwrap().as_deref(),
+        Some("a picture"),
+        "the pushed text stays"
+    );
+    assert!(
+        b.clipboard.paste("image/png").await.is_err(),
+        "nothing serves the promise"
+    );
+    assert_eq!(started(&mut b_transfers), 0, "no fetch was attempted");
+    b.daemon.shutdown();
 }

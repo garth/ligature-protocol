@@ -188,7 +188,7 @@ impl Daemon {
                         None => {
                             tracing::debug!(peer = %conn.peer(), "pairing stream with no ceremony pending; dropping");
                             let mut stream = stream;
-                            stream.reset(lp_core::frame::UNKNOWN_PURPOSE_CODE);
+                            stream.reset(lp_core::frame::REFUSED_CODE);
                         }
                     }
                 })

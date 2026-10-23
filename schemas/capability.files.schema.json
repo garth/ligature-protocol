@@ -192,7 +192,7 @@
     },
     "begin": {
       "type": "object",
-      "description": "The first message on a data stream, from the sender: which accepted file of which transfer follows. A receiver resets a data stream naming a transfer it has not accepted, or an id outside that transfer's accept, with application error code 3.",
+      "description": "The first message on a data stream, from the sender: which accepted file of which transfer follows. A receiver resets a data stream naming a transfer it has not accepted, or an id outside that transfer's accept, with the files family's failure code (17, ADR 0038).",
       "required": [
         "type",
         "transfer",

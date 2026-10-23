@@ -57,7 +57,7 @@ What this milestone pins:
    descriptor exactly as it would one from a principal: the grant question is who is
    present on the device, and for a person's own desktop that is the person. When the
    principal service arrives it offers the same descriptors and the binding stops, so the
-   owner changes and nothing else. This is **ADR 0038**, written and accepted before the
+   owner changes and nothing else. This is **ADR 0040**, written and accepted before the
    schema, since it touches the ownership model of ADR 0023 without changing it.
 3. **The event vocabulary.** On the stream, from the controller to the controlled device:
    `enter` (the pointer arrives: the `edge` it crosses, `left`, `right`, `top` or
@@ -85,7 +85,7 @@ What this milestone pins:
    as ADR 0036 wants. The reference implementation measures the round trip from a
    captured event to the injected one on the LAN; the plan expects a few milliseconds
    over the QUIC stream. If loss on wireless shows the stream's head-of-line blocking,
-   the remedy is QUIC datagrams for `events`, which would be **ADR 0039** beside ADR
+   the remedy is QUIC datagrams for `events`, which would be **ADR 0041** beside ADR
    0036; this milestone records the measurement and does not write that ADR.
 6. **Text as well as keys.** The phone's keyboard produces characters, not key codes, and
    a character may not exist on the controlled device's layout. A `text` event carries a
@@ -208,7 +208,7 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-    P["LP-115 plan"] --> R["ADR 0038, schema, chapter 05 3g, chapter 10"]
+    P["LP-115 plan"] --> R["ADR 0040, schema, chapter 05 3g, chapter 10"]
     R --> D["daemon core, layout, lpctl input, two-daemon test"]
     D --> X["Linux helper: capture and injection"]
     D --> A["Android touchpad"]
@@ -220,7 +220,7 @@ flowchart LR
 ```
 
 - LP-115. This plan.
-- **ADR 0038, schema and spec.** The ADR of decision 2; `schemas/capability.input.schema.json`
+- **ADR 0040, schema and spec.** The ADR of decision 2; `schemas/capability.input.schema.json`
   with the params and events of decisions 1, 3 and 4; chapter 05 section 3g; a sentence in
   chapter 10 section 3 pointing at the ADR; the sentences in chapter 09 (decision 13).
 - **Daemon core, layout, `lpctl input` and the two-daemon test.** `lp-core` types for the
@@ -254,7 +254,7 @@ flowchart LR
 - **Latency over the stream.** A QUIC stream retransmits a lost packet before delivering
   what follows; on a clean LAN the measured round trip should be a few milliseconds, on a
   congested wireless link it may stutter. The measurement is an exit criterion and ADR
-  0039 is the named remedy.
+  0041 is the named remedy.
 - **The Mac's permissions.** Accessibility and Input Monitoring are granted per bundle
   and reset when the bundle's signature changes; a rebuilt daemon may lose them until the
   user grants again. LP-94's bundle and its signing, even ad hoc, decide how often that
@@ -275,7 +275,7 @@ flowchart LR
 ## 7. After this milestone
 
 Candidates, in no order: remote desktop (milestone 8, LP-113), which drives a watched
-screen with this family's absolute events; ADR 0039 if the measurement calls for it; the
-principal service that takes the family over from the binding (ADR 0038's end state); the
+screen with this family's absolute events; ADR 0041 if the measurement calls for it; the
+principal service that takes the family over from the binding (ADR 0040's end state); the
 layout as a signed fact and its app (LP-88); input to a group device under the grant rules
 of chapter 10 when groups arrive.

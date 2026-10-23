@@ -25,12 +25,25 @@ pub const GOSSIP_WANT_TYPE: &str = "org.ligatureprotocol.gossip.want";
 pub const GOSSIP_FACT_TYPE: &str = "org.ligatureprotocol.gossip.fact";
 
 /// Application error code a receiver closes a stream with when it does not
-/// understand the stream's purpose.
+/// understand the stream's purpose (ADR 0036, ADR 0038).
 pub const UNKNOWN_PURPOSE_CODE: u32 = 1;
 
 /// Application error code a receiver closes a stream with when the peer that
-/// opened it has not been admitted past the pairing offer (LP-121).
+/// opened it has not been admitted past the pairing offer (ADR 0038).
 pub const NOT_ADMITTED_CODE: u32 = 2;
+
+/// Application error code a receiver closes a stream with when its first
+/// message is one the receiver will not act on from this peer, such as a
+/// capability message from a device that is not the person's (ADR 0038).
+pub const REFUSED_CODE: u32 = 3;
+
+/// Application error code a receiver closes a stream with when a frame or
+/// the header cannot be decoded (ADR 0038).
+pub const MALFORMED_CODE: u32 = 4;
+
+/// The first application error code a capability family may use for its
+/// own reasons; the transport's codes lie below it (ADR 0038).
+pub const FAMILY_CODES_FROM: u32 = 16;
 
 /// Encodes one message as a frame: length prefix plus CBOR.
 ///

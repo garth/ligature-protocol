@@ -30,14 +30,15 @@
             {
               "enum": [
                 "gossip",
-                "manifest"
+                "manifest",
+                "pairing"
               ]
             },
             {
               "$ref": "#/$defs/typeName"
             }
           ],
-          "description": "gossip, manifest, or the capability type the stream carries. A receiver that does not understand the purpose closes the stream with application error code 1."
+          "description": "gossip, manifest, pairing, or the capability type the stream carries. A receiver resets a stream with a transport code (ADR 0038): 1 for a purpose it does not understand, 2 for a peer not yet admitted past the pairing offer, 3 for a first message it will not act on from this peer, 4 for a frame or header it cannot decode; a capability's own codes start at 16."
         }
       }
     },

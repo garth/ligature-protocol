@@ -31,10 +31,14 @@ never stalls an interactive stream. The TLS handshake carries the ALPN token `li
 which is the protocol version; no message carries one. Every stream is bidirectional and
 its first frame is a stream header
 ([`org.ligatureprotocol.stream`](../../schemas/message.schema.json)) naming its purpose:
-`gossip`, `manifest`, or a capability type. Whichever peer needs a stream opens it; the
-dialer opens the gossip stream first. A receiver that does not understand a purpose closes
-that stream and nothing else. A message on a stream is a frame: a 4-byte big-endian length
-and one CBOR map with a `type` field, at most 1 MiB unless the capability says otherwise
+`gossip`, `manifest`, `pairing` (chapter 02 section 4), or a capability type. Whichever
+peer needs a stream opens it; the dialer opens the gossip stream first. A receiver resets a
+stream, and nothing else, with a transport code: 1 for a purpose it does not understand, 2
+for a peer not yet admitted (section 3.2), 3 for a first message it will not act on from
+this peer, 4 for a frame or header it cannot decode; a capability's own codes start at 16
+([ADR 0038](../adr/0038-stream-reset-codes-and-admission.md)). A message on a stream is a
+frame: a 4-byte big-endian length and one CBOR map with a `type` field, at most 1 MiB
+unless the capability says otherwise
 ([ADR 0036](../adr/0036-stream-framing-and-message-typing.md)). A capability may use
 several streams of its purpose at once: files (chapter 05 section 3d) opens a control
 stream per transfer and a data stream per file in flight, the receiver's descriptor
@@ -48,7 +52,11 @@ presented key is a binding of mine, a principal I use, or a binding of a known p
 (chapter 02); otherwise the only thing offered is the pairing ceremony. The handshake
 accepts any well-formed raw public key; recognition is decided afterwards from the local
 store, so a device learned through gossip is recognised the first time it connects and a
-revoked one is refused on its next connection.
+revoked one is refused on its next connection. Until that decision a receiver dispatches
+only the `pairing` purpose: every other stream the peer opens waits in a small bounded
+queue, to be dispatched if the peer is admitted and reset with code 2 if it is dropped, so
+a stranger kept for a ceremony learns nothing from the streams it opened
+([ADR 0038](../adr/0038-stream-reset-codes-and-admission.md)).
 
 ### 3.3 Connection migration
 

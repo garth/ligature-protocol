@@ -15,10 +15,11 @@ use crate::wire::{Bytes, Timestamp};
 /// Type name of the files capability, and the purpose of its streams.
 pub const FILES_TYPE: &str = "org.ligatureprotocol.capability.files";
 
-/// Application error code of a stream reset for a cancel the user asked for.
-pub const CANCELLED_CODE: u32 = 2;
-/// Application error code of a stream reset for a failure.
-pub const FAILED_CODE: u32 = 3;
+/// Application error code of a stream reset for a cancel the user asked for:
+/// the family's first code (ADR 0038).
+pub const CANCELLED_CODE: u32 = crate::frame::FAMILY_CODES_FROM;
+/// Application error code of a stream reset for a failure (ADR 0038).
+pub const FAILED_CODE: u32 = crate::frame::FAMILY_CODES_FROM + 1;
 
 /// The files descriptor's `params`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -182,8 +182,9 @@ same stream, and finishes it. Once every accepted file has its answer both sides
 the control stream. The sender keeps no more data streams open to a peer than that peer's
 `maxStreams`, and files on different streams are independent of one another.
 
-Either side cancels one file by resetting its data stream, with application error code 2
-for a cancel the user asked for and 3 for a failure, and the whole transfer by resetting
+Either side cancels one file by resetting its data stream, with application error code 16
+for a cancel the user asked for and 17 for a failure (the family's codes under
+[ADR 0038](../adr/0038-stream-reset-codes-and-admission.md)), and the whole transfer by resetting
 the control stream; a stream that ends before `end` is a failure. The receiver removes
 whatever partial file it was writing. There is no cancel message, since it would queue
 behind the chunks it is meant to stop. Progress is each side's own count of bytes against

@@ -13,7 +13,7 @@ use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
-use lp_core::frame::{NOT_ADMITTED_CODE, StreamHeader, UNKNOWN_PURPOSE_CODE};
+use lp_core::frame::{MALFORMED_CODE, NOT_ADMITTED_CODE, StreamHeader, UNKNOWN_PURPOSE_CODE};
 use lp_core::{Error, PublicKey};
 use tokio::sync::mpsc;
 
@@ -340,7 +340,7 @@ impl Manager {
                 Ok(h) => h,
                 Err(e) => {
                     tracing::debug!(%peer, %e, "stream without a valid header");
-                    stream.reset(UNKNOWN_PURPOSE_CODE);
+                    stream.reset(MALFORMED_CODE);
                     continue;
                 }
             };

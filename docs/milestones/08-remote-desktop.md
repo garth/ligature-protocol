@@ -17,7 +17,7 @@ platform's hardware encoder where it has one and carried on the session, which a
 gives the share mutual authentication, encryption and flow control.
 
 Screen sharing is `device`-scoped (chapter 10 section 3), offered by the binding standing
-in for the principal under ADR 0038 (milestone 7), and between one person's own devices it
+in for the principal under ADR 0040 (milestone 7), and between one person's own devices it
 needs no LP prompt: the platform's own consent, where the platform has one, is the gate
 (decision 6).
 
@@ -41,7 +41,7 @@ chunking rather than by a larger bound. What this milestone pins:
 
 1. **One family, device-scoped.** `org.ligatureprotocol.capability.screen` (chapter 05
    section 3h, `schemas/capability.screen.schema.json`), `scope` `device`, offered under
-   ADR 0038 as `input` is. The descriptor's `params` follow the two-direction convention:
+   ADR 0040 as `input` is. The descriptor's `params` follow the two-direction convention:
    `shares` (this device captures and encodes a display), `views` (this device decodes
    and shows one), `codecs` (what it encodes or decodes, `h264` first, listed in
    preference order), `maxWidth` and `maxHeight` (the largest picture a viewer takes),
@@ -76,7 +76,7 @@ chunking rather than by a larger bound. What this milestone pins:
    packet should cost one frame, not stall the ones behind it. On a LAN the loss is rare
    and a QUIC stream serves; on wireless it may stutter. This milestone runs on the stream,
    measures glass-to-glass latency and the stall rate on the owner's network, and records
-   them. If they call for it, QUIC datagrams for `frame` are **ADR 0039**, the same ADR
+   them. If they call for it, QUIC datagrams for `frame` are **ADR 0041**, the same ADR
    milestone 7 names for `events`, and this milestone does not write it.
 6. **Consent is the platform's, once per share.** On Android a share starts with the media
    projection dialog every time and runs in a foreground service of the media projection
@@ -123,7 +123,7 @@ chunking rather than by a larger bound. What this milestone pins:
     model says so beside milestone 7's sentence.
 
 No decision above changes an accepted ADR: chunking keeps ADR 0036's bound, the family is a
-capability under ADR 0008 offered under ADR 0038, and the grant rule is chapter 10's. The
+capability under ADR 0008 offered under ADR 0040, and the grant rule is chapter 10's. The
 datagram ADR is named and deferred.
 
 ```mermaid
@@ -234,7 +234,7 @@ flowchart LR
 
 - **Stalls on the stream.** Decision 5's measurement may show that a reliable stream is
   not good enough on the owner's wireless link; the picture then stutters rather than
-  degrades. The milestone still completes on the stream, and ADR 0039 is the named next
+  degrades. The milestone still completes on the stream, and ADR 0041 is the named next
   step, with the measurement as its evidence.
 - **Encoder availability.** VA-API on the Linux machine depends on the GPU and driver;
   software H.264 at 1440p and 30 frames costs a core or two. The sharer scales down to
@@ -257,7 +257,7 @@ flowchart LR
 
 ## 7. After this milestone
 
-Candidates, in no order: ADR 0039 and the datagram path for frames and input events; audio
+Candidates, in no order: ADR 0041 and the datagram path for frames and input events; audio
 with the picture, then microphone and camera as devices (the audio and video family of the
 assessment); AV1 where the hardware has it; a window share; a share to a group device such
 as a TV, which needs groups and the device-scoped grant rules; the principal service that

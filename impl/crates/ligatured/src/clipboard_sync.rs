@@ -711,7 +711,7 @@ impl ClipboardSync {
                             Ok(false) => {}
                             Err(e) => {
                                 tracing::warn!(%peer, %e, "clipboard set refused");
-                                stream.reset(lp_core::frame::UNKNOWN_PURPOSE_CODE);
+                                stream.reset(lp_core::frame::REFUSED_CODE);
                                 break;
                             }
                         },

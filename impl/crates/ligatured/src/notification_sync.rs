@@ -390,7 +390,7 @@ impl NotificationSync {
                             Ok(what) => tracing::debug!(%peer, what, "notification message"),
                             Err(e) => {
                                 tracing::warn!(%peer, %e, "notification message refused");
-                                stream.reset(lp_core::frame::UNKNOWN_PURPOSE_CODE);
+                                stream.reset(lp_core::frame::REFUSED_CODE);
                                 break;
                             }
                         },

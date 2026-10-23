@@ -165,3 +165,78 @@ async fn a_tampered_fact_from_a_peer_is_discarded() {
     ma.shutdown();
     mb.shutdown();
 }
+
+/// A grant is local to the device that made it: one that a peer sends
+/// anyway, well signed, is discarded like a bad fact (LP-128).
+#[tokio::test]
+async fn a_grant_from_a_peer_is_discarded() {
+    use lp_core::facts::{GrantBasis, GrantFact};
+    use lp_core::wire::TypeName;
+    let alice = PersonKeys::generate().unwrap();
+    let store = Arc::new(TrustStore::in_memory().unwrap());
+    store
+        .insert(&facts::person_fact(&alice, "Alice", 1, at(0)).unwrap())
+        .unwrap();
+
+    let key_a = SigningKey::generate().unwrap();
+    let key_b = SigningKey::generate().unwrap();
+    let ep_a = lp_transport::quic::Endpoint::bind("127.0.0.1:0".parse().unwrap(), &key_a).unwrap();
+    let ep_b = lp_transport::quic::Endpoint::bind("127.0.0.1:0".parse().unwrap(), &key_b).unwrap();
+    let (ma, _) = lp_transport::manager::Manager::start(ep_a);
+    let (mb, _) = lp_transport::manager::Manager::start(ep_b);
+    ligatured::gossip::register_store(&mb, store.clone());
+    let conn = ma
+        .connect(mb.endpoint().local_addr().unwrap())
+        .await
+        .unwrap();
+    let mut stream = open_on(&conn, StreamHeader::GOSSIP).await.unwrap();
+
+    let grant = facts::sign(
+        &key_a,
+        &GrantFact {
+            grantor: *key_a.public(),
+            grantee: *key_b.public(),
+            grantee_person: None,
+            capability: TypeName::new("org.ligatureprotocol.capability.clipboard"),
+            basis: GrantBasis::Implicit,
+            standing: true,
+            expires_at: None,
+            revoked_at: None,
+            created_at: at(1),
+        },
+    )
+    .unwrap();
+    let role = facts::role_fact(&alice, Role::Binding, *key_b.public(), true, at(1)).unwrap();
+    stream
+        .send(&lp_core::frame::GossipHave::new(vec![
+            facts::id(&grant),
+            facts::id(&role),
+        ]))
+        .await
+        .unwrap();
+    let _their_have: lp_core::frame::GossipHave = stream.recv().await.unwrap().unwrap();
+    stream
+        .send(&lp_core::frame::GossipWant::new(vec![]))
+        .await
+        .unwrap();
+    let want: lp_core::frame::GossipWant = stream.recv().await.unwrap().unwrap();
+    assert_eq!(
+        want.facts.len(),
+        2,
+        "the id gives nothing away; both are asked for"
+    );
+    stream.send(&GossipFact::new(grant.clone())).await.unwrap();
+    stream.send(&GossipFact::new(role.clone())).await.unwrap();
+    stream.finish();
+    while stream.recv::<GossipFact>().await.unwrap().is_some() {}
+    until("the role is stored", || {
+        store.about(key_b.public()).unwrap().len() == 1
+    })
+    .await;
+    assert!(
+        !store.contains(&facts::id(&grant)).unwrap(),
+        "the grant was not stored"
+    );
+    ma.shutdown();
+    mb.shutdown();
+}

@@ -52,10 +52,12 @@ mismatch, or the sender disconnecting drops the value's promises: the clipboard 
 again to the pushed parts alone, with the fingerprint noted so that set is not an echo.
 
 **The cache is per value and cleared on change.** `ClipboardConfig::cache_dir` is
-`$XDG_RUNTIME_DIR/ligature/clipboard` on Linux,
-`~/Library/Caches/org.ligatureprotocol.ligatured/clipboard` on macOS and the temporary
-directory elsewhere; each applied value gets a numbered directory under it, removed when a
-newer value replaces it, and the whole cache is removed when the synchroniser starts.
+`clipboard/` under the daemon's runtime directory (`Locations::clipboard_cache`:
+`$XDG_RUNTIME_DIR/ligature/clipboard` on Linux, `$TMPDIR/ligature/clipboard` on macOS,
+beside the store when `--data-dir` is given, so two daemons on one machine never share
+one) unless `LIGATURE_CLIPBOARD_CACHE` names another place; each applied value gets a
+numbered directory under it, removed when a newer value replaces it, and the whole cache is
+removed when the synchroniser starts.
 
 **`get` on connect, answered with patience.** On attaching a same-person peer the stream
 opens with a `get`; the answer is built for the asker like any `set`, or empty when there

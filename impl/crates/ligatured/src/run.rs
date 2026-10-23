@@ -21,14 +21,19 @@ pub const FAKE_CLIPBOARD_ENV: &str = "LIGATURE_FAKE_CLIPBOARD";
 /// platform's: for the loopback end-to-end run.
 pub const FAKE_NOTIFICATIONS_ENV: &str = "LIGATURE_FAKE_NOTIFICATIONS";
 
-/// The platform's notification backend, if this platform has one.
+/// The platform's notification backend, if this platform has one; icons it
+/// writes for the platform go under `locations`.
 #[must_use]
-pub fn platform_notifications() -> Option<Arc<dyn crate::notifications::Notifications>> {
+pub fn platform_notifications(
+    locations: &Locations,
+) -> Option<Arc<dyn crate::notifications::Notifications>> {
     #[cfg(target_os = "linux")]
     {
-        crate::notifications_linux::LinuxNotifications::start()
+        crate::notifications_linux::LinuxNotifications::start(locations.icons())
             .map(|n| n as Arc<dyn crate::notifications::Notifications>)
     }
+    #[cfg(not(target_os = "linux"))]
+    let _ = locations;
     #[cfg(target_os = "macos")]
     {
         Some(crate::notifications_macos::MacNotifications::new())
@@ -93,7 +98,7 @@ pub async fn run(
             tracing::warn!("using the in-memory fake notifications ({FAKE_NOTIFICATIONS_ENV}=1)");
             Some(crate::notifications::FakeNotifications::new(true, true))
         } else {
-            platform_notifications()
+            platform_notifications(&locations)
         };
     match notifications {
         Some(backend) => {

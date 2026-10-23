@@ -102,8 +102,7 @@ async fn ceremony(newcomer_says: bool, introducer_says: bool) -> Outcome {
                 let store = TrustStore::open(&loc).unwrap();
                 let mut keys = KeyFile::load(&loc.keys()).unwrap();
                 keys.set_device_keys(&laptop_binding, &laptop_principal);
-                joined.persist(&store, &mut keys).unwrap();
-                keys.save(&loc.keys()).unwrap();
+                joined.persist(&store, &mut keys, &loc.keys()).unwrap();
                 let keys = KeyFile::load(&loc.keys()).unwrap();
                 assert!(keys.is_initialised());
                 assert!(

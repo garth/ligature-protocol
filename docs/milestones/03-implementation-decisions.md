@@ -61,11 +61,12 @@ the phone's.
 
 **What Linux displays.** `Notify` with the app name as "App · Device", the origin hint, a
 `desktop-entry` hint carrying the app id, no actions and the default timeout; the icon is
-written once under `$XDG_RUNTIME_DIR/ligature/icons/<hash>.png` and passed as the icon
-path. The bus id of every copy is kept per origin and id so a repeated post replaces and a
-dismiss closes; the map is shared with the monitor, so a `NotificationClosed` with reason
-2 for one of our copies becomes a `CopyDismissed` naming the origin and id it was shown
-for.
+written once as `icons/<hash>.png` under the daemon's runtime directory
+(`Locations::icons`, so two daemons on one machine never share one) and passed as the icon
+path; the directory is emptied when the backend starts and when it stops. The bus id of
+every copy is kept per origin and id so a repeated post replaces and a dismiss closes; the
+map is shared with the monitor, so a `NotificationClosed` with reason 2 for one of our
+copies becomes a `CopyDismissed` naming the origin and id it was shown for.
 
 ## LP-92: Android
 

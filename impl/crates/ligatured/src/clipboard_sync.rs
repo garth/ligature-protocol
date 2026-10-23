@@ -64,13 +64,27 @@ pub struct ClipboardConfig {
 }
 
 impl Default for ClipboardConfig {
+    /// The default bounds, with the cache under the system's temporary
+    /// directory; a daemon uses [`Self::for_locations`] instead.
     fn default() -> Self {
         Self {
             max_bytes: ClipboardParams::DEFAULT_MAX_BYTES,
             keep_bytes: 64 * 1024 * 1024,
             memory_limit: 16 * 1024 * 1024,
             window: Duration::from_secs(60 * 60),
-            cache_dir: crate::clipboard::platform_cache_dir(),
+            cache_dir: std::env::temp_dir().join("ligature").join("clipboard"),
+        }
+    }
+}
+
+impl ClipboardConfig {
+    /// The default bounds with the cache where
+    /// [`crate::clipboard::cache_dir`] puts it for `locations`.
+    #[must_use]
+    pub fn for_locations(locations: &lp_core::paths::Locations) -> Self {
+        Self {
+            cache_dir: crate::clipboard::cache_dir(locations),
+            ..Self::default()
         }
     }
 }
@@ -117,7 +131,8 @@ impl ClipboardSync {
     /// configuration.
     #[must_use]
     pub fn start(daemon: Arc<Daemon>, clipboard: Arc<dyn Clipboard>) -> Arc<Self> {
-        Self::start_with(daemon, clipboard, ClipboardConfig::default())
+        let config = ClipboardConfig::for_locations(daemon.locations());
+        Self::start_with(daemon, clipboard, config)
     }
 
     /// Starts synchronising `clipboard` for `daemon`: registers the stream

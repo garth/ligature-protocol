@@ -8,6 +8,23 @@ release workflow publishes the section as the release notes with the installers.
 
 ## [Unreleased]
 
+### Fixed
+
+- A grant never leaves the device that made it: the pairing handover no longer carries the
+  introducer's grants, and a grant a peer sends by gossip or in the ceremony is discarded
+  (LP-128).
+- The store's quarantined rows heal when a copy that verifies arrives, the open-time
+  verification skips rows already quarantined, reads one row at a time, writes its verdicts
+  in one transaction and quarantines a row whose index columns disagree with its payload or
+  no longer read, instead of refusing to open (LP-128).
+- Creating or joining an identity writes its facts and the key file as one step, rolling
+  the facts back if the key file cannot be saved, and the key file's directory is synced
+  after the rename (LP-128).
+- Notification icons and the clipboard cache live under the daemon's runtime directory
+  (`Locations`), so two daemons on one machine never share them, and the icons are removed
+  when the backend stops; the store's time column now sorts as time (schema version 2,
+  brought forward on open) (LP-128).
+
 ## [0.1.1-alpha] - 2026-10-23
 
 ### Fixed

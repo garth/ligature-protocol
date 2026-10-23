@@ -746,30 +746,15 @@ pub fn platform_clipboard() -> Option<Arc<dyn Clipboard>> {
 }
 
 /// Where fetched clipboard content is cached before a paste completes
-/// (plan decision 9): the runtime directory on Linux, the user's caches on
-/// macOS, the system's temporary directory elsewhere.
+/// (plan decision 9): `clipboard/` under the daemon's runtime directory, so
+/// two daemons on one machine never share one, unless [`CACHE_DIR_ENV`]
+/// names another place.
 #[must_use]
-pub fn platform_cache_dir() -> PathBuf {
+pub fn cache_dir(locations: &lp_core::paths::Locations) -> PathBuf {
     if let Some(dir) = std::env::var_os(CACHE_DIR_ENV).filter(|d| !d.is_empty()) {
         return PathBuf::from(dir);
     }
-    #[cfg(target_os = "linux")]
-    {
-        if let Some(dir) = std::env::var_os("XDG_RUNTIME_DIR").filter(|d| !d.is_empty()) {
-            return PathBuf::from(dir).join("ligature").join("clipboard");
-        }
-    }
-    #[cfg(target_os = "macos")]
-    {
-        if let Some(home) = std::env::var_os("HOME").filter(|h| !h.is_empty()) {
-            return PathBuf::from(home)
-                .join("Library")
-                .join("Caches")
-                .join("org.ligatureprotocol.ligatured")
-                .join("clipboard");
-        }
-    }
-    std::env::temp_dir().join("ligature").join("clipboard")
+    locations.clipboard_cache()
 }
 
 #[cfg(test)]

@@ -14,7 +14,8 @@ use lp_crypto::signing::SigningKey;
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "needs a session bus with a notification daemon"]
 async fn notify_send_is_seen_and_a_copy_is_shown_then_closed() {
-    let backend = LinuxNotifications::start().expect("a session bus");
+    let icons = tempfile::tempdir().unwrap();
+    let backend = LinuxNotifications::start(icons.path().join("icons")).expect("a session bus");
     let mut events = backend.subscribe();
     // The monitor takes a moment to be in place.
     tokio::time::sleep(Duration::from_millis(500)).await;

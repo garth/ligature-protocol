@@ -262,12 +262,10 @@ impl Node {
             host,
         });
         let clipboard_config = ligatured::clipboard_sync::ClipboardConfig {
-            cache_dir: config
-                .cache_dir
-                .as_deref()
-                .map_or_else(ligatured::clipboard::platform_cache_dir, |d| {
-                    PathBuf::from(d).join("clipboard")
-                }),
+            cache_dir: config.cache_dir.as_deref().map_or_else(
+                || ligatured::clipboard::cache_dir(node.daemon.locations()),
+                |d| PathBuf::from(d).join("clipboard"),
+            ),
             ..ligatured::clipboard_sync::ClipboardConfig::default()
         };
         node.with_runtime(|rt| {

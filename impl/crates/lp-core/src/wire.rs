@@ -145,6 +145,24 @@ impl Timestamp {
             .format(&Rfc3339)
             .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
     }
+
+    /// RFC 3339 in UTC with nine fractional digits always present, so that
+    /// two timestamps compare as strings the way they compare as times. For
+    /// a store's sort column; parses back with [`str::parse`].
+    #[must_use]
+    pub fn to_rfc3339_fixed(&self) -> String {
+        let t = self.0.to_offset(time::UtcOffset::UTC);
+        format!(
+            "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:09}Z",
+            t.year(),
+            u8::from(t.month()),
+            t.day(),
+            t.hour(),
+            t.minute(),
+            t.second(),
+            t.nanosecond()
+        )
+    }
 }
 
 impl fmt::Display for Timestamp {
@@ -249,5 +267,22 @@ mod tests {
         let mut cbor = Vec::new();
         ciborium::into_writer(&t, &mut cbor).unwrap();
         assert_eq!(cbor[0], 0x74, "text string of 20 characters");
+    }
+
+    #[test]
+    fn the_fixed_form_sorts_as_time_and_parses_back() {
+        let whole: Timestamp = "2025-10-09T08:53:20Z".parse().unwrap();
+        let half: Timestamp = "2025-10-09T08:53:20.5Z".parse().unwrap();
+        let next: Timestamp = "2025-10-09T10:53:21+02:00".parse().unwrap();
+        assert_eq!(whole.to_rfc3339_fixed(), "2025-10-09T08:53:20.000000000Z");
+        assert_eq!(half.to_rfc3339_fixed(), "2025-10-09T08:53:20.500000000Z");
+        assert_eq!(next.to_rfc3339_fixed(), "2025-10-09T08:53:21.000000000Z");
+        assert!(
+            whole.to_rfc3339() > half.to_rfc3339(),
+            "the plain form misorders"
+        );
+        assert!(whole.to_rfc3339_fixed() < half.to_rfc3339_fixed());
+        assert!(half.to_rfc3339_fixed() < next.to_rfc3339_fixed());
+        assert_eq!(half.to_rfc3339_fixed().parse::<Timestamp>().unwrap(), half);
     }
 }

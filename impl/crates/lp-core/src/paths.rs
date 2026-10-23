@@ -129,6 +129,19 @@ impl Locations {
     pub fn keys(&self) -> PathBuf {
         self.data_dir.join(KEYS_FILE)
     }
+
+    /// Directory for clipboard content fetched ahead of a paste: under the
+    /// runtime directory, so two daemons on one machine never share one, and
+    /// gone with it.
+    pub fn clipboard_cache(&self) -> PathBuf {
+        self.runtime_dir.join("clipboard")
+    }
+
+    /// Directory for notification icons written for the platform's
+    /// notification service to read, under the runtime directory.
+    pub fn icons(&self) -> PathBuf {
+        self.runtime_dir.join("icons")
+    }
 }
 
 #[cfg(test)]

@@ -9,7 +9,9 @@
     // Multiple H1s are not used, but Mermaid blocks need fenced code without language checks.
     "MD040": false,
     // Inline HTML (<br/>) is used inside the Mermaid diagram only.
-    "MD033": false
+    "MD033": false,
+    // The changelog repeats "Fixed" and "Added" under every version (Keep a Changelog).
+    "MD024": { "siblings_only": true }
   },
   "ignores": [
     "impl/target/**",

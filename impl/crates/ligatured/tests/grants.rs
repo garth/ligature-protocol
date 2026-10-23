@@ -65,6 +65,14 @@ async fn implicit_grants_are_recorded_once_listed_and_kept_local() {
             .iter()
             .all(|f| f.envelope.fact_type.as_str() != lp_core::facts::GRANT_TYPE)
     );
+    // Nor handed to a newcomer at pairing (LP-128).
+    assert_eq!(d.all_facts().unwrap().len(), before);
+    assert!(
+        d.all_facts()
+            .unwrap()
+            .iter()
+            .all(|e| e.fact_type.as_str() != lp_core::facts::GRANT_TYPE)
+    );
 
     // A stranger is refused.
     let stranger = SigningKey::generate().unwrap();

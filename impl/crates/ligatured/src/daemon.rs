@@ -307,19 +307,26 @@ impl Daemon {
         )?;
         let (binding_rec, principal_rec) =
             self.device_records(name, Some(*person.person()), true, now)?;
-        for env in [
-            &person_fact,
-            &binding_role,
-            &principal_role,
-            &binding_rec,
-            &principal_rec,
-        ] {
-            self.store.insert(env)?;
-        }
         {
+            // The facts and the key file that names their person land
+            // together, or not at all: a retry after a failure starts clean.
             let mut keys = self.lock_keys();
-            keys.set_person(&person);
-            keys.save(&self.locations.keys())?;
+            let mut staged = keys.clone();
+            staged.set_person(&person);
+            let path = self.locations.keys();
+            self.store.transaction(|w| {
+                for env in [
+                    &person_fact,
+                    &binding_role,
+                    &principal_role,
+                    &binding_rec,
+                    &principal_rec,
+                ] {
+                    w.insert(env)?;
+                }
+                staged.save(&path)
+            })?;
+            *keys = staged;
         }
         tracing::info!(person = %person.person(), name = person_name, "initialised");
         self.start_advertising()?;
@@ -559,8 +566,7 @@ impl Daemon {
         }
         {
             let mut keys = self.lock_keys();
-            joined.persist(&self.store, &mut keys)?;
-            keys.save(&self.locations.keys())?;
+            joined.persist(&self.store, &mut keys, &self.locations.keys())?;
         }
         tracing::info!(person = ?self.person(), "joined a person through the ceremony");
         self.start_advertising()
@@ -589,13 +595,20 @@ impl Daemon {
         Ok(addrs)
     }
 
-    /// All usable facts in the store, for handing over as gossip.
+    /// All usable facts in the store that may leave this device, for handing
+    /// over as gossip: everything but the local-only types (grants).
     ///
     /// # Errors
     ///
     /// Returns a store error.
     pub fn all_facts(&self) -> Result<Vec<lp_core::envelope::Envelope>, Error> {
-        Ok(self.store.all()?.into_iter().map(|s| s.envelope).collect())
+        Ok(self
+            .store
+            .all()?
+            .into_iter()
+            .map(|s| s.envelope)
+            .filter(|e| !lp_core::facts::LOCAL_ONLY_TYPES.contains(&e.fact_type.as_str()))
+            .collect())
     }
 
     /// The newest verified person fact of this device's person.
@@ -730,7 +743,10 @@ impl Daemon {
         self: &Arc<Self>,
         clipboard: Arc<dyn crate::clipboard::Clipboard>,
     ) -> Arc<crate::clipboard_sync::ClipboardSync> {
-        self.attach_clipboard_with(clipboard, crate::clipboard_sync::ClipboardConfig::default())
+        self.attach_clipboard_with(
+            clipboard,
+            crate::clipboard_sync::ClipboardConfig::for_locations(&self.locations),
+        )
     }
 
     /// Starts synchronising the given clipboard with `config`. Called once

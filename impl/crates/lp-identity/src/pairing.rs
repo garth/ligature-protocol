@@ -15,6 +15,7 @@
 //! exporter output.
 
 use std::net::SocketAddr;
+use std::path::Path;
 
 use lp_core::envelope::Envelope;
 use lp_core::facts::{DeviceFact, DeviceKind, Registration, Role};
@@ -252,39 +253,60 @@ pub struct Joined {
 
 impl Joined {
     /// Stores everything the ceremony produced and records the person (and
-    /// the self-signing key, if given) in the key file. Gossip that fails to
-    /// verify is skipped with a warning; the roles and person fact must store.
+    /// the self-signing key, if given) in the key file at `keys_path`, as one
+    /// step: the facts are committed only once the key file is saved, and
+    /// `keys` takes the new content only then, so a failure anywhere leaves
+    /// the device as it was. Gossip that fails to verify, or that is of a
+    /// local-only type the introducer should not have sent, is skipped with
+    /// a warning; the roles and person fact must store.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Store`] or the first failure storing a required fact.
-    pub fn persist(&self, store: &TrustStore, keys: &mut KeyFile) -> Result<(), Error> {
-        store.insert(&self.person)?;
-        for env in self.roles.iter().chain(&self.devices) {
-            store.insert(env)?;
-        }
-        for env in &self.gossip {
-            if let Err(e) = store.insert(env) {
-                tracing::warn!(%e, "skipping gossip fact from the ceremony");
-            }
-        }
+    /// Returns [`Error::Store`], [`Error::Io`] from the key file, or the
+    /// first failure storing a required fact.
+    pub fn persist(
+        &self,
+        store: &TrustStore,
+        keys: &mut KeyFile,
+        keys_path: &Path,
+    ) -> Result<(), Error> {
         let person = facts::verify_person(&self.person)?;
-        keys.set_joined(person.master_key, self.self_signing.as_ref());
+        let mut staged = keys.clone();
+        staged.set_joined(person.master_key, self.self_signing.as_ref());
+        store.transaction(|w| {
+            w.insert(&self.person)?;
+            for env in self.roles.iter().chain(&self.devices) {
+                w.insert(env)?;
+            }
+            for env in &self.gossip {
+                if lp_core::facts::LOCAL_ONLY_TYPES.contains(&env.fact_type.as_str()) {
+                    tracing::warn!(kind = %env.fact_type, "the introducer sent a fact that never leaves its device; ignoring");
+                    continue;
+                }
+                if let Err(e) = w.insert(env) {
+                    tracing::warn!(%e, "skipping gossip fact from the ceremony");
+                }
+            }
+            staged.save(keys_path)
+        })?;
+        *keys = staged;
         Ok(())
     }
 }
 
 impl Introduced {
-    /// Stores the newcomer's records and the roles I signed.
+    /// Stores the newcomer's records and the roles I signed, all or none.
     ///
     /// # Errors
     ///
     /// Returns [`Error::Store`] or the first failure.
     pub fn persist(&self, store: &TrustStore) -> Result<(), Error> {
-        for env in self.devices.iter().chain(&self.roles) {
-            store.insert(env)?;
-        }
-        Ok(())
+        store.transaction(|w| {
+            for env in self.devices.iter().chain(&self.roles) {
+                w.insert(env)?;
+            }
+            Ok(())
+        })
     }
 }
 
@@ -785,6 +807,67 @@ mod tests {
         assert_eq!(introduced.roles.len(), 2);
         assert_eq!(introduced.devices.len(), 2);
         assert_eq!(i.state(), IntroducerState::Done);
+    }
+
+    /// What a newcomer persists: the person, its roles and records, with a
+    /// grant among the introducer's gossip that must not be kept, and a key
+    /// file that cannot be saved undoing the lot.
+    #[test]
+    fn persisting_a_join_is_one_step_and_keeps_no_grant() {
+        use crate::key_file::KeyFile;
+        use crate::trust_store::TrustStore;
+        use lp_core::facts::{GRANT_TYPE, GrantBasis, GrantFact, Role};
+        let alice = PersonKeys::generate().unwrap();
+        let person = facts::person_fact(&alice, "Alice", 1, now()).unwrap();
+        let binding = SigningKey::generate().unwrap();
+        let laptop = SigningKey::generate().unwrap();
+        let grant = facts::sign(
+            &laptop,
+            &GrantFact {
+                grantor: *laptop.public(),
+                grantee: *binding.public(),
+                grantee_person: None,
+                capability: TypeName::new("org.ligatureprotocol.capability.clipboard"),
+                basis: GrantBasis::Implicit,
+                standing: true,
+                expires_at: None,
+                revoked_at: None,
+                created_at: now(),
+            },
+        )
+        .unwrap();
+        let joined = Joined {
+            person: person.clone(),
+            roles: vec![
+                facts::role_fact(&alice, Role::Binding, *binding.public(), false, now()).unwrap(),
+            ],
+            devices: vec![],
+            self_signing: None,
+            gossip: vec![
+                facts::role_fact(&alice, Role::Binding, *laptop.public(), true, now()).unwrap(),
+                grant.clone(),
+            ],
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let store = TrustStore::in_memory().unwrap();
+        let mut keys = KeyFile::default();
+
+        // Nowhere to save the key file: nothing lands and the keys are unchanged.
+        let missing = dir.path().join("no-such-dir").join("keys.cbor");
+        assert!(joined.persist(&store, &mut keys, &missing).is_err());
+        assert!(store.all().unwrap().is_empty());
+        assert!(keys.person.is_none(), "the keys are as they were");
+
+        let path = dir.path().join("keys.cbor");
+        joined.persist(&store, &mut keys, &path).unwrap();
+        assert_eq!(keys.person.as_ref(), Some(alice.person()));
+        assert_eq!(
+            KeyFile::load(&path).unwrap().person.as_ref(),
+            Some(alice.person())
+        );
+        assert_eq!(store.all().unwrap().len(), 3, "person and two roles");
+        assert!(!store.contains(&facts::id(&grant)).unwrap());
+        assert!(store.of_type(GRANT_TYPE).unwrap().is_empty());
     }
 
     #[test]

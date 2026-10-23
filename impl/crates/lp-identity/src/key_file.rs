@@ -96,7 +96,13 @@ impl KeyFile {
         f.write_all(&bytes).map_err(io)?;
         f.sync_all().map_err(io)?;
         drop(f);
-        fs::rename(&tmp, path).map_err(io)
+        fs::rename(&tmp, path).map_err(io)?;
+        // The rename is durable only once the directory entry is.
+        #[cfg(unix)]
+        if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+            fs::File::open(dir).and_then(|d| d.sync_all()).map_err(io)?;
+        }
+        Ok(())
     }
 
     /// Whether this device has an identity (created or joined).

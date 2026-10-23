@@ -80,15 +80,25 @@ pub fn facts_for(store: &TrustStore, wanted: &GossipWant) -> Result<Vec<GossipFa
         .collect())
 }
 
-/// Stores a received fact if it verifies. Returns whether it was new.
+/// Stores a received fact if it verifies. Returns whether it was new, which
+/// a copy that heals a quarantined row counts as. A fact of a local-only
+/// type (a grant) is refused whoever sends it: it never leaves the device
+/// that made it.
 ///
 /// # Errors
 ///
-/// Returns [`Error::InvalidSignature`] or [`Error::Decode`] for a bad fact,
-/// which the caller discards and logs, or a store error.
+/// Returns [`Error::InvalidSignature`] or [`Error::Decode`] for a bad fact
+/// or a local-only one, which the caller discards and logs, or a store
+/// error.
 pub fn apply(store: &TrustStore, envelope: &Envelope) -> Result<bool, Error> {
+    if lp_core::facts::LOCAL_ONLY_TYPES.contains(&envelope.fact_type.as_str()) {
+        return Err(Error::Decode(format!(
+            "{} is local to the device that made it and is not accepted from a peer",
+            envelope.fact_type
+        )));
+    }
     let id = crate::facts::id(envelope);
-    if store.contains(&id)? {
+    if store.usable(&id)? {
         return Ok(false);
     }
     store.insert(envelope)?;

@@ -73,6 +73,9 @@ pub struct LinuxNotifications {
     commands: mpsc::Sender<Command>,
     events: broadcast::Sender<Event>,
     emitting: Mutex<bool>,
+    /// Where received icons are written for the notification service to
+    /// read: emptied when the backend starts and when it stops.
+    icon_dir: std::path::PathBuf,
     /// Our copies: (origin, id) -> the bus id, so a repeat replaces, a
     /// dismiss closes, and the monitor knows which copy the user closed.
     copies: Mutex<HashMap<(PublicKey, String), u32>>,
@@ -99,8 +102,10 @@ impl LinuxNotifications {
     /// Starts the backend on the session bus, if one can be found. Display
     /// works as soon as the bus answers; emitting starts once the monitor is
     /// up, and `emits` reports whether it is.
+    /// Received icons are written under `icon_dir` (the daemon's
+    /// [`lp_core::paths::Locations::icons`]) for the service to read.
     #[must_use]
-    pub fn start() -> Option<Arc<Self>> {
+    pub fn start(icon_dir: std::path::PathBuf) -> Option<Arc<Self>> {
         let address = bus_address()?;
         let (commands, rx) = mpsc::channel(EVENT_BUFFER);
         let (events, _) = broadcast::channel(EVENT_BUFFER);
@@ -108,6 +113,7 @@ impl LinuxNotifications {
             commands,
             events,
             emitting: Mutex::new(false),
+            icon_dir,
             copies: Mutex::new(HashMap::new()),
         });
         let displayer = this.clone();
@@ -133,7 +139,7 @@ impl LinuxNotifications {
                 return;
             }
         };
-        let icons = icon_dir();
+        let icons = icon_dir(&self.icon_dir);
         while let Some(command) = rx.recv().await {
             match command {
                 Command::Show {
@@ -199,6 +205,9 @@ impl LinuxNotifications {
                     let _ = done.send(outcome);
                 }
             }
+        }
+        if let Some(dir) = icons {
+            let _ = std::fs::remove_dir_all(dir);
         }
     }
 
@@ -504,14 +513,12 @@ fn read_icon(app_icon: &str) -> Option<Icon> {
         .then(|| Icon::png(bytes))
 }
 
-/// Where received icons are written for the notification daemon to read.
-fn icon_dir() -> Option<std::path::PathBuf> {
-    let runtime = std::env::var_os("XDG_RUNTIME_DIR")?;
-    let dir = std::path::Path::new(&runtime)
-        .join("ligature")
-        .join("icons");
-    std::fs::create_dir_all(&dir).ok()?;
-    Some(dir)
+/// Makes the icon directory, empty, for the notification service to read
+/// from; `None` if it cannot be made, in which case copies go without icons.
+fn icon_dir(dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    let _ = std::fs::remove_dir_all(dir);
+    std::fs::create_dir_all(dir).ok()?;
+    Some(dir.to_path_buf())
 }
 
 /// Writes `icon` under `dir` by its hash, once, and returns the path.

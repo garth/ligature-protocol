@@ -693,7 +693,8 @@ pub async fn handle(
         types::GRANTS => crate::grants::list(daemon).and_then(|g| Response::ok(id, &g)),
         types::CLIPBOARD_GET => match daemon.clipboard() {
             Some(c) => c.read_value().and_then(|value| {
-                let (mut parts, mut files) = (Vec::new(), Vec::new());
+                let (mut parts, mut files, mut promised_files) =
+                    (Vec::new(), Vec::new(), Vec::new());
                 if let Some(v) = &value {
                     parts.extend(v.parts.iter().map(|p| ClipboardPartInfo {
                         mime: p.mime.clone(),
@@ -710,7 +711,7 @@ pub async fn handle(
                             promised: true,
                         });
                     }
-                    files.extend(sync.promised_files().into_iter().map(|f| f.name));
+                    promised_files.extend(sync.promised_files().into_iter().map(|f| f.name));
                 }
                 Response::ok(
                     id,
@@ -719,6 +720,7 @@ pub async fn handle(
                         text: value.and_then(|v| v.text),
                         parts,
                         files,
+                        promised_files,
                     },
                 )
             }),
@@ -1024,9 +1026,12 @@ pub struct ClipboardText {
     /// Its other representations, pushed or promised.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub parts: Vec<ClipboardPartInfo>,
-    /// The files on it, promised.
+    /// The files on it: this device's own, from a local copy.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub files: Vec<String>,
+    /// The files on it that a peer promised, fetched on paste.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub promised_files: Vec<String>,
 }
 
 /// One representation as `lpctl clipboard` shows it.

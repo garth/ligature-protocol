@@ -314,6 +314,9 @@ async fn run(options: &Options, locations: &Locations) -> Result<(), Error> {
                     );
                 }
                 for f in &c.files {
+                    eprintln!("(file {f})");
+                }
+                for f in &c.promised_files {
                     eprintln!("(file {f}, promised)");
                 }
             }

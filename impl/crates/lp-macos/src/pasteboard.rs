@@ -10,7 +10,10 @@ use objc2_app_kit::{
     NSPasteboard, NSPasteboardItem, NSPasteboardItemDataProvider, NSPasteboardType,
     NSPasteboardWriting,
 };
-use objc2_foundation::{NSArray, NSData, NSObject, NSObjectProtocol, NSString, NSURL};
+use objc2_foundation::{
+    NSArray, NSData, NSDate, NSDefaultRunLoopMode, NSObject, NSObjectProtocol, NSRunLoop, NSString,
+    NSURL,
+};
 
 /// What a provider answers for a lazily offered type.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -211,4 +214,20 @@ pub fn write(items: &[WriteItem]) -> Result<isize, String> {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = keep;
     Ok(pb.changeCount())
+}
+
+/// Runs the main thread's run loop for ever: the pasteboard delivers a
+/// request for a lazily offered type to the owning process's main thread,
+/// so a daemon whose main thread never runs the loop never answers one. The
+/// daemon runs its own work on another thread and parks its main thread
+/// here. With no input source yet the loop returns at once, so it is rerun
+/// with a pause.
+pub fn run_main_loop() -> ! {
+    let run_loop = NSRunLoop::mainRunLoop();
+    loop {
+        let until = NSDate::dateWithTimeIntervalSinceNow(1.0);
+        if !run_loop.runMode_beforeDate(NSDefaultRunLoopMode, &until) {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+    }
 }

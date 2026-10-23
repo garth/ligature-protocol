@@ -47,8 +47,7 @@ enum Command {
     ClipboardHelper,
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let options = Options::parse();
     if let Some(Command::ClipboardHelper) = options.command {
         #[cfg(target_os = "linux")]
@@ -65,6 +64,32 @@ async fn main() {
             std::process::exit(1);
         }
     }
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    // On macOS the pasteboard answers a paste of a promised type through
+    // the main thread's run loop, so the daemon's work runs on another
+    // thread and the main thread runs that loop.
+    #[cfg(target_os = "macos")]
+    {
+        std::thread::Builder::new()
+            .name("ligatured".into())
+            .spawn(move || {
+                runtime.block_on(daemon(options));
+                std::process::exit(0);
+            })
+            .expect("spawn the daemon thread");
+        lp_macos::run_main_loop();
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        runtime.block_on(daemon(options));
+    }
+}
+
+/// The daemon proper, once the runtime is up.
+async fn daemon(options: Options) {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),

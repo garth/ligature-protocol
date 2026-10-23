@@ -175,10 +175,10 @@ follow them.
 3. **Notifications among all of a person's devices.** Done: a notification posted on any
    device that can see its own appears on every device that displays them, dismissed
    everywhere at once ([plan](docs/milestones/03-notifications.md)).
-4. **File transfer among a person's devices.** In progress: a file chosen on any device
-   lands on another over the LP session itself, several at once where the receiver allows,
-   with progress and cancel, and a receiver can fetch content a sender has offered; the run
-   with the real devices remains ([plan](docs/milestones/04-files.md)).
+4. **File transfer among a person's devices.** Done: a file chosen on any device lands on
+   another over the LP session itself, several at once where the receiver allows, with
+   progress and cancel, and a receiver can fetch content a sender has offered
+   ([plan](docs/milestones/04-files.md)).
 5. **A clipboard that carries rich text, images and files.** Planned, built on milestone
    4: a `set` carries several representations of one selection, small content is pushed on
    copy as text is today, and large content is announced and fetched only when pasted.

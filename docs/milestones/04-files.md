@@ -1,8 +1,14 @@
 # Milestone 4: file transfer among a person's devices over the LP session
 
-**Status:** Accepted by the owner on 2026-10-22, with files landing in the platform's own
-download folder, nothing shaped around LocalSend, and parallel transfers bounded by a
-negotiated number of streams. The tasks are LP-101 to LP-104 under the epic LP-87.
+**Status:** Done. Accepted by the owner on 2026-10-22, with files landing in the platform's
+own download folder, nothing shaped around LocalSend, and parallel transfers bounded by a
+negotiated number of streams; the tasks LP-101 to LP-104 under the epic LP-87 are done, and
+the exit criteria were run on the Linux machine, the Mac and the Pixel on 2026-10-22 (LP-104,
+recorded on LP-87). The run found three things on the phone, fixed under LP-103: MediaStore
+numbered a clashing name `(1)` where the rule says `(2)`, the modification time was not kept,
+and a received file raised a second notification beside the app's own. Not run: the
+access-point roam (one access point) and a file larger than the phone's free memory (12 GB;
+a 1 GB file streamed with the app's memory flat).
 
 ## 1. Goal
 

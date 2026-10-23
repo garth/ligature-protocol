@@ -135,7 +135,8 @@ The reference implementation is Rust and is also the production implementation
   milestone 5's clipboard to reference) and `04-implementation-decisions.md` records its
   non-protocol choices (`FilesSync` with `FileStore` and `Landing`, part files renamed after
   the hash check, MediaStore pending rows written through `/proc/self/fd` on Android, one
-  progress notification per transfer); its run with the real devices is LP-104.
+  progress notification per transfer); it is done, its run with the real devices recorded on
+  LP-87.
 - `schemas/*.schema.json`: JSON Schema 2020-12 drafts (person, device, capability, grant,
   group, role, revocation, envelope, message, pairing, capability.clipboard,
   capability.notifications, capability.files; `control` is implementation-only).

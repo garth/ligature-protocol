@@ -251,6 +251,9 @@ impl ClipboardSync {
     /// Asks `peer` for its current value, as on connecting; the answer is
     /// applied like any `set`. Returns whether the peer is reachable.
     pub async fn request(&self, peer: &PublicKey) -> bool {
+        if !self.peer_params(peer).is_some_and(|p| p.rich) {
+            return false;
+        }
         let tx = lock(&self.senders).get(peer).cloned();
         match tx {
             Some(tx) => tx

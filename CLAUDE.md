@@ -110,7 +110,9 @@ The reference implementation is Rust and is also the production implementation
 
 - `docs/spec/NN-*.md`: spec chapters, one per layer plus platform notes, threat model and
   shared devices/groups (chapter 10).
-  Each section has an intent paragraph and inline open questions. No wire formats yet.
+  Each section has an intent paragraph and inline open questions; the wire formats that
+  exist (the envelope, the stream header and frame, gossip, pairing and the capability
+  families) are those with an ADR behind them.
 - `docs/adr/`: Nygard-format ADRs (Context / Decision / Consequences). Superseded ones
   live in `docs/adr/superseded/`.
 - `docs/glossary.md`, `docs/prior-art.md`.
@@ -118,8 +120,10 @@ The reference implementation is Rust and is also the production implementation
   from `SECURITY.md` and the README; a Critical or High finding is named in one only once
   it is fixed or has an advisory.
 - `docs/milestones/`: one plan per milestone with scope, non-goals, decisions to pin, exit
-  criteria and a task breakdown. `01-clipboard-poc.md` is done (Linux and macOS share the
-  clipboard) and `01-implementation-decisions.md` records its non-protocol choices (store is
+  criteria and a task breakdown; milestones 1 to 5 are done and 6 to 8 are drafted (epics
+  LP-111, LP-112 and LP-113), none in progress. `01-clipboard-poc.md` is done (Linux and
+  macOS share the clipboard) and `01-implementation-decisions.md` records its non-protocol
+  choices (store is
   SQLite via rusqlite bundled; keys in a separate 0600 file; state under `data/` in the
   project root during milestone 1, gitignored, and in the platform data directory since
   LP-85; no configuration file; `lpctl init --name` creates the first identity).
@@ -133,7 +137,7 @@ The reference implementation is Rust and is also the production implementation
   two directions, dismissal fanned out directly, Linux emitting by monitoring the session
   bus, macOS display-only) has `03-implementation-decisions.md` for its non-protocol
   choices (the `Notifications` trait and `NotificationSync`, `zbus` 6 over the session bus
-  with a monitor connection, `lpctl notify`). `04-files.md` is the current one (file
+  with a monitor connection, `lpctl notify`). `04-files.md` is done (file
   transfer native to the session: a control stream per transfer with an offer and an
   accept, a data stream per file with chunks within the 1 MiB frame and a hash at the end,
   the receiver's `maxStreams` bounding how many run at once, cancel by stream reset, a
@@ -142,21 +146,25 @@ The reference implementation is Rust and is also the production implementation
   non-protocol choices (`FilesSync` with `FileStore` and `Landing`, part files renamed after
   the hash check, MediaStore pending rows written through `/proc/self/fd` on Android, one
   progress notification per transfer); it is done, its run with the real devices recorded on
-  LP-87. `05-rich-clipboard.md` is the current one (a `set` of several representations,
+  LP-87. `05-rich-clipboard.md` is done (a `set` of several representations,
   pushed within the receiver's `maxBytes` and announced above it as `files` descriptors
   fetched only on paste, files always announced, `get` for the current value, the echo rule
   over the set) and `05-implementation-decisions.md` records its non-protocol choices
   (`Value`, `Incoming` with promises and a `Fetch`, the fingerprint echo rule, the Wayland
   helper's own data-control source, NSPasteboard data providers, the Android content
-  provider and Save action); it is done, its run with the real devices recorded on LP-95.
+  provider and Save action); its run with the real devices is recorded on LP-95.
+  `06-phone-and-media.md` (the phone's SMS and calls, media control), `07-shared-input.md`
+  (one keyboard and mouse across the desktops, the phone as a touchpad) and
+  `08-remote-desktop.md` (a screen viewed, then controlled) are drafts.
 - `schemas/*.schema.json`: JSON Schema 2020-12 drafts (person, device, capability, grant,
   group, role, revocation, envelope, message, pairing, capability.clipboard,
   capability.notifications, capability.files; `control` is implementation-only).
   Spec chapters link to these by relative path.
 - `impl/`: Rust cargo workspace, edition 2024. Crates: `lp-core` (shared types, capability
-  model), `lp-identity` (master key, ceremony, roles, trust store, optional publication),
-  `lp-crypto` (signing, raw-public-key TLS material),
-  `lp-transport` (QUIC connections, local discovery, remote discovery and relay clients),
+  model), `lp-identity` (master key, ceremony, roles, trust store; no publication, ADR
+  0032), `lp-crypto` (signing, raw-public-key TLS material),
+  `lp-transport` (QUIC connections, local discovery; the remote discovery and relay
+  clients are unimplemented stubs),
   `ligatured` (user daemon; control socket; systemd unit in `crates/ligatured/systemd/`,
   launchd plist in `crates/ligatured/launchd/`),
   `lpctl` (CLI), `lp-vectors` (conformance vector formats and loader, test support,
@@ -209,13 +217,14 @@ cargo test -p lp-core                      # one crate
 cargo test -p lp-core capability::         # tests whose path matches
 cargo fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
+cargo doc --workspace --no-deps      # no rustdoc warnings
 ```
 
 The daemon and CLI default to the platform locations (`~/.local/share/ligature` and
 `$XDG_RUNTIME_DIR/ligature` on Linux, `~/Library/Application Support/ligature` and
 `$TMPDIR/ligature` on macOS); `--data-dir` keeps a test daemon apart, and an explicit data
 directory puts the socket beside the store. The owner's own daemon on this machine runs as
-the systemd user unit once LP-85's switch-over is done; never kill it from the tool shell.
+the systemd user unit from `~/.local/bin`; never kill it from the tool shell.
 
 CI treats clippy warnings as errors and the workspace lints set `missing_docs = "warn"`,
 so every public item needs a doc comment. `unsafe_code` is forbidden workspace-wide, except
@@ -232,7 +241,8 @@ cd impl/android
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Markdown lint uses `.markdownlint-cli2.jsonc` (100-column lines, license files ignored).
+Markdown lint uses `.markdownlint-cli2.jsonc` (100-column lines, licence files ignored) over
+every Markdown file in the repository, as CI does: `npx --yes markdownlint-cli2 "**/*.md"`.
 Every schema must compile under draft 2020-12 with formats enabled, as CI does:
 
 ```sh
@@ -253,7 +263,8 @@ npx ajv compile --spec=draft2020 -c ajv-formats -s schemas/<name>.schema.json \
 - New capability families each need a schema under `schemas/` and a section in
   `docs/spec/05-capabilities.md`.
 - The `org.ligatureprotocol` type names and the `ligatureprotocol.org` schema `$id`s are
-  placeholders; register the domain or rename before any public release.
+  placeholders, still so in the alpha releases; register the domain or rename before the
+  first release that is not alpha.
 - Device security is out of scope (ADR 0024): never add lock, idle, local-authentication
   or local-store-protection requirements to the spec. The protocol defines authority (who
   is authenticated behind a request) and trust (which keys are recognised), and takes a

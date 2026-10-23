@@ -42,7 +42,6 @@ Every fact that travels between devices is signed and self-verifying:
 | Group key introduction | The inviting admin's binding key | The admin's master key, already a known person |
 | Group membership acceptance | The member's user-signing key | The member's master key, already known |
 | Group membership document (versioned) | The group key | The group key learned at joining; a higher version replaces a lower |
-| Standing grant | The granting device's key | The trust store |
 | Relay list | The device's own key | The trust store |
 
 Every signed fact travels in one envelope
@@ -88,8 +87,8 @@ sequenceDiagram
     A->>B: person facts, bindings, principals
     B->>A: person facts, bindings, principals
     Note over A,B: 3. everything else
-    A->>B: group documents, relays, grants
-    B->>A: group documents, relays, grants
+    A->>B: group documents, relays
+    B->>A: group documents, relays
     Note over A,B: each side verifies every fact before storing it and discards what fails
 ```
 

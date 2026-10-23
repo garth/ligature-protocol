@@ -4,8 +4,7 @@
 //! users and devices, the capability model (descriptors, requests, grants) and
 //! the error type. It contains no I/O and no cryptography.
 //!
-//! **Status:** milestone 1 in progress. See `docs/spec/00-overview.md` for the layering these
-//! modules correspond to.
+//! See `docs/spec/00-overview.md` for the layering these modules correspond to.
 
 pub mod capability;
 pub mod device;

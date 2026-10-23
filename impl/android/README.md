@@ -1,6 +1,7 @@
 # Ligature for Android
 
-The Android app of milestone 2: the Rust daemon (`ligatured`) built as a library
+The Android app, begun in milestone 2 and carrying every capability since: the Rust
+daemon (`ligatured`) built as a library
 (`crates/ligature-android`) and wrapped in a Kotlin app that supplies what Android keeps
 from a library: the clipboard, a foreground service, the Wi-Fi multicast lock, the device
 name and a screen for the pairing ceremony. LineageOS is the first target: no Google
@@ -35,7 +36,7 @@ The debug APK is `app/build/outputs/apk/debug/app-debug.apk`:
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Each [release](https://github.com/ligature-protocol/ligature-protocol/releases) carries
+Each [release](https://github.com/garth/ligature-protocol/releases) carries
 `ligature-<version>-android.apk`, built by the release workflow and signed with the
 keystore in the repository secrets; sideload it the same way. The app's `versionName` is
 the workspace version in `impl/Cargo.toml` and its `versionCode` is derived from it

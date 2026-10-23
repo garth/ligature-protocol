@@ -11,7 +11,7 @@ fetched a promised image for its thumbnail, which now gets a placeholder; and th
 died on a would-block read. Two platform facts stand: a desktop clipboard manager that reads
 every selection (Omarchy's does) fetches a promised image once as soon as it appears, and
 `get` and a textless set go only to devices of this version. Not run: a device without
-`fetch`, timing text during a large fetch, and CI, since nothing was pushed.
+`fetch` and timing text during a large fetch. CI ran on the push that followed.
 
 ## 1. Goal
 

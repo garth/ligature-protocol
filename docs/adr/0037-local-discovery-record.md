@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-10-19
-**Extends:** [ADR 0012](0012-decentralised-helpers.md) and
+**Extends:** [ADR 0012](0012-decentralised-untrusted-helpers.md) and
 [ADR 0036](0036-stream-framing-and-message-typing.md)
 
 ## Context

@@ -39,11 +39,6 @@ ciborium = "0.2"
 serde_json = "1.0"
 hex = "0.4"
 base64 = "0.22"
-tempfile = "3"
-gethostname = "1"
-if-addrs = "0.15"
-ligatured = { path = "crates/ligatured", version = "0.1.1-alpha" }
-jsonschema = { version = "0.59", default-features = false }
 time = { version = "0.3", features = ["std", "formatting", "parsing", "serde-well-known", "macros"] }
 tokio = { version = "1.53", features = ["rt-multi-thread", "net", "sync", "time", "macros", "fs", "io-util", "signal"] }
 rusqlite = { version = "0.40", features = ["bundled"] }
@@ -53,13 +48,24 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring", "log"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "logging"] }
 mdns-sd = "0.21"
+if-addrs = "0.15"
 
-# Platform integration and tooling (LP-29). Clipboard crates are target-gated in
-# ligatured; library crates never depend on them.
-clap = { version = "4.6", features = ["derive", "env"] }
-qrcode = { version = "0.14", default-features = false }
+# The daemon, the CLI and the Android library: the daemon's own crates, logging,
+# the command line, the device name and the pairing QR code.
+ligatured = { path = "crates/ligatured", version = "0.1.1-alpha" }
+lp-macos = { path = "crates/lp-macos", version = "0.1.1-alpha" }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4.6", features = ["derive", "env"] }
+gethostname = "1"
+qrcode = { version = "0.14", default-features = false }
+
+# Test support: temporary directories and the schema checks of the vectors.
+tempfile = "3"
+jsonschema = { version = "0.59", default-features = false }
+
+# Platform integration (LP-29). Clipboard, notification and pasteboard crates are
+# target-gated in ligatured; library crates never depend on them.
 wl-clipboard-rs = "0.9"
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
@@ -68,7 +74,6 @@ rustix = { version = "1", features = ["fs", "event", "pipe"] }
 # Linux notifications over the session bus (milestone 3, LP-91).
 zbus = { version = "6", default-features = false, features = ["tokio", "proxy"] }
 futures-util = { version = "0.3", default-features = false }
-lp-macos = { path = "crates/lp-macos", version = "0.1.1-alpha" }
 objc2 = "0.6"
 objc2-foundation = "0.3"
 objc2-app-kit = "0.3"

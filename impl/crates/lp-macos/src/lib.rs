@@ -3,11 +3,11 @@
 //! `ligatured` forbids `unsafe`, and a lazy pasteboard data provider is an
 //! Objective-C class that needs it to be initialised and marked for any
 //! thread, so that code lives here. The daemon reads the pasteboard's value
-//! through [`read`], writes one through [`write`] with a provider that is
+//! through `read`, writes one through `write` with a provider that is
 //! called when an application asks for a lazily offered type, and polls
-//! [`change_count`]; its main thread runs the Cocoa run loop through
-//! [`run_main_loop`], which the pasteboard's requests need. On any platform
-//! but macOS the crate has no items.
+//! `change_count`; its main thread runs the Cocoa run loop through
+//! `run_main_loop`, which the pasteboard's requests need. On any platform
+//! but macOS the crate has no items, so the names are not links.
 
 #[cfg(target_os = "macos")]
 mod pasteboard;

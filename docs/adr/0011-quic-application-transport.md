@@ -1,6 +1,8 @@
 # 0011. Application-level QUIC transport authenticated by device keys
 
-**Status:** Proposed
+**Status:** Proposed; the MLS layer above QUIC is superseded by [ADR
+0019](0019-pairwise-least-exposure-encryption.md) (the QUIC/TLS session is the end-to-end layer) and
+the library choice is in [ADR 0028](0028-quinn-over-rustls.md); the transport decision stands
 **Date:** 2026-10-17
 **Supersedes:** the transport part of [ADR 0005](superseded/0005-direct-transport.md)
 

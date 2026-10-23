@@ -1,6 +1,8 @@
 # 0012. Decentralised, replaceable, untrusted connectivity helpers
 
-**Status:** Proposed
+**Status:** Proposed; the DID document and Space records are superseded by [ADR
+0016](0016-no-required-shared-state.md) and [ADR 0032](0032-no-publication-self-asserted-names.md)
+(helpers are listed in the user's own gossiped records); the helper roles stand
 **Date:** 2026-10-17
 **Supersedes:** the remote-connectivity part of [ADR 0005](superseded/0005-direct-transport.md)
 

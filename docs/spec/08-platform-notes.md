@@ -133,9 +133,10 @@ protocol of its own. LineageOS is the first target (no Google services, sideload
 - **Files.** The app has no download folder of its own: a received file is a row in
   MediaStore's Downloads collection, inserted pending, written by the node through a
   descriptor the app opened, and published once verified, so the Files app shows it under
-  Downloads and MediaStore numbers a clashing name. Sending starts from the share sheet:
-  the user shares one or several files to Ligature and picks a device that receives them;
-  the app opens each one and the node reads it through the descriptor. Each transfer is a
+  Downloads; the app gives a clashing name a numbered suffix before inserting the row.
+  Sending starts from the share sheet: the user shares one or several files to Ligature and
+  picks a device that receives them; the app opens each one and the node reads it through
+  the descriptor. Each transfer is a
   notification with a progress bar and a cancel. The phone takes one file at a time
   (`maxStreams` 1) and sends up to four at once (chapter 05 section 3d).
 - **SMS, telephony.** SMS and telephony need their own permissions and, for SMS, store
@@ -251,5 +252,4 @@ printed code.
 
 ## 6. Open questions
 
-- Which platforms must be supported by the first public release?
 - How are platform-specific capability limitations expressed in descriptors?

@@ -1,6 +1,6 @@
 # Milestone 1: a Linux machine and a Mac share the clipboard
 
-**Status:** Complete. Every task is done. The loopback end-to-end test (G2) runs in CI on
+**Status:** Done. Every task is done. The loopback end-to-end test (G2) runs in CI on
 Linux and macOS, and the two-machine run between a Linux machine and a Mac (G1) has been
 done by hand: pair, copy and paste text both ways, revoke, restart.
 

@@ -1,6 +1,10 @@
 # 0015. Shared multi-user devices, groups, and scoped capabilities
 
-**Status:** Proposed
+**Status:** Proposed; the MLS device and per-grant groups are superseded by [ADR
+0019](0019-pairwise-least-exposure-encryption.md) and the Lexicon changes by [ADR
+0020](0020-json-schema-and-reverse-dns-names.md); the scoping, groups and approval decisions stand,
+extended by [ADR 0021](0021-group-key-and-group-owned-devices.md) to [ADR
+0023](0023-group-devices-sessions-and-authority.md)
 **Date:** 2026-10-17
 
 ## Context

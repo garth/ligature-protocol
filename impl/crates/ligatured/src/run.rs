@@ -319,7 +319,7 @@ async fn dial(daemon: &Daemon, addr: SocketAddr) -> Option<PublicKey> {
 /// Every `every`, redials each trusted peer that was reached in this process
 /// and is not connected now, at its last address; and, while any of the
 /// person's bindings is not connected, asks for fresh mDNS queries every
-/// [`REQUERY_EVERY`]. A restarted peer keeps its address on a fixed port and
+/// thirty seconds (`REQUERY_EVERY`). A restarted peer keeps its address on a fixed port and
 /// is back on the first tick; one on a new port is found by the queries
 /// without waiting for an announcement that may have gone unheard (LP-83).
 pub fn spawn_reconnect(daemon: Arc<Daemon>, every: Duration) -> tokio::task::JoinHandle<()> {

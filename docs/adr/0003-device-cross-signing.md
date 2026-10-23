@@ -1,6 +1,9 @@
 # 0003. Per-device keys cross-signed by the user identity
 
-**Status:** Proposed
+**Status:** Proposed; the key location (a DID document or a Space record) is superseded by [ADR
+0016](0016-no-required-shared-state.md) and [ADR 0032](0032-no-publication-self-asserted-names.md),
+the key set by [ADR 0031](0031-split-keys-from-the-start.md), the revocation rules extended by [ADR
+0039](0039-revocation-scope-and-live-session-close.md); the cross-signing decision stands
 **Date:** 2026-10-17
 
 ## Context

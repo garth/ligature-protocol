@@ -3,7 +3,7 @@
 **Status:** Accepted
 **Date:** 2026-10-18
 **Extends:** [ADR 0011](0011-quic-application-transport.md),
-[ADR 0028](0028-quinn-rustls-raw-public-keys.md) and
+[ADR 0028](0028-quinn-over-rustls.md) and
 [ADR 0035](0035-byte-exact-signatures-forgiving-decoding.md)
 
 ## Context

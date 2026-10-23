@@ -15,8 +15,8 @@
 //! WireGuard is not part of this crate or of the protocol; see the non-core
 //! `wireguard-integration` crate.
 //!
-//! **Status:** milestone 1 in progress: QUIC with raw public keys is
-//! implemented; discovery is not.
+//! QUIC with raw public keys and mDNS discovery are implemented; BLE, the
+//! remote discovery and the relay client are placeholders.
 
 pub mod ble;
 pub mod discovery;

@@ -6,8 +6,6 @@
 //! presents as a TLS raw public key (RFC 7250) and verifies, and the signing
 //! operations `lp-identity` uses for role signatures. There is no group key.
 //!
-//! **Status:** milestone 1 in progress: signing keys are implemented, TLS
-//! material is not.
 
 pub mod hash;
 pub mod session;

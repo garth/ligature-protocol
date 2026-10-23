@@ -5,7 +5,7 @@ LP-78), and on 2026-10-20 a Pixel 8 Pro on LineageOS 24.0 (Android 17) joined th
 machine and the Mac and ran every exit criterion (LP-74; section 4 says what was seen). The
 run produced four fixes (LP-80, LP-81, LP-83, LP-84). The platform-signed build turned out
 to be impossible on an official LineageOS build (section 6), so the automatic send on an
-unmodified ROM is the first item for the next milestone (section 7).
+unmodified ROM was deferred (section 7); sending on a tap has stood since.
 
 ## 1. Goal
 

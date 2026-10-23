@@ -1,6 +1,9 @@
 # 0016. No required shared state: local trust stores, gossip, and live capabilities
 
-**Status:** Proposed
+**Status:** Proposed; the DID document as the one off-device record is superseded by [ADR
+0032](0032-no-publication-self-asserted-names.md) (nothing is published); the local-store and gossip
+decisions stand, the store's rules extended by [ADR
+0039](0039-revocation-scope-and-live-session-close.md)
 **Date:** 2026-10-17
 **Supersedes:** [ADR 0006](superseded/0006-atproto-space-shared-state.md)
 

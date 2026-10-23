@@ -1,6 +1,8 @@
 # 0008. Typed capabilities with explicit discovery, request and grant
 
-**Status:** Proposed
+**Status:** Proposed; the Lexicon per family is superseded by [ADR
+0020](0020-json-schema-and-reverse-dns-names.md) (a JSON Schema per type); the capability model
+stands
 **Date:** 2026-10-17
 
 ## Context

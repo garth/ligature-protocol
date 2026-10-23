@@ -56,9 +56,9 @@ key may offer a share and nothing else for a limited time.
 
 ## 5. Secrets at rest
 
-The protocol stores nothing off-device. Each device protects its own local store with
-platform facilities (chapter 08). An optional backup (chapter 06 section 6) is encrypted
-to a key only the user holds.
+The protocol stores nothing off-device. How a device protects its own local store is the
+device's business, outside this protocol (ADR 0024). An optional backup (chapter 06 section
+6) is encrypted to a key only the user holds.
 
 ## 6. Settled points
 

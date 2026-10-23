@@ -6,8 +6,6 @@
 //! a verified key with a role (`binding`, `principal`, `person`) in a proximity
 //! ceremony; every device of that person then trusts it. There is no account
 //! and no required server.
-//!
-//! **Status:** milestone 1 in progress.
 
 pub mod cross_signing;
 pub mod facts;

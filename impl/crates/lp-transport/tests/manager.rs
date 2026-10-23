@@ -160,10 +160,11 @@ async fn a_restarted_peer_replaces_the_connection_we_still_hold() {
 /// keep (`we_keep_our_dial`), the other is closed, each side holds one
 /// connection to the other, each was told about the kept one, and a stream
 /// opened from either side reaches the other over it. The dials are started
-/// together and awaited together, so they do cross; the outcome is the same
-/// when they happen not to, since a completed dial of the lower side
-/// replaces the higher side's and a completed dial of the higher side is
-/// dropped in favour of the lower side's.
+/// together and awaited together; whether they cross on the wire or one
+/// lands before the other completes depends on the machine, and the kept
+/// connection is the same either way, since a completed dial of the lower
+/// side replaces the higher side's and a completed dial of the higher side
+/// is dropped in favour of the lower side's.
 #[tokio::test]
 async fn crossed_dials_keep_the_connection_dialled_by_the_lower_key() {
     let (a_ep, a_key) = endpoint();
@@ -213,23 +214,28 @@ async fn crossed_dials_keep_the_connection_dialled_by_the_lower_key() {
     assert_eq!(b.peers(), vec![*a_key.public()], "one connection to a");
     let a_holds = a.peer(b_key.public()).unwrap();
     let b_holds = b.peer(a_key.public()).unwrap();
-    // The connection each side keeps is the one its `connect` returned when
-    // its own dial won, and the other side's when it lost.
-    if a_is_lower {
-        assert_eq!(a_holds.raw().stable_id(), from_a.raw().stable_id());
-        assert_ne!(b_holds.raw().stable_id(), from_b.raw().stable_id());
+    // The winner keeps the connection its `connect` returned. The loser's
+    // `connect` returned either its own dial's connection, which is then
+    // closed in favour of the winner's, or the winner's connection itself,
+    // when that had already landed and the duplicate dial was dropped on
+    // the spot; which one depends on the timing the runner gives the race.
+    let (winner_holds, winner_from, loser_holds, loser_from) = if a_is_lower {
+        (&a_holds, &from_a, &b_holds, &from_b)
     } else {
-        assert_eq!(b_holds.raw().stable_id(), from_b.raw().stable_id());
-        assert_ne!(a_holds.raw().stable_id(), from_a.raw().stable_id());
-    }
-    // The losing dial's connection is closed.
-    let loser = if a_is_lower { &from_b } else { &from_a };
-    assert!(
-        tokio::time::timeout(Duration::from_secs(2), loser.raw().closed())
-            .await
-            .is_ok(),
-        "the losing dial was closed"
+        (&b_holds, &from_b, &a_holds, &from_a)
+    };
+    assert_eq!(
+        winner_holds.raw().stable_id(),
+        winner_from.raw().stable_id()
     );
+    if loser_from.raw().stable_id() != loser_holds.raw().stable_id() {
+        assert!(
+            tokio::time::timeout(Duration::from_secs(2), loser_from.raw().closed())
+                .await
+                .is_ok(),
+            "the losing dial was closed"
+        );
+    }
 
     // Each side was told about the connection it keeps (possibly after the
     // one it dropped).
@@ -272,6 +278,74 @@ async fn crossed_dials_keep_the_connection_dialled_by_the_lower_key() {
         .expect("reached a");
     a.shutdown();
     b.shutdown();
+}
+
+/// The same tie-break when the dials do not cross on the wire but one
+/// lands before the other is made: a later dial from the lower side
+/// replaces the higher side's connection, and a later dial from the higher
+/// side is dropped at once, its `connect` returning the connection already
+/// held. Both orderings, deterministically.
+#[tokio::test]
+async fn a_dial_that_lands_after_the_peers_is_settled_by_the_same_tie_break() {
+    let (x_ep, x_key) = endpoint();
+    let (y_ep, y_key) = endpoint();
+    // `lo` is the side with the lower key, `hi` the other.
+    let ((lo, lo_key, lo_addr), (hi, hi_key, hi_addr)) = {
+        let x = (x_ep.local_addr().unwrap(), x_ep);
+        let y = (y_ep.local_addr().unwrap(), y_ep);
+        let (xm, _) = Manager::start(x.1);
+        let (ym, _) = Manager::start(y.1);
+        if x_key.public() < y_key.public() {
+            ((xm, x_key, x.0), (ym, y_key, y.0))
+        } else {
+            ((ym, y_key, y.0), (xm, x_key, x.0))
+        }
+    };
+
+    // The higher side dials first and the dial lands; then the lower side
+    // dials: its connection replaces the first on both sides.
+    let first = hi.connect(lo_addr).await.unwrap();
+    assert_eq!(first.peer(), lo_key.public());
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while lo.peer(hi_key.public()).is_none() {
+        assert!(tokio::time::Instant::now() < deadline, "lo holds hi's dial");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let second = lo.connect(hi_addr).await.unwrap();
+    assert!(second.dialled_by_us());
+    assert_eq!(
+        lo.peer(hi_key.public()).unwrap().raw().stable_id(),
+        second.raw().stable_id(),
+        "the lower side keeps its own dial"
+    );
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while hi.peer(lo_key.public()).is_none_or(|c| c.dialled_by_us()) {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "hi adopts lo's dial"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(
+        tokio::time::timeout(Duration::from_secs(2), first.raw().closed())
+            .await
+            .is_ok(),
+        "the higher side's dial is closed"
+    );
+
+    // Now the higher side dials again while the lower side's connection
+    // lives: the dial is a duplicate, dropped on the spot, and `connect`
+    // hands back the connection already held.
+    let again = hi.connect(lo_addr).await.unwrap();
+    assert!(!again.dialled_by_us());
+    assert_eq!(
+        again.raw().stable_id(),
+        hi.peer(lo_key.public()).unwrap().raw().stable_id()
+    );
+    assert_eq!(hi.peers(), vec![*lo_key.public()]);
+    assert_eq!(lo.peers(), vec![*hi_key.public()]);
+    hi.shutdown();
+    lo.shutdown();
 }
 
 /// With admission required, a stream of an allowed purpose goes through at

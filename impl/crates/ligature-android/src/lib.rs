@@ -63,6 +63,45 @@ pub enum Event {
     },
 }
 
+/// One entry of a clipboard value the node sets on the host, served by the
+/// app's content provider under `key` (milestone 5): a pushed part, a
+/// promised part the node fetches on first open, or a promised file.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ClipItem {
+    /// The provider's key for it, the last segment of its content URI.
+    pub key: String,
+    /// Its content type.
+    pub mime: String,
+    /// Its display name.
+    pub name: String,
+    /// Its size in bytes.
+    pub size: u64,
+    /// Whether it is a file of a copied selection rather than a
+    /// representation of the value.
+    pub file: bool,
+}
+
+/// A clipboard value as the node sets it on the host: the text and HTML go
+/// on the clip directly, the items as content URIs of the app's provider.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct HostClipValue {
+    /// The plain text.
+    pub text: Option<String>,
+    /// The HTML representation.
+    pub html: Option<String>,
+    /// The other representations and the files.
+    pub items: Vec<ClipItem>,
+}
+
+/// What the provider serves for a key: bytes, or a file to open.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ClipItemData {
+    /// The bytes, for a part held in memory.
+    pub bytes: Option<Vec<u8>>,
+    /// A path to open, for a file or a large part in the cache.
+    pub path: Option<String>,
+}
+
 /// Where the host put a download the node is about to write.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct DownloadTarget {
@@ -148,6 +187,11 @@ pub trait Host: Send + Sync {
     /// Puts `text` on the system clipboard. Returns whether the platform
     /// accepted it.
     fn set_clipboard(&self, text: String) -> bool;
+    /// Puts a whole value on the system clipboard: the text, the HTML and
+    /// the items as content URIs the app's provider serves through
+    /// [`node::Node::clipboard_item`]. Returns whether the platform accepted
+    /// it.
+    fn set_clipboard_value(&self, value: HostClipValue) -> bool;
     /// Shows, or updates, a copy of another device's notification. Returns
     /// whether the platform accepted it.
     fn show_notification(&self, copy: NotificationCopy) -> bool;

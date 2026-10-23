@@ -51,6 +51,7 @@ class MainActivity : ComponentActivity() {
                         onDismissPairing = NodeHolder::dismissPairing,
                         onRevoke = NodeHolder::revoke,
                         onSendClipboard = ::sendClipboard,
+                        onReceiveClipboard = ::receiveClipboard,
                         onCopy = ::copy,
                         onShare = ::share,
                         onBatterySettings = ::batterySettings,
@@ -74,19 +75,22 @@ class MainActivity : ComponentActivity() {
         // With focus the app may read the clipboard: send what is there, in
         // case the user copied something and then opened the app.
         if (hasFocus && NodeHolder.isRunning) {
-            NodeHolder.readClipboard(this)?.let { NodeHolder.clipboardChanged(it) }
+            NodeHolder.readAndSend(this)
         }
     }
 
     private fun sendClipboard() {
-        val text = NodeHolder.readClipboard(this)
-        val message = when (text) {
+        val message = when (val n = NodeHolder.readAndSend(this)) {
             null -> getString(R.string.clipboard_empty)
-            else -> {
-                val n = NodeHolder.clipboardChanged(text)
-                if (n == 0) getString(R.string.sent_to_none) else getString(R.string.sent_to, n)
-            }
+            0 -> getString(R.string.sent_to_none)
+            else -> getString(R.string.sent_to, n)
         }
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun receiveClipboard() {
+        val n = NodeHolder.requestClipboard()
+        val message = if (n == 0) getString(R.string.sent_to_none) else getString(R.string.asked_n, n)
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
 

@@ -7,6 +7,10 @@ import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.net.Uri
 import android.graphics.BitmapFactory
 import android.graphics.drawable.Icon
 import android.os.Build
@@ -16,7 +20,11 @@ import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import org.ligatureprotocol.core.ClipItem
+import org.ligatureprotocol.core.ClipItemData
 import org.ligatureprotocol.core.Config
+import org.ligatureprotocol.core.HostClipValue
+import org.ligatureprotocol.core.OutgoingFile
 import org.ligatureprotocol.core.Device
 import org.ligatureprotocol.core.DownloadTarget
 import org.ligatureprotocol.core.Event
@@ -90,6 +98,7 @@ object NodeHolder : Host {
             dataDir = dir.absolutePath,
             deviceName = deviceName(appContext),
             debugLogging = BuildConfig.DEBUG,
+            cacheDir = appContext.cacheDir.absolutePath,
         )
         node = Node.start(config, this)
         if (listenerConnected) node?.setNotificationsEmitting(true)
@@ -172,6 +181,38 @@ object NodeHolder : Host {
         refresh()
         return runCatching { n.status().clipboardPeers.size }.getOrDefault(0)
     }
+
+    /**
+     * Reads the clipboard, if Android lets us, with every representation the
+     * clip carries (milestone 5): the text, the HTML, and the content URIs
+     * opened for the node. Returns how many devices offer the clipboard, or
+     * null when the clipboard holds nothing readable.
+     */
+    fun readAndSend(context: Context): Int? {
+        val n = node ?: return 0
+        val read = readClipboardValue(context) ?: return null
+        clipHandles.forEach { runCatching { it.close() } }
+        clipHandles = read.handles
+        n.clipboardChangedValue(read.text, read.html, read.contents)
+        refresh()
+        return runCatching { n.status().clipboardPeers.size }.getOrDefault(0)
+    }
+
+    /** Asks every connected device for its clipboard (**Receive now**). */
+    fun requestClipboard(): Int = node?.requestClipboard()?.toInt() ?: 0
+
+    /** Fetches the files the clipboard promises into Downloads (**Save**). */
+    fun saveClipboardFiles(): String? = runCatching { node?.saveClipboardFiles() }.getOrNull()
+
+    /** The provider asks for an item's bytes or file. */
+    fun clipboardItem(key: String): ClipItemData? = node?.clipboardItem(key)
+
+    /** What the provider knows about a key: type, name and size. */
+    @Synchronized
+    fun clipItem(key: String?): ClipItem? = key?.let { clipItems[it] }
+
+    private var clipItems: Map<String, ClipItem> = emptyMap()
+    private var clipHandles: List<AutoCloseable> = emptyList()
 
     /** Text handed to the app (the share sheet): on the clipboard here and everywhere. */
     fun sendText(text: String): Int {
@@ -291,6 +332,43 @@ object NodeHolder : Host {
         return clip.getItemAt(0).coerceToText(context)?.toString()?.takeIf { it.isNotEmpty() }
     }
 
+    /** A clip as read: its text, HTML and the content opened for the node. */
+    class ClipRead(
+        val text: String?,
+        val html: String?,
+        val contents: List<OutgoingFile>,
+        val handles: List<AutoCloseable>,
+    )
+
+    /**
+     * Reads the primary clip with every representation it carries, opening
+     * each content URI for the node to read. A clip of this app's own
+     * provider is what a peer sent and is not read back.
+     */
+    fun readClipboardValue(context: Context): ClipRead? {
+        val manager = context.getSystemService(ClipboardManager::class.java)
+        val clip = runCatching { manager.primaryClip }.getOrNull() ?: return null
+        if (clip.itemCount == 0) return null
+        var text: String? = null
+        var html: String? = null
+        val uris = ArrayList<Uri>()
+        for (i in 0 until clip.itemCount) {
+            val item = clip.getItemAt(i)
+            if (text == null) text = item.text?.toString()?.takeIf { it.isNotEmpty() }
+            if (html == null) html = item.htmlText?.takeIf { it.isNotEmpty() }
+            item.uri?.let { uri ->
+                if (uri.authority == ClipboardProvider.AUTHORITY) return null
+                uris += uri
+            }
+        }
+        if (text == null && uris.isEmpty()) {
+            text = clip.getItemAt(0).coerceToText(context)?.toString()?.takeIf { it.isNotEmpty() }
+        }
+        val (contents, handles) = Transfers.open(context, uris) ?: (emptyList<OutgoingFile>() to emptyList())
+        if (text == null && html == null && contents.isEmpty()) return null
+        return ClipRead(text, html, contents, handles)
+    }
+
     fun hasBackgroundRead(context: Context): Boolean =
         context.checkSelfPermission("android.permission.READ_CLIPBOARD_IN_BACKGROUND") ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
@@ -306,6 +384,62 @@ object NodeHolder : Host {
             }
         }
         return runCatching { manager.setPrimaryClip(clip) }.isSuccess
+    }
+
+    override fun setClipboardValue(value: HostClipValue): Boolean {
+        synchronized(this) { clipItems = value.items.associateBy { it.key } }
+        val manager = appContext.getSystemService(ClipboardManager::class.java)
+        val mimes = ArrayList<String>()
+        if (value.text != null) mimes += ClipDescription.MIMETYPE_TEXT_PLAIN
+        if (value.html != null) mimes += ClipDescription.MIMETYPE_TEXT_HTML
+        value.items.forEach { if (it.mime !in mimes) mimes += it.mime }
+        if (mimes.isEmpty()) return false
+        val uris = value.items.map { ClipboardProvider.uriFor(it.key) }
+        val first = ClipData.Item(value.text ?: "", value.html, null, uris.firstOrNull())
+        val clip = ClipData("Ligature", mimes.toTypedArray(), first)
+        uris.drop(1).forEach { clip.addItem(ClipData.Item(it)) }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            clip.description.extras = PersistableBundle().apply {
+                putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, false)
+            }
+        }
+        val ok = runCatching { manager.setPrimaryClip(clip) }.isSuccess
+        val files = value.items.filter { it.file }
+        if (ok && files.isNotEmpty()) offerSave(files)
+        return ok
+    }
+
+    /** A file list arrived on the clipboard: offer to save it into Downloads. */
+    private fun offerSave(files: List<ClipItem>) {
+        val manager = appContext.getSystemService(NotificationManager::class.java)
+        val save = PendingIntent.getBroadcast(
+            appContext,
+            0,
+            Intent(appContext, SaveClipboardReceiver::class.java).setAction(ACTION_SAVE_CLIP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val title = if (files.size == 1) appContext.getString(R.string.clip_file_title, files[0].name)
+        else appContext.getString(R.string.clip_files_title, files.size)
+        val notification = Notification.Builder(appContext, Transfers.CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_tile)
+            .setContentTitle(title)
+            .setContentText(appContext.getString(R.string.clip_files_text))
+            .setAutoCancel(true)
+            .addAction(Notification.Action.Builder(null, appContext.getString(R.string.clip_save), save).build())
+            .build()
+        manager.notify(SAVE_CLIP_NOTIFICATION, notification)
+    }
+
+    const val ACTION_SAVE_CLIP = "org.ligatureprotocol.android.SAVE_CLIPBOARD_FILES"
+    private const val SAVE_CLIP_NOTIFICATION = 7
+
+    /** The Save action on the clipboard files notification. */
+    class SaveClipboardReceiver : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != ACTION_SAVE_CLIP) return
+            context.getSystemService(NotificationManager::class.java).cancel(SAVE_CLIP_NOTIFICATION)
+            saveClipboardFiles()
+        }
     }
 
     override fun showNotification(copy: NotificationCopy): Boolean = runCatching {

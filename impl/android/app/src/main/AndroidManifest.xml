@@ -76,6 +76,19 @@
             android:name=".Transfers$TransferReceiver"
             android:exported="false" />
 
+        <!-- The Save action on the clipboard files notification (milestone 5). -->
+        <receiver
+            android:name=".NodeHolder$SaveClipboardReceiver"
+            android:exported="false" />
+
+        <!-- Serves the parts and files of a clipboard value a peer sent, as the
+             content URIs on the clip; the system grants the pasting app access. -->
+        <provider
+            android:name=".ClipboardProvider"
+            android:authorities="org.ligatureprotocol.android.clipboard"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+
         <service
             android:name=".NodeService"
             android:exported="false"

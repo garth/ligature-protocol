@@ -33,6 +33,11 @@ pub struct Config {
     pub device_name: String,
     /// Log at `debug` instead of `info`.
     pub debug_logging: bool,
+    /// Where fetched clipboard content is cached before a paste completes:
+    /// the app's cache directory. The system's temporary directory when
+    /// absent, which an app cannot write.
+    #[uniffi(default = None)]
+    pub cache_dir: Option<String>,
 }
 
 /// What the node is right now.
@@ -256,9 +261,19 @@ impl Node {
             files: files.clone(),
             host,
         });
+        let clipboard_config = ligatured::clipboard_sync::ClipboardConfig {
+            cache_dir: config
+                .cache_dir
+                .as_deref()
+                .map_or_else(ligatured::clipboard::platform_cache_dir, |d| {
+                    PathBuf::from(d).join("clipboard")
+                }),
+            ..ligatured::clipboard_sync::ClipboardConfig::default()
+        };
         node.with_runtime(|rt| {
             let _guard = rt.enter();
-            node.daemon.attach_clipboard(clipboard);
+            node.daemon
+                .attach_clipboard_with(clipboard, clipboard_config);
             node.daemon.attach_notifications(notifications);
             // Every transfer, either direction, is shown by the host as it
             // moves: at most a few updates a second, and always its end.
@@ -516,10 +531,124 @@ impl Node {
         self.clipboard.changed(&text);
     }
 
+    /// The host read the system clipboard and found a value with these
+    /// representations (milestone 5): the text, the HTML, and the content
+    /// the app opened for the node to read, each as a path with its name,
+    /// size and type. An image up to the kept bound becomes a part; anything
+    /// else becomes a file of the selection. Sent to the person's other
+    /// devices unless it is what they just sent us.
+    pub fn clipboard_changed_value(
+        &self,
+        text: Option<String>,
+        html: Option<String>,
+        contents: Vec<OutgoingFile>,
+    ) {
+        const KEEP: u64 = 64 * 1024 * 1024;
+        let mut value = ligatured::clipboard::Value {
+            text,
+            parts: Vec::new(),
+            files: Vec::new(),
+        };
+        if let Some(h) = html {
+            value
+                .parts
+                .push(ligatured::clipboard::Part::new("text/html", h.into_bytes()));
+        }
+        for c in contents {
+            let is_image = c.mime.to_ascii_lowercase().starts_with("image/");
+            if is_image
+                && c.size <= KEEP
+                && !value
+                    .parts
+                    .iter()
+                    .any(|p| p.mime.eq_ignore_ascii_case(&c.mime))
+                && let Ok(bytes) = std::fs::read(&c.path)
+            {
+                value
+                    .parts
+                    .push(ligatured::clipboard::Part::new(&c.mime, bytes));
+                continue;
+            }
+            value.files.push(ligatured::clipboard::LocalFile {
+                path: PathBuf::from(&c.path),
+                name: ligatured::files::safe_name(&c.name),
+                size: c.size,
+                mime: if c.mime.trim().is_empty() {
+                    ligatured::files::mime_for(&c.name).to_owned()
+                } else {
+                    c.mime
+                },
+                modified: c.modified.and_then(|t| Timestamp::from_unix(t).ok()),
+            });
+        }
+        if value.is_empty() {
+            return;
+        }
+        self.clipboard.changed_value(value);
+    }
+
     /// The last clipboard text the node set or was told about.
     #[must_use]
     pub fn clipboard_text(&self) -> Option<String> {
         self.clipboard.read_text().ok().flatten()
+    }
+
+    /// What the app's content provider serves for `key`: the bytes of a
+    /// pushed part, or a promised part or file fetched now from the device
+    /// that announced it. `None` when the key is gone or the fetch failed.
+    #[must_use]
+    pub fn clipboard_item(&self, key: String) -> Option<crate::ClipItemData> {
+        let clipboard = self.clipboard.clone();
+        self.with_runtime(|rt| rt.block_on(async move { clipboard.item(&key).await }))
+    }
+
+    /// Asks every connected device that offers the clipboard for its current
+    /// value (**Receive now**). Returns how many were asked.
+    pub fn request_clipboard(&self) -> u32 {
+        let Some(sync) = self.daemon.clipboard_sync() else {
+            return 0;
+        };
+        let peers = self
+            .daemon
+            .registry()
+            .peers_offering(lp_core::capability::CLIPBOARD_TYPE);
+        self.with_runtime(|rt| {
+            rt.block_on(async move {
+                let mut asked = 0;
+                for p in peers {
+                    if sync.request(&p).await {
+                        asked += 1;
+                    }
+                }
+                asked
+            })
+        })
+    }
+
+    /// Fetches the files the clipboard currently promises into Downloads,
+    /// as a transfer the host sees like any other (**Save**). Returns the
+    /// transfer id, or `None` when nothing is promised.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LpError::Internal`] if the device that promised them is
+    /// not connected.
+    pub fn save_clipboard_files(&self) -> Result<Option<String>, LpError> {
+        let Some(sync) = self.daemon.clipboard_sync() else {
+            return Ok(None);
+        };
+        let (Some(peer), files) = (sync.promised_from(), sync.promised_files()) else {
+            return Ok(None);
+        };
+        if files.is_empty() {
+            return Ok(None);
+        }
+        let ids: Vec<String> = files.into_iter().map(|f| f.id).collect();
+        let transfer = self.with_runtime(|rt| {
+            let _guard = rt.enter();
+            self.files.fetch(&peer, ids, Destination::Downloads)
+        })?;
+        Ok(Some(transfer.id()))
     }
 
     /// The listener saw an app post or update `notification`: send it to

@@ -67,8 +67,13 @@ get <phone> <id>` fetches what it offered (milestone 4).
 
 ## Clipboard
 
-Receiving needs nothing: text copied on your other devices lands on the phone's clipboard
-while the node runs. Sending depends on what Android allows:
+Receiving needs nothing: what you copy on your other devices lands on the phone's clipboard
+while the node runs. Text and HTML go on the clip itself; an image or a file selection
+arrives as content URIs the app serves, and the bytes are fetched from the other device
+only when an app pastes them (milestone 5). Files on the clipboard also raise a
+notification whose **Save** puts them in Downloads, since few Android apps paste files.
+**Receive now** on the main screen asks your other devices for their clipboard. Sending
+depends on what Android allows:
 
 - **Without special permission** (any ROM): Android 10 and later let an app read the
   clipboard only while it has focus or is the keyboard. The phone therefore sends on

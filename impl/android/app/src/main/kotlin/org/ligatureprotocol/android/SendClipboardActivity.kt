@@ -21,13 +21,10 @@ class SendClipboardActivity : Activity() {
         super.onWindowFocusChanged(hasFocus)
         if (!hasFocus || done) return
         done = true
-        val text = NodeHolder.readClipboard(this)
-        val message = when {
-            text == null -> getString(R.string.clipboard_empty)
-            else -> {
-                val n = NodeHolder.clipboardChanged(text)
-                if (n == 0) getString(R.string.sent_to_none) else getString(R.string.sent_to, n)
-            }
+        val message = when (val n = NodeHolder.readAndSend(this)) {
+            null -> getString(R.string.clipboard_empty)
+            0 -> getString(R.string.sent_to_none)
+            else -> getString(R.string.sent_to, n)
         }
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
         finish()

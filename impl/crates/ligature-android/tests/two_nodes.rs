@@ -7,13 +7,15 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use ligature_android::{
-    Config, DownloadTarget, Event, Host, LocalNotification, LogLevel, Node, NotificationCopy,
-    OutgoingFile, PublishedDownload, TransferInfo,
+    Config, DownloadTarget, Event, Host, HostClipValue, LocalNotification, LogLevel, Node,
+    NotificationCopy, OutgoingFile, PublishedDownload, TransferInfo,
 };
 
 #[derive(Default)]
 struct FakeHost {
     clipboard: Mutex<Option<String>>,
+    /// The last whole value set, with its items.
+    value: Mutex<Option<HostClipValue>>,
     events: Mutex<Vec<Event>>,
     shown: Mutex<Vec<NotificationCopy>>,
     dismissed_copies: Mutex<Vec<(String, String)>>,
@@ -72,6 +74,12 @@ impl FakeHost {
 impl Host for FakeHost {
     fn set_clipboard(&self, text: String) -> bool {
         *self.clipboard.lock().unwrap() = Some(text);
+        true
+    }
+
+    fn set_clipboard_value(&self, value: HostClipValue) -> bool {
+        *self.clipboard.lock().unwrap() = value.text.clone();
+        *self.value.lock().unwrap() = Some(value);
         true
     }
 
@@ -158,6 +166,7 @@ fn config(dir: &tempfile::TempDir, name: &str) -> Config {
         data_dir: dir.path().to_string_lossy().into_owned(),
         device_name: name.to_owned(),
         debug_logging: false,
+        cache_dir: Some(dir.path().join("cache").to_string_lossy().into_owned()),
     }
 }
 
@@ -398,6 +407,86 @@ fn a_phone_joins_and_the_clipboard_flows_both_ways() {
     assert!(laptop_host.aborted.lock().unwrap().is_empty());
     assert!(phone.transfers().is_empty() && laptop.transfers().is_empty());
     assert!(!phone.cancel_transfer(transfer.clone()));
+
+    // Milestone 5: a rich value from the phone (text, HTML, a 1 MiB image)
+    // reaches the laptop's host as a clip with the image promised, fetched
+    // only when the provider is asked for it.
+    let png: Vec<u8> = (0..1024 * 1024u32).map(|i| (i % 251) as u8).collect();
+    std::fs::write(src.path().join("shot.png"), &png).unwrap();
+    phone.clipboard_changed_value(
+        Some("a shot".to_owned()),
+        Some("<b>a shot</b>".to_owned()),
+        vec![OutgoingFile {
+            path: src.path().join("shot.png").to_string_lossy().into_owned(),
+            name: "shot.png".to_owned(),
+            size: png.len() as u64,
+            mime: "image/png".to_owned(),
+            modified: None,
+        }],
+    );
+    until("rich value on the laptop", || {
+        laptop_host
+            .value
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|v| v.text.as_deref() == Some("a shot") && v.items.len() == 1)
+    });
+    let value = laptop_host.value.lock().unwrap().clone().unwrap();
+    assert_eq!(value.html.as_deref(), Some("<b>a shot</b>"));
+    let item = value.items[0].clone();
+    assert_eq!(item.mime, "image/png");
+    assert!(!item.file);
+    assert!(item.key.starts_with("promise-"), "{}", item.key);
+    assert_eq!(item.size, png.len() as u64);
+    assert!(
+        laptop.transfers().is_empty(),
+        "nothing fetched before a paste"
+    );
+    let data = laptop.clipboard_item(item.key.clone()).unwrap();
+    let bytes = match (data.bytes, data.path) {
+        (Some(b), _) => b,
+        (None, Some(p)) => std::fs::read(p).unwrap(),
+        (None, None) => panic!("fetched nothing"),
+    };
+    assert_eq!(bytes, png);
+    assert!(laptop.clipboard_item("nope".to_owned()).is_none());
+
+    // A file selection copied on the phone: the laptop's host sees a file
+    // item and Save fetches it into its downloads.
+    std::fs::write(src.path().join("memo.md"), b"memo!").unwrap();
+    phone.clipboard_changed_value(
+        Some("memo.md".to_owned()),
+        None,
+        vec![OutgoingFile {
+            path: src.path().join("memo.md").to_string_lossy().into_owned(),
+            name: "memo.md".to_owned(),
+            size: 5,
+            mime: "text/markdown".to_owned(),
+            modified: None,
+        }],
+    );
+    until("file promised on the laptop", || {
+        laptop_host
+            .value
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|v| v.items.iter().any(|i| i.file && i.name == "memo.md"))
+    });
+    assert_eq!(
+        laptop_host.value.lock().unwrap().as_ref().unwrap().items[0].mime,
+        "text/markdown"
+    );
+    let saved = laptop.save_clipboard_files().unwrap().unwrap();
+    until("saved into downloads", || {
+        laptop_host
+            .transfers()
+            .iter()
+            .any(|t| t.transfer == saved && t.outcome.is_some())
+    });
+    assert_eq!(std::fs::read(landed.join("memo.md")).unwrap(), b"memo!");
+    assert_eq!(laptop.request_clipboard(), 1);
 
     // Revoking the phone from the laptop drops it.
     laptop.revoke(phone_key.clone()).unwrap();

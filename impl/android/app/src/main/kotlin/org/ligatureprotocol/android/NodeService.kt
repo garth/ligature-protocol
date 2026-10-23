@@ -61,7 +61,7 @@ class NodeService : Service() {
     private val clipListener = ClipboardManager.OnPrimaryClipChangedListener {
         // Fires only when Android lets this app read: in the foreground, or
         // with READ_CLIPBOARD_IN_BACKGROUND on a platform-signed build.
-        NodeHolder.readClipboard(this)?.let { NodeHolder.clipboardChanged(it) }
+        NodeHolder.readAndSend(this)
     }
 
     override fun onCreate() {

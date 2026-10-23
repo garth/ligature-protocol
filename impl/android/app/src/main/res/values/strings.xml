@@ -30,4 +30,9 @@
     <string name="transfer_sent">Sent %1$s</string>
     <string name="transfer_cancelled">Cancelled %1$s</string>
     <string name="transfer_failed">Could not transfer %1$s</string>
+    <string name="clip_file_title">%1$s is on the clipboard</string>
+    <string name="clip_files_title">%1$d files are on the clipboard</string>
+    <string name="clip_files_text">Copied on another device. Save them to Downloads here.</string>
+    <string name="clip_save">Save</string>
+    <string name="asked_n">Asked %1$d devices for their clipboard</string>
 </resources>

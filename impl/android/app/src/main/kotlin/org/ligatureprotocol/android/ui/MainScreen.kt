@@ -48,6 +48,7 @@ fun MainScreen(
     onDismissPairing: () -> Unit,
     onRevoke: (String) -> Unit,
     onSendClipboard: () -> Unit,
+    onReceiveClipboard: () -> Unit,
     onCopy: (String) -> Unit,
     onShare: (String) -> Unit,
     onBatterySettings: () -> Unit,
@@ -79,7 +80,7 @@ fun MainScreen(
         if (!status.initialised) {
             if (state.pairing == null) SetupCard(onCreatePerson, onStartJoin)
         } else {
-            ClipboardCard(status, onSendClipboard, state.backgroundRead, state.lastClipboard)
+            ClipboardCard(status, onSendClipboard, onReceiveClipboard, state.backgroundRead, state.lastClipboard)
             NotificationsCard(state.notificationAccess, state.apps, onNotificationSettings, onToggleApp)
             if (state.pairing == null) IntroduceCard(onStartIntroduce)
             DevicesCard(state.devices, onRevoke)
@@ -222,6 +223,7 @@ private fun PairingCard(
 private fun ClipboardCard(
     status: Status,
     onSend: () -> Unit,
+    onReceive: () -> Unit,
     backgroundRead: Boolean,
     lastClipboard: String?,
 ) {
@@ -237,8 +239,13 @@ private fun ClipboardCard(
                         "settings, the action on the notification, or share text to Ligature."
                 },
             )
-            Button(onClick = onSend, enabled = status.clipboardPeers.isNotEmpty()) {
-                Text("Send clipboard now")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onSend, enabled = status.clipboardPeers.isNotEmpty()) {
+                    Text("Send clipboard now")
+                }
+                OutlinedButton(onClick = onReceive, enabled = status.clipboardPeers.isNotEmpty()) {
+                    Text("Receive now")
+                }
             }
             lastClipboard?.let {
                 Text(

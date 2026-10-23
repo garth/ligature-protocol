@@ -129,3 +129,39 @@ parts, as its promises are served to applications by the platform.
 own socket (`Hyprland --socket lp-test --wayland-fd N` with a socket handed over), so the
 machine's real clipboard and the owner's daemon were untouched; `LIGATURE_CLIPBOARD_CACHE`
 names the cache directory so two daemons on one machine do not share one.
+
+## LP-109: Android
+
+**The clip carries the text and HTML, the provider everything else.** `Host::set_clipboard_value`
+takes a `HostClipValue`: the text and the HTML go on the `ClipData` item itself (Android
+has first-class fields for both), and every other part, every announced part and every
+promised file becomes a content URI of the app's `ClipboardProvider` under a key the node
+chose (`part-<type>`, `promise-<id>`, `file-<id>`). The clip's description lists every type,
+so an application that pastes images sees `image/png` on offer; the provider is not exported
+and grants URI permissions, which the clipboard service hands to the pasting app. Opening a
+URI asks the node (`Node::clipboard_item`) for the key: a pushed part's bytes come from
+memory through a pipe, a promised part or file is fetched then, from the device that
+announced it, and a file is opened from the clipboard cache under the app's cache directory
+(`Config::cache_dir`). Pasting is what moves the bytes, as on the desktops.
+
+**Reading takes what the clip holds.** `NodeHolder.readAndSend` reads the text, the HTML
+and every content URI of the primary clip at the moments the app may read (its screen
+gaining focus, the tile, the notification action, the service's listener), opens the URIs the
+way the share sheet does (`Transfers.open`, descriptors kept until the next read) and hands
+them to `Node::clipboard_changed_value`; the node keeps an image up to 64 MiB as a part and
+anything else as a file of the selection. A clip whose URIs belong to this app's own provider
+is a value a peer sent and is not read back.
+
+**Receive now and Save.** **Receive now** on the clipboard card sends a `get` to every
+connected device that offers the clipboard (`Node::request_clipboard`). A file list on the
+clipboard raises a notification on the transfers channel with a **Save** action, whose
+receiver asks the node (`Node::save_clipboard_files`) to fetch the promised files from the
+device that announced them into Downloads through the milestone 4 landing, so the app's
+transfer notification shows it like any transfer. The node knows which device to ask through
+`ClipboardSync::promised_from`.
+
+**Advertised:** `text/plain`, `text/html`, `image/png`, `text/uri-list`, `fetch` true,
+`maxBytes` the default. The two-node host test sends a text, HTML and 1 MiB image value from
+the phone node and checks the laptop's host got the image as a promise item fetched only on
+`clipboard_item`, then a file selection saved into the laptop's downloads with
+`save_clipboard_files`, and `request_clipboard` reaching one peer.

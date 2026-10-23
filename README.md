@@ -226,6 +226,8 @@ follow them.
    ([plan](docs/milestones/06-phone-and-media.md)).
 7. **One keyboard and mouse across the desktops, the phone as a touchpad.** Planned: the
    first device-scoped capability ([plan](docs/milestones/07-shared-input.md)).
+8. **A screen viewed, then controlled, from another device.** Planned
+   ([plan](docs/milestones/08-remote-desktop.md)).
 
 Not planned: Apple phones and tablets, for the reasons in the
 [platform notes](docs/spec/08-platform-notes.md#4-ios-and-ipados).
@@ -242,6 +244,7 @@ Not planned: Apple phones and tablets, for the reasons in the
 - [Milestone 5 plan: the clipboard carries rich text, images and files](docs/milestones/05-rich-clipboard.md)
 - [Milestone 6 plan: the phone's SMS and calls, and media control](docs/milestones/06-phone-and-media.md)
 - [Milestone 7 plan: one keyboard and mouse across the desktops](docs/milestones/07-shared-input.md)
+- [Milestone 8 plan: a screen viewed, then controlled, from another device](docs/milestones/08-remote-desktop.md)
 - [Architecture decisions](docs/adr/)
 - [Glossary](docs/glossary.md)
 - [Prior art](docs/prior-art.md)

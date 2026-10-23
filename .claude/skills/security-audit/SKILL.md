@@ -35,6 +35,11 @@ report says so.
    that connects, a crafted fact, a crafted file name) to the sink. Confirm a claimed fix in
    the code, not the commit message. Report findings with confidence 7 or higher only.
 3. **Produce the output** for the mode: the report file, or the verdict.
+4. **Full audit only: point the repository at the new report.** `SECURITY.md` (the Audits
+   section) and the README's documentation list each link the latest report by file name;
+   move both links to the new file, in the same commit as the report, and check that
+   `CONTRIBUTING.md` still links the directory. A report nobody can find from the front of
+   the repository is not published.
 
 ## Checklist
 
@@ -208,6 +213,8 @@ Write `docs/security-audit/ligature-security-audit-YYYY-MM-DD.md`:
 ```
 
 Keep the 100-column rule and markdownlint happy. Do not mention Claude or Claude Code.
+Then update the latest-report links in `SECURITY.md` and the README (step 4 of the
+process) before committing.
 
 ## Pre-release check
 

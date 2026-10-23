@@ -13,6 +13,9 @@ release workflow publishes the section as the release notes with the installers.
 - A device found by mDNS while already connected is no longer dialled again, which replaced
   the live connection and lost what was in flight on it: a dismissal, a clipboard promise, a
   file offer (LP-117).
+- A clipboard value received from another device is recorded as applied before the platform
+  clipboard gets it, so a paste or a provider read the moment it lands finds its promises
+  (LP-107).
 
 ## [0.1.0-alpha] - 2026-10-23
 

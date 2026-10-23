@@ -601,19 +601,28 @@ impl ClipboardSync {
             }
         }
         self.filter.note_set(&fingerprint);
-        self.clipboard.set_value(&incoming)?;
         let read_back = Value {
             text: incoming.text.clone(),
             parts: incoming.parts.clone(),
             files: Vec::new(),
         };
+        // Record the value as applied before the platform gets it: a paste,
+        // or a provider asked the moment the clipboard is set, looks the
+        // promises up here, and must not find the previous value (LP-107).
         let g = self.replace_local(Arc::new(read_back), set.set_at);
         debug_assert_eq!(g, generation);
-        if incoming.has_promises() {
+        let has_promises = incoming.has_promises();
+        if has_promises {
             *lock(&self.applied_value) = Some(Applied {
                 peer: *peer,
-                incoming,
+                incoming: incoming.clone(),
             });
+        }
+        if let Err(e) = self.clipboard.set_value(&incoming) {
+            if has_promises {
+                lock(&self.applied_value).take();
+            }
+            return Err(e);
         }
         *lock(&self.latest) = Some(set.set_at);
         *lock(&self.applied) += 1;

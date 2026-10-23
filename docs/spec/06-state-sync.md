@@ -38,7 +38,7 @@ Every fact that travels between devices is signed and self-verifying:
 | Device record (key, name, platform, kind) | The device's own key | A role fact naming that key |
 | Role fact (`binding` or `principal` over a device key) | My self-signing key | My master key, via my person fact |
 | Role fact (`person` over a master key) | My user-signing key | My master key, via my person fact |
-| Revocation or key abandonment | An introducer's self-signing key | The relevant master key |
+| Revocation or key abandonment (names the person making it and a subject) | That person's self-signing key, held by their introducers | That person's fact; whether it counts on a device follows [ADR 0039](../adr/0039-revocation-scope-and-live-session-close.md) |
 | Group key introduction | The inviting admin's binding key | The admin's master key, already a known person |
 | Group membership acceptance | The member's user-signing key | The member's master key, already known |
 | Group membership document (versioned) | The group key | The group key learned at joining; a higher version replaces a lower |
@@ -53,8 +53,13 @@ payload as the bytes the signer produced, the signing key, and an Ed25519 signat
 the signature over the bytes as received, resolves the signer to a trusted chain, then
 decodes the payload and validates it against its schema. Facts are stored and forwarded
 byte-exact and never re-encoded; a fact's identifier is the SHA-256 of its payload bytes.
-Decoders accept any valid CBOR and ignore unknown fields. A device accepts a fact only if
-the signature verifies against a key it already trusts; there is no external directory to
+Decoders accept any valid CBOR and ignore unknown fields. A device stores any fact whose
+signature verifies against the signer it carries, and decides every time the fact is used,
+against the chain of facts in its store at that moment, whether that signer is one to
+listen to ([ADR 0039](../adr/0039-revocation-scope-and-live-session-close.md)): a role fact
+counts when its signer is a subordinate key of a verified person fact, a revocation when
+the ADR says so, and a fact signed by a key no chain reaches is kept but inert. So the
+facts of an exchange may arrive in any order, and there is no external directory to
 consult. Open question: whether facts carry a sequence number per
 signer so that an older fact can never replace a newer one.
 
@@ -90,6 +95,14 @@ sequenceDiagram
 
 ## 5. Revocation and the offline window
 
+A revocation counts on a device when the person who signed it is the device's owner, when
+its subject is that person's own master key (an abandonment, chapter 07), or when a role
+fact of that person covers the subject, so a person can cut off their own device for
+everyone but another person's device only on their own devices
+([ADR 0039](../adr/0039-revocation-scope-and-live-session-close.md)). A device that learns
+a revocation, by gossip or otherwise, re-decides the recognition of every connected peer
+and closes the session of any it no longer trusts.
+
 A device that was offline when a peer was revoked trusts that peer until it next meets any
 other device carrying the revocation. Mitigations, all of which implementations should
 apply:
@@ -97,8 +110,9 @@ apply:
 - Gossip revocations first, before any capability traffic.
 - A device that has seen no trusted peer for a configurable period treats its trust store
   as stale and requires a fresh binding check before honouring requests.
-- Every session is freshly authenticated, so a revoked device gains nothing from sessions
-  it held before.
+- Every session is freshly authenticated, and a session that outlives its peer's
+  revocation is closed when the revocation is learnt, so a revoked device gains nothing
+  from sessions it held before.
 
 Open question: the default staleness period.
 

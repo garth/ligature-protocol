@@ -52,8 +52,10 @@ presented key is a binding of mine, a principal I use, or a binding of a known p
 (chapter 02); otherwise the only thing offered is the pairing ceremony. The handshake
 accepts any well-formed raw public key; recognition is decided afterwards from the local
 store, so a device learned through gossip is recognised the first time it connects and a
-revoked one is refused on its next connection. Until that decision a receiver dispatches
-only the `pairing` purpose: every other stream the peer opens waits in a small bounded
+revoked one is refused on its next connection; a session already open with a device whose
+revocation arrives, by gossip or by the user's own hand, is closed at once
+([ADR 0039](../adr/0039-revocation-scope-and-live-session-close.md)). Until that decision a
+receiver dispatches only the `pairing` purpose: every other stream the peer opens waits in a small bounded
 queue, to be dispatched if the peer is admitted and reset with code 2 if it is dropped, so
 a stranger kept for a ceremony learns nothing from the streams it opened
 ([ADR 0038](../adr/0038-stream-reset-codes-and-admission.md)).

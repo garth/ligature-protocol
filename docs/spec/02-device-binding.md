@@ -132,11 +132,19 @@ flowchart TB
 
 ## 7. Revocation
 
-Any introducer may revoke a binding, a principal or a known person by signing a
-revocation, gossiped to every peer (chapter 06). A revoked device cannot announce its own
-revocation, so peers that were offline learn of it from the next trusted device they meet.
-Open question: whether revocation of a binding by a non-introducer should be allowed, and
-whether a quorum should be required when the device set is large.
+A person revokes a binding, a principal or a known person by signing a revocation with
+their self-signing key, which only their introducers hold
+([`org.ligatureprotocol.revocation`](../../schemas/revocation.schema.json)). The revocation
+names the person making it and is verified against that person's fact, and it is gossiped
+to every peer (chapter 06). Whose revocation counts on a device follows
+[ADR 0039](../adr/0039-revocation-scope-and-live-session-close.md): on the person's own
+devices, every revocation they sign; on everyone else's, a revocation of the person's own
+master key or of a device that person's role facts cover. One person's revocation of
+another person's device changes nothing beyond their own devices. A revoked device cannot
+announce its own revocation, so peers that were offline learn of it from the next trusted
+device they meet, and a device that learns it closes any session it holds with the revoked
+device at once. No fact undoes a revocation. Open question: whether a quorum should be
+required when the device set is large.
 
 ## 8. Open questions
 

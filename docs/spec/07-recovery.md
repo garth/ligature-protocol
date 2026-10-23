@@ -22,11 +22,14 @@ exchange for having no shared state.
 
 ## 3. Abandoning a key
 
-Any introducer of the new key may gossip a signed statement that a named old master key is
-abandoned. Devices that receive it stop recognising the old key's bindings. Devices that
-never receive it simply treat those bindings as an unknown person's. Open question: whether
-the abandonment statement should be signed by the old key as well when it is still
-available (loss without compromise), to defeat a forged abandonment by a third party.
+An abandonment is a revocation whose subject is the person's own master key, signed with
+that person's self-signing key by an introducer that still holds it
+([ADR 0039](../adr/0039-revocation-scope-and-live-session-close.md)); it is gossiped like
+any revocation. Devices that receive it stop recognising the old key and its bindings.
+Nobody can abandon a key on another person's behalf, so a person who has lost every
+introducer has no abandonment to gossip: they rebuild (section 2), household members
+re-verify them and may revoke the old `person` role on their own devices, and devices that
+hear neither simply treat the old key's bindings as an unknown person's.
 
 ## 4. Open questions
 

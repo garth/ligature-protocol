@@ -83,7 +83,8 @@ that person's own key or device, or the revoker is the owner. In short: the stor
 non-quarantined revocation by subject (`lp-identity/src/trust_store.rs:257-266`) after
 checking only that the envelope's own signer signed it (`trust_store.rs:149-151`), and
 `facts::verify_revocation` (`facts.rs:302-319`), which binds the signer to the person's
-self-signing key, has no caller outside tests. Spec chapter 06 section 5 requires the chain.
+self-signing key, has no caller outside tests. ADR 0039 (added after this audit) and spec
+chapter 06 section 5 record the rule.
 
 **1-B. Unrecognised peers reach the gossip and manifest streams.** High, confidence 9.
 Fixed under LP-121: the transport holds every stream but the pairing offer's until the

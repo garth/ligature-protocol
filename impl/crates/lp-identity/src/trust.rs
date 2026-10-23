@@ -70,7 +70,7 @@ fn person_fact(store: &TrustStore, master: &PublicKey) -> Result<Option<PersonFa
 }
 
 /// Whether `subject` is revoked in the eyes of the device whose person is
-/// `owner` (chapter 06 section 5). A stored revocation counts only when it
+/// `owner` (ADR 0039, chapter 06 section 5). A stored revocation counts only when it
 /// verifies against the person fact of the person it names, and that person
 /// is the owner, or the subject is that person's own master key (an
 /// abandonment), or a verified binding or principal role of that person names

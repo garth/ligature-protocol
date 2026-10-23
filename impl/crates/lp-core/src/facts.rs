@@ -140,7 +140,8 @@ pub enum RevocationKind {
     Abandonment,
 }
 
-/// `org.ligatureprotocol.revocation`. Signed by an introducer's self-signing key.
+/// `org.ligatureprotocol.revocation`. Signed by the self-signing key of the
+/// person named in `person`, which that person's introducers hold (ADR 0039).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RevocationFact {

@@ -1,17 +1,26 @@
 # ligatured as a launchd agent (macOS)
 
-Milestone 1 runs a locally built daemon at login as a per-user launchd agent, without code
-signing or notarisation. Logs go to `~/Library/Logs/ligature/ligatured.log` (LP-32; no
-rotation in this milestone). The data directory is `~/Library/Application Support/ligature`,
-named explicitly because an agent has no checkout to resolve the milestone 1 `data/` default
-against; point `lpctl` at the same place with `--data-dir` or `LIGATURE_DATA_DIR`.
+The daemon runs at login as a per-user launchd agent, without code signing or
+notarisation. Logs go to `~/Library/Logs/ligature/ligatured.log` (LP-32; no rotation). The
+data directory is `~/Library/Application Support/ligature` and the control socket is in
+`$TMPDIR/ligature`, the platform defaults since LP-85, so `lpctl` needs no `--data-dir`.
+The UDP port is fixed at 47471 so a firewall rule can let peers dial in.
 
 ## Install
 
+From a release tarball, `./install.sh` does all of this. From a checkout:
+
 ```sh
 cd impl
-cargo install --path crates/ligatured --path crates/lpctl
-mkdir -p ~/Library/Logs/ligature ~/Library/LaunchAgents
+cargo build --release -p ligatured -p lpctl
+../packaging/install.sh target/release
+```
+
+By hand, which is what the script does:
+
+```sh
+mkdir -p ~/.local/bin ~/Library/Logs/ligature ~/Library/LaunchAgents
+install -m 755 target/release/ligatured target/release/lpctl ~/.local/bin/
 sed "s|HOME|$HOME|g" crates/ligatured/launchd/org.ligatureprotocol.ligatured.plist \
   > ~/Library/LaunchAgents/org.ligatureprotocol.ligatured.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/org.ligatureprotocol.ligatured.plist
@@ -22,8 +31,11 @@ Check it:
 ```sh
 launchctl print gui/$(id -u)/org.ligatureprotocol.ligatured | head
 tail -f ~/Library/Logs/ligature/ligatured.log
-lpctl --data-dir "$HOME/Library/Application Support/ligature" status
+lpctl status
 ```
+
+A daemon that was run by hand with `--data-dir` keeps its identity by moving that directory
+to `~/Library/Application Support/ligature` before the agent is loaded.
 
 ## Notifications from other devices
 
@@ -35,6 +47,8 @@ Script Editor then appears under System Settings → Notifications and the daemo
 from then on, with no restart.
 
 ## Remove
+
+`./uninstall.sh` from the tarball or `packaging/uninstall.sh` from a checkout, or by hand:
 
 ```sh
 launchctl bootout gui/$(id -u)/org.ligatureprotocol.ligatured

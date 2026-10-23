@@ -16,6 +16,20 @@ val rustJniLibs = layout.buildDirectory.dir("rustJniLibs")
 val uniffiOut = layout.buildDirectory.dir("generated/uniffi")
 val cargoManifest = rootProject.file("../Cargo.toml")
 
+// The app's version is the workspace version under [workspace.package] in
+// impl/Cargo.toml, shared with every crate (LP-85); the version code is
+// derived from it, so each release increments it.
+val workspaceVersion: String = cargoManifest.useLines { lines ->
+    lines.dropWhile { it.trim() != "[workspace.package]" }
+        .firstNotNullOf { Regex("^version\\s*=\\s*\"([^\"]+)\"").find(it)?.groupValues?.get(1) }
+}
+val workspaceVersionCode: Int = workspaceVersion.substringBefore('-').split('.').map { it.toInt() }
+    .let { (major, minor, patch) -> major * 1_000_000 + minor * 1_000 + patch }
+
+// The release signing key, from the environment when the release workflow (or
+// a developer) supplies one; otherwise the release APK is unsigned.
+val releaseKeystore: String? = System.getenv("LIGATURE_ANDROID_KEYSTORE")
+
 android {
     namespace = "org.ligatureprotocol.android"
     compileSdk = 36
@@ -25,17 +39,30 @@ android {
         applicationId = "org.ligatureprotocol.android"
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.0.1"
+        versionCode = workspaceVersionCode
+        versionName = workspaceVersion
         ndk {
             abiFilters += rustAbis
         }
     }
 
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("LIGATURE_ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("LIGATURE_ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("LIGATURE_ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // Unsigned: sign afterwards with apksigner and either a debug key
-            // or the ROM's platform key (README.md).
+            // Signed with the keystore LIGATURE_ANDROID_KEYSTORE names (the release
+            // workflow), otherwise unsigned: sign afterwards with apksigner and
+            // either a debug key or the ROM's platform key (README.md).
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }

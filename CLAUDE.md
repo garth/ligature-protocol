@@ -117,9 +117,10 @@ The reference implementation is Rust and is also the production implementation
   criteria and a task breakdown. `01-clipboard-poc.md` is done (Linux and macOS share the
   clipboard) and `01-implementation-decisions.md` records its non-protocol choices (store is
   SQLite via rusqlite bundled; keys in a separate 0600 file; state under `data/` in the
-  project root during milestone 1, gitignored; no configuration file; `lpctl init --name`
-  creates the first identity). `02-android-clipboard.md` is done, every exit criterion run
-  on a LineageOS phone with the two desktops, and `02-implementation-decisions.md`
+  project root during milestone 1, gitignored, and in the platform data directory since
+  LP-85; no configuration file; `lpctl init --name` creates the first identity).
+  `02-android-clipboard.md` is done, every exit criterion run on a LineageOS phone with the
+  two desktops, and `02-implementation-decisions.md`
   records the Android choices (the daemon as a library behind UniFFI; the clipboard read by
   the app when Android allows and automatic only with `READ_CLIPBOARD_IN_BACKGROUND`, which
   only a platform-signed build holds and an official LineageOS build cannot be; a
@@ -176,7 +177,17 @@ The reference implementation is Rust and is also the production implementation
   never by hand, never overwritten.
 - `.github/workflows/ci.yml`: fmt, clippy, test on Linux and macOS; the Android library
   cross-build and Kotlin generation; the debug APK; cargo-deny; markdownlint; JSON Schema
-  compile (ajv).
+  compile (ajv). `release.yml` runs on a `v*` tag: it checks the tag against the workspace
+  version, builds the Linux (x86_64, aarch64) and macOS (universal) tarballs with
+  `packaging/package.sh` and the signed APK, and publishes a GitHub release with the
+  version's `CHANGELOG.md` section as notes.
+- `packaging/`: `install.sh` and `uninstall.sh`, shipped in each desktop tarball and usable
+  from a checkout (binaries to `~/.local/bin`, the systemd user unit or launchd agent
+  enabled), and `package.sh`. `scripts/`: `release.sh LP-NNN X.Y.Z` (bumps the one version
+  under `[workspace.package]`, which every crate and the Android app's `versionName` and
+  `versionCode` derive from, dates the changelog section, commits and tags; never pushes),
+  `version.sh`, `changelog-notes.sh`. A change worth a release note goes under Unreleased
+  in `CHANGELOG.md` with its commit.
 
 ## Commands
 
@@ -193,6 +204,12 @@ cargo test -p lp-core capability::         # tests whose path matches
 cargo fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
 ```
+
+The daemon and CLI default to the platform locations (`~/.local/share/ligature` and
+`$XDG_RUNTIME_DIR/ligature` on Linux, `~/Library/Application Support/ligature` and
+`$TMPDIR/ligature` on macOS); `--data-dir` keeps a test daemon apart, and an explicit data
+directory puts the socket beside the store. The owner's own daemon on this machine runs as
+the systemd user unit once LP-85's switch-over is done; never kill it from the tool shell.
 
 CI treats clippy warnings as errors and the workspace lints set `missing_docs = "warn"`,
 so every public item needs a doc comment. `unsafe_code` is forbidden workspace-wide, except

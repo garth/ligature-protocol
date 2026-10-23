@@ -2,7 +2,7 @@
 
 > **Status: pre-alpha.** Nothing here is stable. The specification is a draft, the
 > reference implementation shares the clipboard, notifications and files between a Linux
-> machine, a Mac and an Android phone (milestones 1 to 4), and the `org.ligatureprotocol`
+> machine, a Mac and an Android phone (milestones 1 to 5), and the `org.ligatureprotocol`
 > type names use a placeholder domain.
 
 Ligature Protocol binds the devices a person owns, and the devices a household shares,
@@ -130,6 +130,9 @@ The `impl/` workspace contains:
 - `integrations/wireguard-integration`: non-core; generates Headscale/WireGuard peer
   configs from the device list
 
+`packaging/` holds the install and uninstall scripts and the tarball packaging the release
+workflow uses, `scripts/` the release script, and `CHANGELOG.md` the release notes.
+
 What works today: a Linux machine, a Mac and an Android phone (LineageOS) on the same LAN
 pair with the proximity ceremony, started from `lpctl pair` on the desktops and from the
 app on the phone, which shows its offer as a QR code; text copied on any of them can be
@@ -154,16 +157,47 @@ specification is unimplemented. Apple phones and tablets are off the roadmap for
 the platform would allow is recorded in the
 [platform notes](docs/spec/08-platform-notes.md#4-ios-and-ipados).
 
+### Install
+
+Each [release](https://github.com/ligature-protocol/ligature-protocol/releases) carries a
+tarball for Linux (x86_64 and aarch64) and macOS (universal) and an APK for Android. On a
+desktop, unpack the tarball and run `./install.sh`: it puts `ligatured` and `lpctl` in
+`~/.local/bin` and runs the daemon as a user service that starts at login, a systemd user
+unit on Linux and a launchd agent on macOS (`./uninstall.sh` reverses it, leaving your
+identity in place). Then `lpctl init --name "Your Name"` on your first device, or
+`lpctl pair` with the offer shown by a device that already has your keys; `lpctl status`
+shows the daemon. The service fixes the UDP port at 47471, so one firewall rule lets your
+other devices dial in. On the phone, install the APK and open it (the
+[app's README](impl/android/README.md) has the first run).
+
+From a checkout, the same install with the binaries you build:
+
 ```sh
 cd impl
-cargo build
-cargo test
+cargo build --release -p ligatured -p lpctl
+../packaging/install.sh target/release
 ```
 
-The daemon keeps its state in `data/` under the project root for now (ignored by git);
-`--data-dir` or `LIGATURE_DATA_DIR` moves it. The daemon listens on a UDP port the system
-assigns; `--port` or `LIGATURE_PORT` fixes it so a firewall rule can let other devices dial
-in. The Android app builds from `impl/android` (see its [README](impl/android/README.md)).
+State lives in the platform's data directory, `~/.local/share/ligature` on Linux
+(`$XDG_DATA_HOME`) and `~/Library/Application Support/ligature` on macOS, and the control
+socket in `$XDG_RUNTIME_DIR/ligature` or `$TMPDIR/ligature`; `--data-dir`, `--runtime-dir`
+or `LIGATURE_DATA_DIR` and `LIGATURE_RUNTIME_DIR` move them, for a daemon run by hand
+(`cargo run -p ligatured -- --data-dir data`) or two on one machine. `--port` or
+`LIGATURE_PORT` fixes the UDP port, which is otherwise one the system assigns. A daemon that
+ran by hand with `--data-dir data` keeps its identity when that directory is moved to the
+platform location before the service starts.
+
+### Releases
+
+The version under `[workspace.package]` in `impl/Cargo.toml` is the project's: every crate
+and the Android app take theirs from it, and `CHANGELOG.md` records what each release
+carries. `scripts/release.sh LP-NNN X.Y.Z` bumps it, dates the changelog section, commits
+and tags `vX.Y.Z`; pushing the tag runs the release workflow, which builds the installers
+for every platform and publishes them as a GitHub release with the changelog section as its
+notes, marked a pre-release while the version is below 1.0. The APK is signed with the
+keystore in the repository secrets (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
+`ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`); without them it is signed with a key made for
+the run, which installs but cannot update an app signed with another key.
 
 ## Roadmap
 

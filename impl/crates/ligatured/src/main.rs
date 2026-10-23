@@ -7,8 +7,8 @@
 //!
 //! There is no configuration file. The daemon takes its data and runtime
 //! directories from the command line or the environment (`LIGATURE_DATA_DIR`,
-//! `LIGATURE_RUNTIME_DIR`), defaulting to `data/` under the working directory for
-//! milestone 1. Logging goes to stderr through `tracing`; systemd and launchd
+//! `LIGATURE_RUNTIME_DIR`), defaulting to the platform locations of
+//! `lp_core::paths`. Logging goes to stderr through `tracing`; systemd and launchd
 //! capture it. The level is set with `RUST_LOG` and defaults to `info`.
 
 use std::path::PathBuf;
@@ -22,10 +22,14 @@ use tracing_subscriber::EnvFilter;
 #[derive(Debug, Parser)]
 #[command(version, about = "Ligature Protocol user daemon")]
 struct Options {
-    /// Directory holding the store and the key file (default: data/).
+    /// Directory holding the store and the key file (default: the platform's
+    /// data directory, ~/.local/share/ligature or ~/Library/Application
+    /// Support/ligature).
     #[arg(long, env = DATA_DIR_ENV)]
     data_dir: Option<PathBuf>,
-    /// Directory holding the control socket (default: the data directory).
+    /// Directory holding the control socket (default: the platform's runtime
+    /// directory, $XDG_RUNTIME_DIR/ligature or $TMPDIR/ligature, or the data
+    /// directory when that is given).
     #[arg(long, env = RUNTIME_DIR_ENV)]
     runtime_dir: Option<PathBuf>,
     /// This device's display name on first start (default: the host name).

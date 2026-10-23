@@ -9,7 +9,9 @@ those constraints so capability specs do not assume more than a platform allows.
 
 ## 2. Linux (Wayland)
 
-The reference daemon (`ligatured`) runs as a systemd user service and exposes a control socket for
+The reference daemon (`ligatured`) runs as a systemd user service, installed by the release
+tarball's `install.sh` with its state in `$XDG_DATA_HOME/ligature` and its control socket in
+`$XDG_RUNTIME_DIR/ligature`, and exposes that socket to
 `lpctl` (D-Bus integration is a later milestone). Clipboard, notifications and remote input on
 Wayland go through compositor protocols and portals (for example `wlr-data-control`, `xdg-desktop-
 portal`), which differ by compositor. On a multi-account machine each account runs its own
@@ -24,8 +26,8 @@ revocations) when none is. The helper reads a selection's text, HTML, PNG and fi
 send: pushed parts from its copy, an announced part fetched from the peer only when the
 compositor asks for that type, and a file list as `file:` URIs of files fetched into
 `$XDG_RUNTIME_DIR/ligature/clipboard` when a file manager pastes (chapter 05 section 3b).
-The QUIC endpoint takes a port the system assigns unless one is fixed (`--port`); behind a
-host firewall the fixed port and one rule let peers dial in,
+The QUIC endpoint takes a port the system assigns unless one is fixed (`--port`); the
+service fixes 47471 so that behind a host firewall one rule lets peers dial in,
 otherwise the machine connects only when it dials. Notifications both ways: the daemon
 displays other devices' notifications by calling the freedesktop notification service on
 the session bus, and sees what every application posts by being a monitor of that bus,
@@ -40,7 +42,9 @@ session of its own.
 
 ## 2b. macOS
 
-A macOS machine is a full peer. The binding daemon runs as a per-user launchd agent and
+A macOS machine is a full peer. The binding daemon runs as a per-user launchd agent
+(installed by the release tarball's `install.sh`, state in `~/Library/Application
+Support/ligature`, control socket in `$TMPDIR/ligature`, the UDP port fixed at 47471) and
 the principal daemon as a launchd daemon, mirroring the Linux split; presence comes from
 the console-user and session state that the system exposes to daemons. Bonjour is the
 native mDNS/DNS-SD implementation and CoreBluetooth the BLE stack, so discovery needs no

@@ -1,20 +1,22 @@
-# Ligature Protocol user daemon (milestone 1).
+# Ligature Protocol user daemon.
 #
-# Install the binaries, then the unit, then enable it:
-#   cd impl && cargo install --path crates/ligatured --path crates/lpctl
+# Installed by install.sh from a release tarball, or from a checkout
+# (packaging/install.sh), into ~/.config/systemd/user/; the binaries live in
+# ~/.local/bin. By hand:
 #   mkdir -p ~/.config/systemd/user
 #   cp crates/ligatured/systemd/ligatured.service ~/.config/systemd/user/
 #   systemctl --user daemon-reload
 #   systemctl --user enable --now ligatured
 #
 # Logs:   journalctl --user -u ligatured -f
-# Status: lpctl --data-dir ~/.local/share/ligature status
+# Status: lpctl status
 #
 # The daemon runs whether or not a graphical session exists: it finds the
 # compositor socket itself (LP-34) and needs no imported environment. There is
-# no configuration file (LP-32); the data directory is set here because a
-# service has no working directory of its own, and lpctl is pointed at the
-# same place with --data-dir or LIGATURE_DATA_DIR.
+# no configuration file (LP-32): state lives in $XDG_DATA_HOME/ligature
+# (~/.local/share/ligature) and the control socket in $XDG_RUNTIME_DIR/ligature,
+# which lpctl finds without being told (LP-85). The UDP port is fixed so one
+# firewall rule lets peers dial in (for example: ufw allow 47471/udp).
 [Unit]
 Description=Ligature Protocol user daemon
 Documentation=https://github.com/ligature-protocol/ligature-protocol
@@ -22,12 +24,9 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=%h/.cargo/bin/ligatured
-Environment=LIGATURE_DATA_DIR=%h/.local/share/ligature
+ExecStart=%h/.local/bin/ligatured
+Environment=LIGATURE_PORT=47471
 Environment=RUST_LOG=info
-# Fix the UDP port when a firewall must allow peers to dial in (then, for
-# example, ufw allow 47471/udp):
-#Environment=LIGATURE_PORT=47471
 Restart=on-failure
 RestartSec=2
 

@@ -1,0 +1,180 @@
+# Builds the installers for every platform from a version tag and publishes
+# them as a GitHub release (LP-85). The tag comes from scripts/release.sh and
+# must match the workspace version in impl/Cargo.toml. Assets:
+#   ligature-<v>-linux-x86_64.tar.gz, ligature-<v>-linux-aarch64.tar.gz
+#   ligature-<v>-macos-universal.tar.gz
+#   ligature-<v>-android.apk
+# The APK is signed with the keystore in the repository secrets
+# (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS,
+# ANDROID_KEY_PASSWORD); without them it is signed with a key made for the
+# run, which installs but cannot update an app signed with another key.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    name: Tag matches the workspace version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        run: |
+          version=$(scripts/version.sh)
+          tag=${GITHUB_REF_NAME#v}
+          if [ "$version" != "$tag" ]; then
+            echo "the tag is v$tag but impl/Cargo.toml says $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          case $version in
+            0.*|*-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+          scripts/changelog-notes.sh "$version" > notes.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notes
+          path: notes.md
+
+  linux:
+    name: Linux ${{ matrix.arch }}
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, arch: x86_64 }
+          - { runner: ubuntu-24.04-arm, arch: aarch64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: impl
+      - name: Build
+        working-directory: impl
+        run: cargo build --release -p ligatured -p lpctl
+      - name: Package
+        run: packaging/package.sh linux ${{ matrix.arch }} ${{ needs.version.outputs.version }} impl/target/release dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: dist/*.tar.gz
+
+  macos:
+    name: macOS universal
+    needs: version
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: impl
+      - name: Build both architectures
+        working-directory: impl
+        run: |
+          cargo build --release -p ligatured -p lpctl --target aarch64-apple-darwin
+          cargo build --release -p ligatured -p lpctl --target x86_64-apple-darwin
+      - name: Universal binaries
+        working-directory: impl
+        run: |
+          mkdir -p target/universal
+          for b in ligatured lpctl; do
+            lipo -create -output "target/universal/$b" \
+              "target/aarch64-apple-darwin/release/$b" "target/x86_64-apple-darwin/release/$b"
+            codesign --sign - --force "target/universal/$b"
+          done
+      - name: Package
+        run: packaging/package.sh macos universal ${{ needs.version.outputs.version }} impl/target/universal dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-universal
+          path: dist/*.tar.gz
+
+  android:
+    name: Android APK
+    needs: version
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: impl/android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: impl
+      - name: cargo-ndk
+        run: cargo install cargo-ndk --locked
+      - name: The NDK the app pins (the runner's own is another version)
+        run: |
+          version=$(sed -n 's/.*ndkVersion = "\(.*\)".*/\1/p' app/build.gradle.kts)
+          echo y | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$version"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          else
+            echo "::warning::No ANDROID_KEYSTORE_BASE64 secret: the APK is signed with a key made for this run"
+            keytool -genkeypair -keystore "$RUNNER_TEMP/release.jks" -storepass android -keypass android \
+              -alias androiddebugkey -dname "CN=Android Debug,O=Android,C=US" \
+              -keyalg RSA -keysize 2048 -validity 10000
+          fi
+      - name: Assemble the release APK
+        env:
+          LIGATURE_ANDROID_KEYSTORE: ${{ runner.temp }}/release.jks
+          LIGATURE_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD || 'android' }}
+          LIGATURE_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || 'androiddebugkey' }}
+          LIGATURE_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD || 'android' }}
+        run: |
+          ./gradlew assembleRelease --no-daemon
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk "dist/ligature-${{ needs.version.outputs.version }}-android.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: impl/android/dist/*.apk
+
+  release:
+    name: GitHub release
+    needs: [version, linux, macos, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Ligature Protocol v${{ needs.version.outputs.version }}
+          body_path: artifacts/notes/notes.md
+          prerelease: ${{ needs.version.outputs.prerelease }}
+          files: |
+            artifacts/linux-x86_64/*.tar.gz
+            artifacts/linux-aarch64/*.tar.gz
+            artifacts/macos-universal/*.tar.gz
+            artifacts/android/*.apk

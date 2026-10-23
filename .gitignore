@@ -17,3 +17,6 @@ Thumbs.db
 
 # Daemon state during milestone 1 (LP-32)
 data/
+
+# Release tarballs built by packaging/package.sh (LP-85)
+dist/

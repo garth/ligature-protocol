@@ -40,6 +40,8 @@ the code never sees SQLite.
 ignored by git (LP-32). `$XDG_DATA_HOME/ligature/` (default `~/.local/share/ligature/`) on
 Linux and `~/Library/Application Support/ligature/` on macOS become the defaults afterwards.
 One function (`lp-core::paths::Locations`) resolves it, overridable with `--data-dir`.
+(Done under LP-85 on 2026-10-23, together with the runtime directory of LP-30; an explicit
+data directory with no explicit runtime directory keeps the socket beside the store.)
 
 ## LP-26: the key is the identifier
 

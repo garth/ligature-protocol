@@ -23,10 +23,13 @@ use lp_core::{Error, PublicKey};
 #[derive(Debug, Parser)]
 #[command(version, about = "Ligature Protocol command-line tool")]
 struct Options {
-    /// The daemon's data directory (default: data/).
+    /// The daemon's data directory (default: the platform's, ~/.local/share/ligature
+    /// or ~/Library/Application Support/ligature).
     #[arg(long, env = DATA_DIR_ENV, global = true)]
     data_dir: Option<PathBuf>,
-    /// The daemon's runtime directory (default: the data directory).
+    /// The daemon's runtime directory, holding the control socket (default: the
+    /// platform's, $XDG_RUNTIME_DIR/ligature or $TMPDIR/ligature, or the data
+    /// directory when that is given).
     #[arg(long, env = RUNTIME_DIR_ENV, global = true)]
     runtime_dir: Option<PathBuf>,
     /// Answer yes to the code comparison without asking (for scripts).

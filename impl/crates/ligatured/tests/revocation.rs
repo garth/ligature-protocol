@@ -104,10 +104,17 @@ async fn a_revocation_made_on_one_device_reaches_the_others() {
     assert!(b.manager().peer(c.binding().public()).is_none());
 
     // A fourth device that was offline learns on its next session with anyone.
+    // It is one of Alice's bindings, known to the others, since a stranger is
+    // dropped after an exchange (LP-122).
     let (d, _dd) = daemon("d");
     d.store().insert(&person).unwrap();
     for r in &roles {
         d.store().insert(r).unwrap();
+    }
+    let d_role =
+        facts::role_fact(&alice, Role::Binding, *d.binding().public(), true, at(10)).unwrap();
+    for x in [&a, &b, &c, &d] {
+        x.store().insert(&d_role).unwrap();
     }
     d.update_keys(|k| k.set_joined(*alice.person(), Some(&alice.self_signing)))
         .unwrap();
@@ -223,6 +230,83 @@ async fn a_forged_revocation_relayed_by_gossip_changes_nothing() {
         Recognition::Revoked
     );
     for x in [&a, &b] {
+        x.shutdown();
+    }
+}
+
+/// A device that learns a revocation by gossip closes the session it holds
+/// with the revoked device at once, so the revoked device gains nothing from
+/// a session it held before (chapter 06 section 5, LP-122).
+#[tokio::test]
+async fn a_revocation_learnt_by_gossip_closes_the_live_session() {
+    let alice = PersonKeys::generate().unwrap();
+    let person = facts::person_fact(&alice, "Alice", 1, at(0)).unwrap();
+    let (a, _da) = daemon("a");
+    let (b, _db) = daemon("b");
+    let (c, _dc) = daemon("c");
+    let roles: Vec<_> = [&a, &b, &c]
+        .iter()
+        .enumerate()
+        .map(|(i, d)| {
+            facts::role_fact(
+                &alice,
+                Role::Binding,
+                *d.binding().public(),
+                true,
+                at(1 + i as i64),
+            )
+            .unwrap()
+        })
+        .collect();
+    for d in [&a, &b, &c] {
+        d.store().insert(&person).unwrap();
+        for r in &roles {
+            d.store().insert(r).unwrap();
+        }
+        d.update_keys(|k| k.set_joined(*alice.person(), Some(&alice.self_signing)))
+            .unwrap();
+    }
+
+    // C holds a live, trusted session with B.
+    let cb = c
+        .manager()
+        .connect(b.manager().endpoint().local_addr().unwrap())
+        .await
+        .unwrap();
+    assert_eq!(cb.peer(), b.binding().public());
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(b.manager().peer(c.binding().public()).is_some());
+    assert_eq!(
+        b.recognise(c.binding().public()).unwrap(),
+        Recognition::MyBinding { introducer: true }
+    );
+
+    // A, connected to B, revokes C and pushes the revocation.
+    let _ab = a
+        .manager()
+        .connect(b.manager().endpoint().local_addr().unwrap())
+        .await
+        .unwrap();
+    ligatured::control::revoke_and_push(&a, c.binding().public())
+        .await
+        .unwrap();
+
+    // B learnt it and closed C's session; C sees its connection go.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while b.manager().peer(c.binding().public()).is_some()
+        || c.manager().peer(b.binding().public()).is_some()
+    {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "B still holds C's session after learning the revocation"
+        );
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    assert_eq!(
+        b.recognise(c.binding().public()).unwrap(),
+        Recognition::Revoked
+    );
+    for x in [&a, &b, &c] {
         x.shutdown();
     }
 }

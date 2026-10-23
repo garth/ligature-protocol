@@ -5,7 +5,7 @@
 //! The dialer opens the stream right after recognition; the acceptor's handler
 //! runs the same exchange from the other side.
 
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use lp_core::Error;
 use lp_core::frame::{GossipFact, GossipHave, GossipWant, StreamHeader};
@@ -14,6 +14,8 @@ use lp_identity::trust_store::TrustStore;
 use lp_transport::manager::{Manager, StreamHandler, open_on};
 use lp_transport::quic::Connection;
 use lp_transport::stream::FramedStream;
+
+use crate::daemon::Daemon;
 
 /// What an exchange did.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -73,9 +75,32 @@ pub async fn run_dialer(store: &TrustStore, conn: &Connection) -> Result<Exchang
     Ok(result)
 }
 
-/// The handler to register for incoming gossip streams.
+/// The handler to register for incoming gossip streams. After an exchange
+/// the daemon re-checks every connected peer, so a revocation that just
+/// arrived ends the revoked device's session (LP-122).
 #[must_use]
-pub fn handler(store: Arc<TrustStore>) -> StreamHandler {
+pub fn handler(daemon: Weak<Daemon>) -> StreamHandler {
+    Arc::new(move |conn, stream| {
+        let daemon = daemon.clone();
+        Box::pin(async move {
+            let Some(daemon) = daemon.upgrade() else {
+                return;
+            };
+            match exchange(daemon.store(), stream).await {
+                Ok(result) => {
+                    tracing::info!(peer = %conn.peer(), ?result, "gossip exchanged");
+                    daemon.enforce_trust();
+                }
+                Err(e) => tracing::debug!(peer = %conn.peer(), %e, "gossip exchange failed"),
+            }
+        })
+    })
+}
+
+/// A handler over a bare store, with no daemon behind it: the exchange
+/// alone, for tests of the transport side. A daemon registers [`register`].
+#[must_use]
+pub fn store_handler(store: Arc<TrustStore>) -> StreamHandler {
     Arc::new(move |conn, stream| {
         let store = store.clone();
         Box::pin(async move {
@@ -87,7 +112,14 @@ pub fn handler(store: Arc<TrustStore>) -> StreamHandler {
     })
 }
 
-/// Registers the gossip handler on a manager.
-pub fn register(manager: &Manager, store: Arc<TrustStore>) {
-    manager.on_stream(StreamHeader::GOSSIP, handler(store));
+/// Registers [`store_handler`] on a manager that has no daemon.
+pub fn register_store(manager: &Manager, store: Arc<TrustStore>) {
+    manager.on_stream(StreamHeader::GOSSIP, store_handler(store));
+}
+
+/// Registers the gossip handler on the daemon's manager.
+pub fn register(daemon: &Arc<Daemon>) {
+    daemon
+        .manager()
+        .on_stream(StreamHeader::GOSSIP, handler(Arc::downgrade(daemon)));
 }

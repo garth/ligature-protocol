@@ -389,6 +389,9 @@ impl ClipboardSync {
     }
 
     async fn send_current_to(&self, peer: &PublicKey, tx: &mpsc::Sender<ClipboardMessage>) {
+        if !self.same_person(peer) {
+            return;
+        }
         let Some(params) = self.peer_params(peer) else {
             return;
         };

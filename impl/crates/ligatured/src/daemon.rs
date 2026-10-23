@@ -183,7 +183,6 @@ impl Daemon {
                 })
             }),
         );
-        crate::gossip::register(&manager, store.clone());
         let registry = Arc::new(crate::capabilities::Registry::default());
         registry.register(&manager);
         let daemon = Arc::new(Self {
@@ -207,6 +206,7 @@ impl Daemon {
             files: Mutex::new(None),
             ceremonies: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         });
+        crate::gossip::register(&daemon);
         if daemon.is_initialised() {
             daemon.start_advertising()?;
         }
@@ -605,10 +605,14 @@ impl Daemon {
     /// exchange facts (the acceptor's side runs in the registered handler);
     /// then, on both sides, announce our manifest.
     pub async fn on_trusted(&self, conn: &Connection) {
-        if conn.dialled_by_us()
-            && let Err(e) = crate::gossip::run_dialer(&self.store, conn).await
-        {
-            tracing::warn!(peer = %conn.peer(), %e, "gossip failed");
+        if conn.dialled_by_us() {
+            if let Err(e) = crate::gossip::run_dialer(&self.store, conn).await {
+                tracing::warn!(peer = %conn.peer(), %e, "gossip failed");
+            }
+            self.enforce_trust();
+            if self.manager.peer(conn.peer()).is_none() {
+                return;
+            }
         }
         self.registry.announce_to(conn);
         if let Some(sync) = self.clipboard_sync() {
@@ -772,6 +776,29 @@ impl Daemon {
             }
             if let Err(e) = crate::gossip::run_dialer(&self.store, &conn).await {
                 tracing::debug!(%peer, %e, "gossip push failed");
+            }
+        }
+        self.enforce_trust();
+    }
+
+    /// Drops every connected peer that recognition no longer trusts: a
+    /// device a revocation just named, or a person no longer known. Runs
+    /// after every gossip exchange and after a revocation made here, so a
+    /// revoked device gains nothing from the session it held (chapter 06
+    /// section 5, LP-122). A stranger kept for a pairing ceremony is the
+    /// ceremony's to drop.
+    pub fn enforce_trust(&self) {
+        for peer in self.manager.peers() {
+            let drop = match self.recognise(&peer) {
+                Ok(r) if r.is_trusted() => false,
+                Ok(Recognition::Revoked) => true,
+                Ok(_) => !self.accepts_strangers(),
+                Err(_) => false,
+            };
+            if drop {
+                tracing::info!(%peer, "peer is no longer trusted; closing its session");
+                self.manager.drop_peer(&peer);
+                self.on_disconnected(&peer);
             }
         }
     }

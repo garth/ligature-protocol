@@ -502,6 +502,7 @@ pub fn revoke(daemon: &Daemon, key: &PublicKey) -> Result<(), Error> {
     let env = lp_identity::facts::sign(&self_signing, &fact)?;
     daemon.store().insert(&env)?;
     daemon.manager().drop_peer(key);
+    daemon.on_disconnected(key);
     tracing::info!(%key, "revoked");
     Ok(())
 }

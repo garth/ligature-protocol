@@ -112,7 +112,7 @@ async fn a_tampered_fact_from_a_peer_is_discarded() {
     let ep_b = lp_transport::quic::Endpoint::bind("127.0.0.1:0".parse().unwrap(), &key_b).unwrap();
     let (ma, _) = lp_transport::manager::Manager::start(ep_a);
     let (mb, _) = lp_transport::manager::Manager::start(ep_b);
-    ligatured::gossip::register(&mb, store.clone());
+    ligatured::gossip::register_store(&mb, store.clone());
     let conn = ma
         .connect(mb.endpoint().local_addr().unwrap())
         .await

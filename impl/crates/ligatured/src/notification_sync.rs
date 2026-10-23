@@ -235,6 +235,7 @@ impl NotificationSync {
             .collect();
         if origin != self.daemon.binding().public()
             && !targets.iter().any(|(p, _)| p == origin)
+            && self.same_person(origin)
             && let Some(tx) = self.lock_senders().get(origin).cloned()
         {
             targets.push((*origin, tx));
@@ -346,6 +347,7 @@ impl NotificationSync {
             .collect();
         self.lock_senders()
             .iter()
+            .filter(|(peer, _)| self.same_person(peer))
             .filter_map(|(peer, tx)| remote.get(peer).map(|p| (*peer, tx.clone(), *p)))
             .collect()
     }

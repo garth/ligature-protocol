@@ -13,6 +13,9 @@ release workflow publishes the section as the release notes with the installers.
 - A revocation counts only when it verifies against the person it names and that person is
   the owner, is abandoning their own master key, or is revoking one of their own devices; a
   self-signed revocation from anyone else changes nothing (LP-120).
+- A device that learns a revocation by gossip closes the session it holds with the revoked
+  device at once, and the clipboard and notifications are sent only to peers recognised at
+  the time of sending (LP-122).
 - A device found by mDNS while already connected is no longer dialled again, which replaced
   the live connection and lost what was in flight on it: a dismissal, a clipboard promise, a
   file offer (LP-117).

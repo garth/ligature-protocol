@@ -1,7 +1,9 @@
 # Contributing to Ligature Protocol
 
-Thanks for your interest. LP is pre-alpha, so the most useful contributions right now are
-design review, prior-art research, and threat-model critique rather than code.
+Thanks for your interest. LP is alpha: the reference implementation runs on real devices,
+and the most useful contributions right now are design review, prior-art research,
+threat-model critique and findings against the
+[latest security audit](docs/security-audit/), as much as code.
 
 ## Where things live
 

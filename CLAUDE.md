@@ -114,6 +114,9 @@ The reference implementation is Rust and is also the production implementation
 - `docs/adr/`: Nygard-format ADRs (Context / Decision / Consequences). Superseded ones
   live in `docs/adr/superseded/`.
 - `docs/glossary.md`, `docs/prior-art.md`.
+- `docs/security-audit/`: dated reports from the `security-audit` skill, the latest linked
+  from `SECURITY.md` and the README; a Critical or High finding is named in one only once
+  it is fixed or has an advisory.
 - `docs/milestones/`: one plan per milestone with scope, non-goals, decisions to pin, exit
   criteria and a task breakdown. `01-clipboard-poc.md` is done (Linux and macOS share the
   clipboard) and `01-implementation-decisions.md` records its non-protocol choices (store is

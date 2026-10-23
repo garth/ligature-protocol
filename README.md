@@ -252,7 +252,9 @@ Not planned: Apple phones and tablets, for the reasons in the
 - [Glossary](docs/glossary.md)
 - [Prior art](docs/prior-art.md)
 - [Contributing](CONTRIBUTING.md)
-- [Security policy](SECURITY.md)
+- [Security policy](SECURITY.md) and the
+  [security audits](docs/security-audit/), the latest from
+  [2026-10-23](docs/security-audit/ligature-security-audit-2026-10-23.md)
 
 ## License
 

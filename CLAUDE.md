@@ -185,7 +185,9 @@ The reference implementation is Rust and is also the production implementation
   from a checkout (binaries to `~/.local/bin`, the systemd user unit or launchd agent
   enabled), and `package.sh`. `scripts/`: `release.sh LP-NNN X.Y.Z` (bumps the one version
   under `[workspace.package]`, which every crate and the Android app's `versionName` and
-  `versionCode` derive from, dates the changelog section, commits and tags; never pushes),
+  `versionCode` derive from, to `X.Y.Z-alpha`, since every release carries `-alpha` while
+  the project is alpha, dates the changelog section, commits and tags `vX.Y.Z-alpha`; never
+  pushes),
   `version.sh`, `changelog-notes.sh`. A change worth a release note goes under Unreleased
   in `CHANGELOG.md` with its commit.
 

@@ -3,24 +3,27 @@
 #
 #   scripts/release.sh LP-NNN X.Y.Z
 #
+# The release is X.Y.Z-alpha: every release carries the -alpha suffix while
+# the project is alpha (a version given with its own suffix is kept as it is).
 # Sets the version under [workspace.package] in impl/Cargo.toml (every crate and
 # the Android app take theirs from it), refreshes Cargo.lock, moves the
 # Unreleased section of CHANGELOG.md under the version with today's date,
-# commits as "LP-NNN Release vX.Y.Z" and tags vX.Y.Z. It never pushes: pushing
-# the tag starts the release workflow, which builds the installers for every
-# platform and publishes the GitHub release with the changelog section as its
-# notes.
+# commits as "LP-NNN Release vX.Y.Z-alpha" and tags vX.Y.Z-alpha. It never
+# pushes: pushing the tag starts the release workflow, which builds the
+# installers for every platform and publishes the GitHub release, marked a
+# pre-release, with the changelog section as its notes.
 #
 # Needs a clean working tree and a non-empty Unreleased section.
 set -euo pipefail
 
-usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 [ $# -eq 2 ] || usage
 ticket=$1
 version=$2
 [[ $ticket =~ ^LP-[0-9]+$ ]] || { echo "release.sh: $ticket is not a ticket key" >&2; exit 2; }
 [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] \
     || { echo "release.sh: $version is not X.Y.Z or X.Y.Z-pre" >&2; exit 2; }
+[[ $version == *-* ]] || version=$version-alpha
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"

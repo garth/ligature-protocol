@@ -191,10 +191,11 @@ platform location before the service starts.
 
 The version under `[workspace.package]` in `impl/Cargo.toml` is the project's: every crate
 and the Android app take theirs from it, and `CHANGELOG.md` records what each release
-carries. `scripts/release.sh LP-NNN X.Y.Z` bumps it, dates the changelog section, commits
-and tags `vX.Y.Z`; pushing the tag runs the release workflow, which builds the installers
+carries. `scripts/release.sh LP-NNN X.Y.Z` bumps it to `X.Y.Z-alpha` (every release carries
+the `-alpha` suffix while the project is alpha), dates the changelog section, commits and
+tags `vX.Y.Z-alpha`; pushing the tag runs the release workflow, which builds the installers
 for every platform and publishes them as a GitHub release with the changelog section as its
-notes, marked a pre-release while the version is below 1.0. The APK is signed with the
+notes, marked a pre-release. The APK is signed with the
 keystore in the repository secrets (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
 `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`); without them it is signed with a key made for
 the run, which installs but cannot update an app signed with another key.

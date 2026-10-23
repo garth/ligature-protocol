@@ -1,6 +1,7 @@
 # Builds the installers for every platform from a version tag and publishes
-# them as a GitHub release (LP-85). The tag comes from scripts/release.sh and
-# must match the workspace version in impl/Cargo.toml. Assets:
+# them as a GitHub release (LP-85). The tag comes from scripts/release.sh, is
+# vX.Y.Z-alpha while the project is alpha, and must match the workspace
+# version in impl/Cargo.toml. Assets:
 #   ligature-<v>-linux-x86_64.tar.gz, ligature-<v>-linux-aarch64.tar.gz
 #   ligature-<v>-macos-universal.tar.gz
 #   ligature-<v>-android.apk

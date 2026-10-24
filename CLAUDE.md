@@ -211,8 +211,9 @@ The reference implementation is Rust and is also the production implementation
   cross-build and Kotlin generation; the debug APK; cargo-deny; markdownlint; JSON Schema
   compile (ajv). `release.yml` runs on a `v*` tag: it checks the tag against the workspace
   version, builds the Linux (x86_64, aarch64) and macOS (universal) tarballs with
-  `packaging/package.sh` and the signed APK, and publishes a GitHub release with the
-  version's `CHANGELOG.md` section as notes.
+  `packaging/package.sh` and the signed APK, signs their checksums with the release key
+  (`scripts/sign-release.sh`, ADR 0042), and publishes a GitHub release with the version's
+  `CHANGELOG.md` section as notes.
 - `packaging/`: `install.sh` and `uninstall.sh`, shipped in each desktop tarball and usable
   from a checkout (binaries to `~/.local/bin`, the systemd user unit or launchd agent
   enabled), and `package.sh`. `scripts/`: `release.sh LP-NNN X.Y.Z` (bumps the one version
@@ -220,8 +221,9 @@ The reference implementation is Rust and is also the production implementation
   `versionCode` derive from, to `X.Y.Z-alpha`, since every release carries `-alpha` while
   the project is alpha, dates the changelog section, commits and tags `vX.Y.Z-alpha`; never
   pushes),
-  `version.sh`, `changelog-notes.sh`. A change worth a release note goes under Unreleased
-  in `CHANGELOG.md` with its commit.
+  `version.sh`, `changelog-notes.sh`, `sign-release.sh` (the checksum file and its minisign
+  signature; the release job runs it, by hand it takes the key file as its third argument).
+  A change worth a release note goes under Unreleased in `CHANGELOG.md` with its commit.
 
 ## Commands
 

@@ -172,6 +172,9 @@ identity in place). Then `lpctl init --name "Your Name"` on your first device, o
 shows the daemon. The service fixes the UDP port at 47471, so one firewall rule lets your
 other devices dial in. On the phone, install the APK and open it (the
 [app's README](impl/android/README.md) has the first run).
+Every release also carries `SHA256SUMS` signed with the project's release key; the
+[install guide](docs/guide/install.md#verifying-a-download) has the key and the commands
+that verify a download.
 
 From a checkout, the same install with the binaries you build:
 

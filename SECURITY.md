@@ -31,6 +31,17 @@ records Medium and lower findings openly, with evidence and a recommendation eac
 names a Critical or High finding only once it is fixed or has a security advisory. A
 release is preceded by a pre-release check against the latest report.
 
+## Release signing
+
+Every release carries `SHA256SUMS` over its files and `SHA256SUMS.minisig`, its signature
+by the project's release key in the minisign format
+([ADR 0042](docs/adr/0042-signed-releases-and-the-update-check.md)). The public key and
+the commands that verify a download are in the
+[install guide](docs/guide/install.md#verifying-a-download); `lpctl upgrade` verifies the
+same signature before it installs anything. A release whose checksum file does not verify
+against that key is not the project's. A compromise of the release key would be announced
+as a security advisory, with the new key.
+
 ## Scope
 
 In scope: the specification in `docs/spec/`, the schemas in `schemas/`, and the

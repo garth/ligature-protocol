@@ -117,6 +117,27 @@ The Android app builds from `impl/android` with the Android SDK and NDK; its
 [README](https://github.com/garth/ligature-protocol/blob/main/impl/android/README.md) has
 the steps.
 
+## Verifying a download
+
+Every release also carries `SHA256SUMS`, the checksums of its four files, and
+`SHA256SUMS.minisig`, the checksum file's signature by the project's release key, made with
+[minisign](https://jedisct1.github.io/minisign/). The public key is:
+
+```text
+RWRG8kOII0tLS+Ll66WZ15knTjMWMnxqIxyRfwJRiMB64wBRsGxJy2BJ
+```
+
+With `minisign` (or `rsign`) installed, in the directory holding the downloads:
+
+```sh
+minisign -Vm SHA256SUMS -P RWRG8kOII0tLS+Ll66WZ15knTjMWMnxqIxyRfwJRiMB64wBRsGxJy2BJ
+sha256sum --ignore-missing -c SHA256SUMS     # shasum -a 256 --ignore-missing -c SHA256SUMS on a Mac
+```
+
+The first command prints the trusted comment, `ligature-protocol v<version>`, which should
+name the release you downloaded; the second prints `OK` for each file present. A release
+whose checksum file does not verify is not the project's.
+
 ## Where things live
 
 | | Linux | macOS | Android |

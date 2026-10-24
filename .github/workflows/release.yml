@@ -5,7 +5,11 @@
 #   ligature-<v>-linux-x86_64.tar.gz, ligature-<v>-linux-aarch64.tar.gz
 #   ligature-<v>-macos-universal.tar.gz
 #   ligature-<v>-android.apk
-# The APK is signed with the keystore in the repository secrets
+#   SHA256SUMS, SHA256SUMS.minisig
+# SHA256SUMS covers the four files and is signed with the project's release key
+# (ADR 0042, LP-139) from the MINISIGN_SECRET_KEY secret (an unencrypted
+# minisign secret key, base64); without it the checksums are signed with a key
+# made for the run, which `lpctl upgrade` refuses. The APK is signed with the keystore in the repository secrets
 # (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS,
 # ANDROID_KEY_PASSWORD); without them it is signed with a key made for the
 # run, which installs but cannot update an app signed with another key.
@@ -166,16 +170,33 @@ jobs:
     needs: [version, linux, macos, android]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
+      - name: rsign2 (minisign in Rust)
+        run: cargo install rsign2@0.6.7 --locked
+      - name: Release key
+        id: key
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          if [ -n "$MINISIGN_SECRET_KEY" ]; then
+            echo "$MINISIGN_SECRET_KEY" | base64 -d > "$RUNNER_TEMP/release.key"
+            echo "file=$RUNNER_TEMP/release.key" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::No MINISIGN_SECRET_KEY secret: the checksums are signed with a key made for this run"
+            echo "file=" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Checksums, signed with the release key
+        run: |
+          mkdir release
+          cp artifacts/linux-x86_64/*.tar.gz artifacts/linux-aarch64/*.tar.gz \
+            artifacts/macos-universal/*.tar.gz artifacts/android/*.apk release/
+          scripts/sign-release.sh release "${{ needs.version.outputs.version }}" "${{ steps.key.outputs.file }}"
       - uses: softprops/action-gh-release@v3
         with:
           name: Ligature Protocol v${{ needs.version.outputs.version }}
           body_path: artifacts/notes/notes.md
           prerelease: ${{ needs.version.outputs.prerelease }}
-          files: |
-            artifacts/linux-x86_64/*.tar.gz
-            artifacts/linux-aarch64/*.tar.gz
-            artifacts/macos-universal/*.tar.gz
-            artifacts/android/*.apk
+          files: release/*

@@ -8,6 +8,12 @@ release workflow publishes the section as the release notes with the installers.
 
 ## [Unreleased]
 
+### Added
+
+- Every release carries `SHA256SUMS` over its files and `SHA256SUMS.minisig`, its
+  signature by the project's release key, made with minisign; the install guide has the
+  public key and the commands that verify a download (LP-139).
+
 ### Fixed
 
 - Android: a paste of a promised part or file no longer holds up every other node call

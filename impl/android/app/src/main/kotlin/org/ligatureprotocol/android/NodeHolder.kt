@@ -29,6 +29,8 @@ import org.ligatureprotocol.core.Device
 import org.ligatureprotocol.core.DownloadTarget
 import org.ligatureprotocol.core.Event
 import org.ligatureprotocol.core.Host
+import org.ligatureprotocol.core.InputTarget
+import org.ligatureprotocol.core.TouchEvent
 import org.ligatureprotocol.core.LocalNotification
 import org.ligatureprotocol.core.LogLevel
 import org.ligatureprotocol.core.LpException
@@ -65,6 +67,10 @@ data class UiState(
     val notificationAccess: Boolean = false,
     /** The apps seen posting, with their switches. */
     val apps: List<AppSwitch> = emptyList(),
+    /** The devices this phone can drive as a touchpad (milestone 7). */
+    val inputTargets: List<InputTarget> = emptyList(),
+    /** The device being driven, while the touchpad screen is open. */
+    val touchpad: InputTarget? = null,
 )
 
 /**
@@ -149,7 +155,38 @@ object NodeHolder : Host {
         val status = runCatching { n.status() }.getOrNull()
         val devices = runCatching { n.devices() }.getOrDefault(emptyList())
         val last = runCatching { n.clipboardText() }.getOrNull()
-        _state.update { it.copy(status = status, devices = devices, lastClipboard = last) }
+        val targets = runCatching { n.inputTargets() }.getOrDefault(emptyList())
+        val driving = runCatching { n.inputDriving() }.getOrNull()
+        _state.update {
+            it.copy(
+                status = status,
+                devices = devices,
+                lastClipboard = last,
+                inputTargets = targets,
+                touchpad = if (driving == null) null else it.touchpad ?: targets.firstOrNull { t -> t.key == driving },
+            )
+        }
+    }
+
+    /** Opens the touchpad: starts driving [target] with the pointer at the middle of its screen. */
+    fun startTouchpad(target: InputTarget) = async {
+        call { n ->
+            n.inputStart(target.key)
+            _state.update { it.copy(touchpad = target) }
+        }
+    }
+
+    /** The user left the touchpad screen: the drive ends and everything held is lifted. */
+    fun stopTouchpad() = async {
+        node?.inputStop()
+        _state.update { it.copy(touchpad = null) }
+        refresh()
+    }
+
+    /** What the touchpad screen did, sent as one batch. */
+    fun touch(events: List<TouchEvent>) = async {
+        val n = node ?: return@async
+        runCatching { n.inputSend(events) }.onFailure { Log.d(TAG, "touch events dropped: ${it.message}") }
     }
 
     fun createPerson(name: String) = async { call { it.init(name) } }
@@ -570,6 +607,10 @@ object NodeHolder : Host {
             }
             is Event.ClipboardReceived -> refresh()
             is Event.TransferChanged -> Transfers.changed(appContext, event.info)
+            is Event.InputEnded -> {
+                _state.update { it.copy(touchpad = null) }
+                refresh()
+            }
         }
     }
 

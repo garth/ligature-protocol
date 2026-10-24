@@ -108,3 +108,31 @@ keyboard only when the first key is injected.
 connection were checked against this machine's session with no edge mapped (no barrier,
 nothing captured); arming an edge on the owner's desktop and crossing it is the run with the
 real devices (LP-146), since a captured pointer cannot be tested unattended.
+
+## LP-145: the phone as a touchpad and keyboard
+
+**The phone provides and never accepts.** The node attaches the input family with a
+`Touchpad` capture, which advertises `provides`, has no edges and never reports an event,
+and no injector, since Android lets an app inject nothing (chapter 08). The app drives
+through four node calls: `inputTargets` (this person's connected devices whose descriptor
+says `accepts`, with their names and whether they type text), `inputStart` (an absolute
+entry at the middle of the chosen screen, answered with its size), `inputSend` (a batch of
+`TouchEvent`s: motion in the driven screen's pixels, buttons, scroll in wheel steps, keys,
+text) and `inputStop`. The node tells the host `InputEnded` when a drive ends for any
+reason, so the touchpad screen closes when the desktop or the connection goes.
+
+**Gestures on the screen, not in the node.** The touchpad screen's gesture loop turns one
+finger into relative motion as the finger moved (the desktop's acceleration is not applied
+again: the sync sends what the phone measured, in the driven screen's pixels), a short still
+touch into a click, a touch held without moving into a press that lasts until the finger
+lifts (a drag), and two fingers into wheel steps every forty finger pixels, with the sign of
+a touchpad (fingers moving down scroll the page up). Buttons offer Backspace, Enter and a
+right click, since an empty text field reports no backspace. The field sends each change as
+`text` and empties itself, so the phone's keyboard, with its own layout and input method,
+types characters rather than keys.
+
+**One drive at a time, ended by the screen.** `inputStart` while a drive runs is refused;
+leaving the screen (Done or Back) calls `inputStop`, which sends `release` and lifts
+everything on the desktop. The node test `the_phone_is_a_touchpad_for_a_desktop` runs the
+calls end to end against a daemon with the in-memory injector, built as the daemon tests
+build their identities, and ends one drive by the screen and one by the daemon going away.

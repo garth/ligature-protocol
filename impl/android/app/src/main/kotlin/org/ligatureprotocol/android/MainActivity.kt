@@ -23,6 +23,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.ligatureprotocol.android.ui.MainScreen
+import org.ligatureprotocol.android.ui.TouchpadScreen
 
 /** The one screen: status, create or pair, devices, send the clipboard. */
 class MainActivity : ComponentActivity() {
@@ -45,6 +46,15 @@ class MainActivity : ComponentActivity() {
             MaterialTheme(colorScheme = if (dark) darkColorScheme() else lightColorScheme()) {
                 Surface {
                     val state by NodeHolder.state.collectAsStateWithLifecycle()
+                    val touchpad = state.touchpad
+                    if (touchpad != null) {
+                        TouchpadScreen(
+                            deviceName = touchpad.name,
+                            onEvents = NodeHolder::touch,
+                            onStop = NodeHolder::stopTouchpad,
+                        )
+                        return@Surface
+                    }
                     MainScreen(
                         state = state,
                         onCreatePerson = NodeHolder::createPerson,
@@ -62,6 +72,7 @@ class MainActivity : ComponentActivity() {
                         batteryUnrestricted = batteryUnrestricted(),
                         onNotificationSettings = ::notificationSettings,
                         onToggleApp = NodeHolder::setAppEnabled,
+                        onTouchpad = NodeHolder::startTouchpad,
                     )
                 }
             }

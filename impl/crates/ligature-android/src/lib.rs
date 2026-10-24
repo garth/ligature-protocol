@@ -24,6 +24,7 @@ mod pairing;
 
 pub use clipboard::HostClipboard;
 pub use files::HostFiles;
+pub use lp_core::input::{BTN_LEFT, BTN_MIDDLE, BTN_RIGHT};
 pub use node::{Config, Device, Node, OutgoingFile, Status, TransferInfo};
 pub use notifications::HostNotifications;
 pub use pairing::Pairing;
@@ -60,6 +61,70 @@ pub enum Event {
     TransferChanged {
         /// The transfer so far.
         info: TransferInfo,
+    },
+    /// The drive this phone ran as a touchpad ended, by the app, the desktop
+    /// or the connection (milestone 7): the touchpad screen should close.
+    InputEnded {
+        /// The device that was driven.
+        peer: String,
+    },
+}
+
+/// A device this phone can drive as a touchpad (milestone 7).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct InputTarget {
+    /// Its binding key.
+    pub key: String,
+    /// Its display name.
+    pub name: String,
+    /// Whether it types a `text` event's string.
+    pub text: bool,
+}
+
+/// The driven screen's size, from `ready`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct InputScreen {
+    /// Width in pixels.
+    pub width: u32,
+    /// Height in pixels.
+    pub height: u32,
+}
+
+/// What the touchpad screen sends.
+#[derive(Debug, Clone, PartialEq, uniffi::Enum)]
+pub enum TouchEvent {
+    /// Relative motion, in the driven screen's pixels.
+    Motion {
+        /// Horizontal.
+        dx: f64,
+        /// Vertical.
+        dy: f64,
+    },
+    /// A pointer button, by evdev code (272 is the left button).
+    Button {
+        /// The code.
+        code: u16,
+        /// Pressed or released.
+        pressed: bool,
+    },
+    /// Scrolling, in wheel steps.
+    Scroll {
+        /// Horizontal steps.
+        dx: f64,
+        /// Vertical steps.
+        dy: f64,
+    },
+    /// A key, by evdev code (14 is Backspace, 28 is Enter).
+    Key {
+        /// The code.
+        code: u16,
+        /// Pressed or released.
+        pressed: bool,
+    },
+    /// Characters to type.
+    Text {
+        /// The characters.
+        text: String,
     },
 }
 

@@ -502,3 +502,184 @@ fn a_phone_joins_and_the_clipboard_flows_both_ways() {
     phone.stop();
     laptop.stop();
 }
+
+/// The phone drives a desktop as a touchpad (milestone 7, LP-145): the
+/// desktop is a plain daemon with the in-memory injector, the identities are
+/// built as the daemon tests build them, and the node's exported calls run
+/// the drive end to end.
+#[test]
+fn the_phone_is_a_touchpad_for_a_desktop() {
+    use ligature_android::{BTN_LEFT, TouchEvent};
+    use ligatured::input::FakeInject;
+    use lp_core::facts::Role;
+    use lp_core::input::{INPUT_TYPE, InputEvent};
+    use lp_core::paths::Locations;
+    use lp_core::wire::Timestamp;
+    use lp_identity::cross_signing::PersonKeys;
+    use lp_identity::facts;
+
+    let at = |offset: i64| Timestamp::from_unix(1_760_000_000 + offset).unwrap();
+    let phone_dir = tempfile::tempdir().unwrap();
+    let phone_host = Arc::new(FakeHost::with_downloads());
+    let phone = Node::start(config(&phone_dir, "phone"), phone_host.clone()).unwrap();
+
+    // The desktop: a daemon of the same person with the fake injector, run
+    // on a runtime of its own.
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let desktop_dir = tempfile::tempdir().unwrap();
+    let inject = FakeInject::new(2000, 1000);
+    let (desktop, addr) = {
+        let _guard = runtime.enter();
+        let loc = Locations::resolve(Some(desktop_dir.path()), None);
+        let (d, events) =
+            ligatured::daemon::Daemon::open(loc, "127.0.0.1:0".parse().unwrap(), Some("desktop"))
+                .unwrap();
+        d.attach_input(None, Some(inject.clone()));
+        ligatured::run::spawn_connection_events(d.clone(), events);
+        let addr = d.manager().endpoint().local_addr().unwrap();
+        (d, addr)
+    };
+    let alice = PersonKeys::generate().unwrap();
+    let person = facts::person_fact(&alice, "Alice", 1, at(0)).unwrap();
+    let phone_role = facts::role_fact(
+        &alice,
+        Role::Binding,
+        *phone.daemon().binding().public(),
+        true,
+        at(1),
+    )
+    .unwrap();
+    let desktop_role = facts::role_fact(
+        &alice,
+        Role::Binding,
+        *desktop.binding().public(),
+        true,
+        at(2),
+    )
+    .unwrap();
+    for d in [phone.daemon(), &desktop] {
+        d.store().insert(&person).unwrap();
+        d.store().insert(&phone_role).unwrap();
+        d.store().insert(&desktop_role).unwrap();
+        d.update_keys(|k| k.set_joined(*alice.person(), Some(&alice.self_signing)))
+            .unwrap();
+    }
+    let dial = phone.daemon().clone();
+    runtime
+        .block_on(async move { dial.manager().connect(addr).await })
+        .unwrap();
+    until("the phone sees the desktop's input", || {
+        phone.daemon().registry().peers_offering(INPUT_TYPE).len() == 1
+    });
+    until("the desktop sees the phone's input", || {
+        desktop.registry().peers_offering(INPUT_TYPE).len() == 1
+    });
+
+    // The picker: the desktop accepts and types text; the phone offers only.
+    let targets = phone.input_targets();
+    assert_eq!(targets.len(), 1, "{targets:?}");
+    assert_eq!(targets[0].key, desktop.binding().public().to_string());
+    // No device record is stored in this test, so the name falls back to
+    // the fingerprint.
+    assert_eq!(targets[0].name, desktop.binding().public().fingerprint());
+    assert!(targets[0].text);
+    assert!(phone.input_driving().is_none());
+
+    // Drive: an absolute entry at the middle, then a move, a tap, a scroll,
+    // text and a key.
+    let screen = phone.input_start(targets[0].key.clone()).unwrap();
+    assert_eq!((screen.width, screen.height), (2000, 1000));
+    assert_eq!(phone.input_driving(), Some(targets[0].key.clone()));
+    until("the desktop is driven", || {
+        inject.begun() == vec![(0.5, 0.5)]
+    });
+    assert!(
+        phone.input_start(targets[0].key.clone()).is_err(),
+        "one drive at a time"
+    );
+    phone
+        .input_send(vec![
+            TouchEvent::Motion {
+                dx: 30.0,
+                dy: -10.0,
+            },
+            TouchEvent::Button {
+                code: BTN_LEFT,
+                pressed: true,
+            },
+            TouchEvent::Button {
+                code: BTN_LEFT,
+                pressed: false,
+            },
+            TouchEvent::Scroll { dx: 0.0, dy: 2.0 },
+            TouchEvent::Text {
+                text: "héllo".to_owned(),
+            },
+            TouchEvent::Key {
+                code: 28,
+                pressed: true,
+            },
+            TouchEvent::Key {
+                code: 28,
+                pressed: false,
+            },
+        ])
+        .unwrap();
+    until("seven events injected", || inject.injected().len() == 7);
+    let injected = inject.injected();
+    assert_eq!(
+        injected[0],
+        InputEvent::Motion {
+            dx: 30.0,
+            dy: -10.0
+        }
+    );
+    assert_eq!(
+        injected[3],
+        InputEvent::Scroll {
+            dx: 0.0,
+            dy: 2.0,
+            discrete: true
+        }
+    );
+    assert_eq!(
+        injected[4],
+        InputEvent::Text {
+            text: "héllo".to_owned()
+        }
+    );
+    phone.input_send(Vec::new()).unwrap();
+
+    // Leaving the screen ends the drive: the desktop lifts everything and
+    // the host hears that it ended.
+    phone.input_stop();
+    until("the desktop lifted everything", || inject.ends() == 1);
+    assert!(phone.input_driving().is_none());
+    until("the host was told", || {
+        phone_host
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|e| matches!(e, Event::InputEnded { peer } if *peer == targets[0].key))
+    });
+    assert!(
+        phone
+            .input_send(vec![TouchEvent::Motion { dx: 1.0, dy: 1.0 }])
+            .is_err()
+    );
+
+    // The desktop going away mid-drive ends it too.
+    phone.input_start(targets[0].key.clone()).unwrap();
+    until("driven again", || inject.begun().len() == 2);
+    desktop.shutdown();
+    until("the drive ended with the connection", || {
+        phone.input_driving().is_none()
+    });
+    phone.stop();
+    runtime.shutdown_timeout(Duration::from_secs(2));
+}

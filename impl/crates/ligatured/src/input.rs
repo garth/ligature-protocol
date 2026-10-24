@@ -950,6 +950,45 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+/// A capture with no edges, for a device whose app drives through
+/// [`InputSync::drive`] and [`InputSync::send`]: the phone as a touchpad. It
+/// advertises `provides` and never reports an event of its own.
+#[derive(Debug, Default)]
+pub struct Touchpad;
+
+impl Touchpad {
+    /// The phone's capture.
+    #[must_use]
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self)
+    }
+}
+
+impl Capture for Touchpad {
+    fn provides(&self) -> bool {
+        true
+    }
+
+    fn screen(&self) -> (u32, u32) {
+        (0, 0)
+    }
+
+    fn arm(&self, _edges: &[Edge]) {}
+
+    fn take(&self, _edge: Edge) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn release(&self, _back_at: Option<(Edge, f64)>) {}
+
+    fn subscribe(&self) -> broadcast::Receiver<CaptureEvent> {
+        let (tx, rx) = broadcast::channel(1);
+        // Nothing ever sends; the receiver lives as long as it is held.
+        std::mem::forget(tx);
+        rx
+    }
+}
+
 /// An in-memory capture for tests and `LIGATURE_FAKE_INPUT=1`: the test
 /// hits an edge and feeds events; the fake records what was taken and where
 /// the pointer was put back.

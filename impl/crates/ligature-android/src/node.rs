@@ -277,6 +277,28 @@ impl Node {
             node.daemon
                 .attach_clipboard_with(clipboard, clipboard_config);
             node.daemon.attach_notifications(notifications);
+            // The phone drives a desktop as a touchpad (milestone 7): it
+            // provides input and accepts none, since Android lets an app
+            // inject nothing.
+            let input = node
+                .daemon
+                .attach_input(Some(ligatured::input::Touchpad::new()), None);
+            let host = node.host.clone();
+            let mut changes = input.subscribe();
+            rt.spawn(async move {
+                loop {
+                    match changes.recv().await {
+                        Ok(ligatured::input::Change::StoppedDriving(peer)) => {
+                            host.on_event(Event::InputEnded {
+                                peer: peer.to_string(),
+                            });
+                        }
+                        Ok(_) => {}
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+                    }
+                }
+            });
             // Every transfer, either direction, is shown by the host as it
             // moves: at most a few updates a second, and always its end.
             let host = node.host.clone();
@@ -343,6 +365,7 @@ impl Node {
                         .registry()
                         .peers_offering(lp_core::capability::CLIPBOARD_TYPE);
                     now.extend(daemon.registry().peers_offering(FILES_TYPE));
+                    now.extend(daemon.registry().peers_offering(lp_core::input::INPUT_TYPE));
                     if now != last {
                         last = now;
                         host.on_event(Event::StatusChanged);
@@ -351,6 +374,110 @@ impl Node {
             });
         })?;
         Ok(node)
+    }
+
+    /// The devices this phone can drive as a touchpad: this person's
+    /// connected devices whose input descriptor says they accept.
+    #[must_use]
+    pub fn input_targets(&self) -> Vec<crate::InputTarget> {
+        use lp_core::input::InputParams;
+        let mut targets: Vec<crate::InputTarget> = self
+            .daemon
+            .registry()
+            .peers()
+            .into_iter()
+            .filter(|caps| {
+                matches!(
+                    self.daemon.recognise(&caps.peer),
+                    Ok(lp_identity::trust::Recognition::MyBinding { .. })
+                )
+            })
+            .filter_map(|caps| {
+                caps.capabilities
+                    .iter()
+                    .find_map(InputParams::from_descriptor)
+                    .filter(|p| p.accepts)
+                    .map(|p| crate::InputTarget {
+                        key: caps.peer.to_string(),
+                        name: self
+                            .daemon
+                            .device_display_name(&caps.peer)
+                            .unwrap_or_else(|| caps.peer.fingerprint()),
+                        text: p.text,
+                    })
+            })
+            .collect();
+        targets.sort_by(|a, b| a.name.cmp(&b.name).then(a.key.cmp(&b.key)));
+        targets
+    }
+
+    /// Starts driving `peer` as a touchpad: an absolute entry at the middle
+    /// of its screen. Returns that screen's size.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LpError::BadRequest`] for a malformed key,
+    /// [`LpError::Mismatch`] for a device that is not this person's or does
+    /// not accept, and [`LpError::Internal`] when it is not connected or a
+    /// drive already runs.
+    pub fn input_start(&self, peer: String) -> Result<crate::InputScreen, LpError> {
+        let peer = PublicKey::parse(peer.trim())?;
+        let sync = self.input_sync()?;
+        let ready = self.with_runtime(|rt| {
+            rt.block_on(sync.drive(peer, lp_core::input::Enter::absolute(0.5, 0.5)))
+        })??;
+        Ok(crate::InputScreen {
+            width: ready.width,
+            height: ready.height,
+        })
+    }
+
+    /// Sends what the touchpad screen did to the device being driven, as one
+    /// batch: motion in the driven screen's pixels, buttons, scroll steps,
+    /// keys and text.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LpError::Internal`] when nothing is being driven.
+    pub fn input_send(&self, events: Vec<crate::TouchEvent>) -> Result<(), LpError> {
+        use lp_core::input::InputEvent;
+        let events: Vec<InputEvent> = events
+            .into_iter()
+            .map(|e| match e {
+                crate::TouchEvent::Motion { dx, dy } => InputEvent::Motion { dx, dy },
+                crate::TouchEvent::Button { code, pressed } => InputEvent::Button { code, pressed },
+                crate::TouchEvent::Scroll { dx, dy } => InputEvent::Scroll {
+                    dx,
+                    dy,
+                    discrete: true,
+                },
+                crate::TouchEvent::Key { code, pressed } => InputEvent::Key { code, pressed },
+                crate::TouchEvent::Text { text } => InputEvent::Text { text },
+            })
+            .collect();
+        if events.is_empty() {
+            return Ok(());
+        }
+        let sync = self.input_sync()?;
+        self.with_runtime(|rt| rt.block_on(sync.send(events, None)))??;
+        Ok(())
+    }
+
+    /// Ends the drive, lifting everything on the driven device: the user
+    /// left the touchpad screen.
+    pub fn input_stop(&self) {
+        if let Ok(sync) = self.input_sync() {
+            let _ = self.with_runtime(|rt| rt.block_on(sync.release_local(None)));
+        }
+    }
+
+    /// The device being driven, if any.
+    #[must_use]
+    pub fn input_driving(&self) -> Option<String> {
+        self.daemon
+            .input_sync()
+            .and_then(|s| s.status().driving)
+            .map(|d| d.peer.to_string())
     }
 
     /// The current status.
@@ -798,6 +925,12 @@ impl Node {
     #[must_use]
     pub fn daemon(&self) -> &Arc<Daemon> {
         &self.daemon
+    }
+
+    fn input_sync(&self) -> Result<Arc<ligatured::input::InputSync>, LpError> {
+        self.daemon
+            .input_sync()
+            .ok_or_else(|| LpError::Internal("input is not attached".to_owned()))
     }
 
     fn prompt(&self) -> (Prompt, Arc<Pairing>) {

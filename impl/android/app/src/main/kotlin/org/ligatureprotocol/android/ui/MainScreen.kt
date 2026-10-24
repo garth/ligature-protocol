@@ -37,6 +37,7 @@ import org.ligatureprotocol.android.AppSwitch
 import org.ligatureprotocol.android.PairingState
 import org.ligatureprotocol.android.UiState
 import org.ligatureprotocol.core.Device
+import org.ligatureprotocol.core.InputTarget
 import org.ligatureprotocol.core.Status
 
 @Composable
@@ -57,6 +58,7 @@ fun MainScreen(
     batteryUnrestricted: Boolean,
     onNotificationSettings: () -> Unit,
     onToggleApp: (String, Boolean) -> Unit,
+    onTouchpad: (InputTarget) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -84,6 +86,7 @@ fun MainScreen(
         } else {
             ClipboardCard(status, onSendClipboard, onReceiveClipboard, state.backgroundRead, state.lastClipboard)
             NotificationsCard(state.notificationAccess, state.apps, onNotificationSettings, onToggleApp)
+            if (state.inputTargets.isNotEmpty()) TouchpadCard(state.inputTargets, onTouchpad)
             if (state.pairing == null) IntroduceCard(onStartIntroduce)
             DevicesCard(state.devices, onRevoke)
         }
@@ -351,6 +354,21 @@ private fun groupDevices(devices: List<Device>): List<DeviceRow> {
         }
     }
     return rows
+}
+
+@Composable
+private fun TouchpadCard(targets: List<InputTarget>, onTouchpad: (InputTarget) -> Unit) {
+    Card {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Touchpad", style = MaterialTheme.typography.titleMedium)
+            Text("Use this phone as a touchpad and keyboard for one of your desktops.")
+            targets.forEach { target ->
+                OutlinedButton(onClick = { onTouchpad(target) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Drive ${target.name}")
+                }
+            }
+        }
+    }
 }
 
 @Composable

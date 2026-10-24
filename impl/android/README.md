@@ -111,6 +111,17 @@ depends on what Android allows:
   `make_key`). The main screen reports "automatic (background read allowed)" when the
   permission is held.
 
+## Touchpad
+
+Once a desktop of yours that accepts input is connected (a Linux machine, with milestone
+7), the main screen shows a Touchpad card with a button per desktop. Tapping one opens the
+touchpad: one finger moves the pointer, a tap clicks, a touch held still presses and drags
+until the finger lifts, two fingers scroll, and the field at the bottom types what the
+phone's keyboard produces, with Backspace, Enter and right-click buttons. The pointer starts
+in the middle of the desktop's screen. Done or Back ends the drive and lifts every key and
+button on the desktop; so does the desktop or the connection going away. The phone cannot
+be driven from a desktop: Android lets an app inject nothing (chapter 08).
+
 ## Where things are
 
 | | |

@@ -32,6 +32,10 @@ release workflow publishes the section as the release notes with the installers.
   when the pointer crosses a mapped screen edge, and injected through the virtual pointer
   and virtual keyboard protocols by a helper, with text typed through a keyboard of its
   own; a Linux daemon now advertises `input` (LP-143).
+- Android: the app is a touchpad and keyboard for one of the person's desktops: one
+  finger moves, a tap clicks, a hold drags, two fingers scroll, the field types, with
+  Backspace, Enter and right-click buttons; the phone advertises `input` as a provider
+  only (LP-145).
 
 ### Fixed
 

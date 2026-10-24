@@ -30,3 +30,8 @@ pub mod notifications;
 /// displays, and the permissions they need.
 #[cfg(target_os = "macos")]
 pub mod input;
+
+/// ScreenCaptureKit: a display captured as frames, and the Screen Recording
+/// permission.
+#[cfg(target_os = "macos")]
+pub mod screen;

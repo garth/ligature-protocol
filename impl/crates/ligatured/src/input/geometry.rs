@@ -108,6 +108,27 @@ pub fn clamp_to_zones(zones: &[Zone], point: (f64, f64)) -> (f64, f64) {
         .unwrap_or(point)
 }
 
+/// Where `zone` lies in the whole layout, as fractions of the layout's
+/// bounding box: the region a viewer's input positions on a shared display
+/// are mapped through. `None` for an empty layout.
+#[must_use]
+pub fn region_of(zones: &[Zone], zone: &Zone) -> Option<lp_core::input::Region> {
+    if zones.is_empty() {
+        return None;
+    }
+    let (left, top, right, bottom) = bounds(zones);
+    let (w, h) = (f64::from(right - left), f64::from(bottom - top));
+    if w <= 0.0 || h <= 0.0 {
+        return None;
+    }
+    Some(lp_core::input::Region {
+        x: f64::from(zone.x - left) / w,
+        y: f64::from(zone.y - top) / h,
+        width: f64::from(zone.width) / w,
+        height: f64::from(zone.height) / h,
+    })
+}
+
 /// Which armed edge of the layout `cursor` lies on, if any: the cursor sits
 /// on the layout's outermost pixel row or column. A corner counts for the
 /// first armed edge it touches.
@@ -175,6 +196,23 @@ mod tests {
         assert_eq!(back_position(Edge::Bottom, 1.0, &zones), (4480.0, 1437.0));
         assert_eq!(point_at(&zones, (0.0, 0.0)), (0.0, 0.0));
         assert_eq!(point_at(&zones, (1.0, 1.0)), (4479.0, 1439.0));
+    }
+
+    #[test]
+    fn a_display_s_region_is_its_share_of_the_layout() {
+        // A laptop to the left of and below the top of a larger monitor.
+        let laptop = zone(-1440, 300, 1440, 900);
+        let monitor = zone(0, 0, 2560, 1440);
+        let zones = [laptop, monitor];
+        let r = region_of(&zones, &monitor).unwrap();
+        assert!((r.x - 1440.0 / 4000.0).abs() < 1e-9);
+        assert!(r.y.abs() < 1e-9);
+        assert!((r.width - 2560.0 / 4000.0).abs() < 1e-9);
+        assert!((r.height - 1.0).abs() < 1e-9);
+        let r = region_of(&zones, &laptop).unwrap();
+        assert!(r.x.abs() < 1e-9);
+        assert!((r.y - 300.0 / 1440.0).abs() < 1e-9);
+        assert_eq!(region_of(&[], &laptop), None);
     }
 
     #[test]

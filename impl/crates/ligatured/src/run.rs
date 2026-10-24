@@ -170,13 +170,14 @@ pub async fn run(
             crate::screen_linux::viewer_params(),
         );
     }
-    #[cfg(not(target_os = "linux"))]
-    if std::env::var_os(FAKE_SCREEN_ENV).is_none()
-        && let Some(viewer) = crate::screen::viewer_params()
-    {
-        // A Mac views through lpview where ffmpeg is installed; its own
-        // capture arrives with LP-150.
-        daemon.attach_screen(None, Some(viewer));
+    #[cfg(target_os = "macos")]
+    if std::env::var_os(FAKE_SCREEN_ENV).is_none() {
+        // ScreenCaptureKit into ffmpeg's VideoToolbox encoder (LP-150), and
+        // lpview where ffmpeg decodes.
+        daemon.attach_screen(
+            Some(crate::screen_macos::MacScreen::start()),
+            crate::screen::viewer_params(),
+        );
     }
 
     spawn_connection_events(daemon.clone(), events);

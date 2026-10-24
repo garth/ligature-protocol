@@ -82,8 +82,18 @@ The daemon runs as a per-user launchd agent that starts at login.
     xattr -dr com.apple.quarantine .
     ```
 
-3. To watch another device's screen with `lpview`, install ffmpeg (`brew install ffmpeg`).
-    The Mac does not share its own screen yet.
+3. To share the Mac's screen, and to watch another device's with `lpview`, install ffmpeg
+    (`brew install ffmpeg`). The first time another device asks to see the Mac's screen,
+    macOS asks whether Ligature may record the screen, and that first share is refused.
+    Allow Ligature under System Settings, Privacy & Security, Screen Recording, then restart
+    the daemon, since macOS applies the permission to the next start:
+
+    ```sh
+    launchctl kickstart -k gui/$(id -u)/org.ligatureprotocol.ligatured
+    ```
+
+    While the screen is shared the menu bar shows macOS's own sharing indicator, and
+    stopping the share there ends it.
 
 4. Allow notifications once. When the daemon first starts, macOS asks whether Ligature may
     send notifications; click **Allow**, and your other devices' notifications show from

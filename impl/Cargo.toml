@@ -104,6 +104,12 @@ objc2-app-kit = "0.3"
 # the blocks its completion handlers take.
 objc2-user-notifications = { version = "0.3", default-features = false, features = ["std", "bitflags", "block2", "UNNotification", "UNNotificationAction", "UNNotificationAttachment", "UNNotificationCategory", "UNNotificationContent", "UNNotificationRequest", "UNNotificationResponse", "UNNotificationTrigger", "UNUserNotificationCenter"] }
 block2 = "0.6"
+# ScreenCaptureKit for the Mac's screen share (LP-150), the sample and pixel
+# buffers its frames arrive in, and the dispatch queue they arrive on.
+objc2-screen-capture-kit = { version = "0.3", default-features = false, features = ["std", "block2", "dispatch2", "objc2-core-foundation", "objc2-core-graphics", "objc2-core-media", "SCError", "SCShareableContent", "SCStream"] }
+objc2-core-media = { version = "0.3", default-features = false, features = ["std", "objc2", "objc2-core-video", "CMBase", "CMSampleBuffer", "CMTime"] }
+objc2-core-video = { version = "0.3", default-features = false, features = ["std", "objc2", "CVBase", "CVBuffer", "CVImageBuffer", "CVPixelBuffer", "CVReturn"] }
+dispatch2 = { version = "0.3", default-features = false, features = ["std", "block2", "objc2"] }
 
 # The Android library (milestone 2, LP-77). MPL-2.0; see deny.toml.
 uniffi = { version = "0.32", default-features = false }

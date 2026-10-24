@@ -220,6 +220,11 @@ pub struct DisplayRect {
 /// The active displays.
 #[must_use]
 pub fn displays() -> Vec<DisplayRect> {
+    display_list().into_iter().map(|(_, r)| r).collect()
+}
+
+/// The active displays with their `CGDirectDisplayID`s, and the main one's.
+pub(crate) fn display_list() -> Vec<(u32, DisplayRect)> {
     let mut ids = [0u32; 32];
     let mut count = 0u32;
     // SAFETY: the buffer holds 32 ids, the count it is given.
@@ -232,14 +237,23 @@ pub fn displays() -> Vec<DisplayRect> {
         .map(|id| {
             // SAFETY: an id the system just listed.
             let r = unsafe { CGDisplayBounds(*id) };
-            DisplayRect {
-                x: r.origin.x,
-                y: r.origin.y,
-                width: r.size.width,
-                height: r.size.height,
-            }
+            (
+                *id,
+                DisplayRect {
+                    x: r.origin.x,
+                    y: r.origin.y,
+                    width: r.size.width,
+                    height: r.size.height,
+                },
+            )
         })
         .collect()
+}
+
+/// The display with the menu bar.
+pub(crate) fn main_display() -> u32 {
+    // SAFETY: a plain query with no arguments.
+    unsafe { CGMainDisplayID() }
 }
 
 /// The cursor's position in the global space.

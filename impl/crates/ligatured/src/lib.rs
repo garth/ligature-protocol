@@ -30,3 +30,5 @@ pub mod run;
 pub mod screen;
 #[cfg(target_os = "linux")]
 pub mod screen_linux;
+#[cfg(target_os = "macos")]
+pub mod screen_macos;

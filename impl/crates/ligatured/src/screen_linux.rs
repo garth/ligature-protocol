@@ -22,9 +22,9 @@
 //! action, for its life.
 
 use std::collections::HashMap;
-use std::io::{Read as _, Write as _};
+use std::io::Write as _;
 use std::os::fd::{AsRawFd as _, OwnedFd};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -39,7 +39,12 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
 use crate::clipboard_linux::select_wayland_socket;
-use crate::screen::{Capture, Captured, EncodedFrame, Settings, Share, ShareControl};
+#[cfg(test)]
+use crate::screen::encode::bit_rate;
+#[cfg(test)]
+use crate::screen::encode::{AccessUnits, is_keyframe};
+use crate::screen::encode::{Encoder, RawInput, encoder_args, probe_encoder, read_frames};
+use crate::screen::{Capture, Captured, Settings, Share, ShareControl};
 
 /// The store key of the portal's restore token.
 pub const RESTORE_TOKEN_KEY: &str = "screen.restore_token";
@@ -51,17 +56,6 @@ pub const CAPTURE_ENV: &str = "LIGATURE_SCREEN_CAPTURE";
 const PROBE_EVERY: Duration = Duration::from_secs(5);
 /// The largest frame between the daemon and its screen helper's listing.
 const HELPER_MAX_FRAME: usize = 64 * 1024;
-/// Bits per pixel per frame the encoder aims for.
-const BITS_PER_PIXEL: f64 = 0.08;
-
-/// The H.264 encoder ffmpeg offers here.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Encoder {
-    /// VA-API on the render node.
-    Vaapi,
-    /// `libx264` in software.
-    X264,
-}
 
 /// One output as the helper lists it: the display, and where it lies in the
 /// layout.
@@ -145,112 +139,6 @@ fn region_of(outputs: &[OutputInfo], pick: impl Fn(&OutputInfo) -> bool) -> Opti
     })
 }
 
-/// The encoder's bit rate for a picture and rate, in bits per second.
-#[must_use]
-pub fn bit_rate(width: u32, height: u32, rate: u32) -> u64 {
-    let bits = f64::from(width) * f64::from(height) * f64::from(rate) * BITS_PER_PIXEL;
-    (bits as u64).clamp(1_000_000, 20_000_000)
-}
-
-/// Where the raw frames come from: their size and ffmpeg's name for their
-/// pixel format.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RawInput {
-    /// Width of each frame.
-    pub width: u32,
-    /// Height of each frame.
-    pub height: u32,
-    /// ffmpeg's `pix_fmt`: `bgr0`, `rgb0`, `bgra` or `rgba`.
-    pub pix_fmt: String,
-}
-
-/// The arguments of the ffmpeg that encodes raw frames on stdin into an
-/// H.264 byte stream on stdout, scaled to the share's size.
-#[must_use]
-pub fn encoder_args(encoder: Encoder, input: &RawInput, settings: &Settings) -> Vec<String> {
-    let rate = settings.frame_rate.max(1);
-    let rate_s = rate.to_string();
-    let br = bit_rate(settings.width, settings.height, rate);
-    let mut args: Vec<String> = ["-hide_banner", "-loglevel", "error", "-nostdin"]
-        .iter()
-        .map(|s| (*s).to_owned())
-        .collect();
-    if encoder == Encoder::Vaapi {
-        args.extend(["-vaapi_device", "/dev/dri/renderD128"].map(str::to_owned));
-    }
-    args.extend(
-        [
-            "-f",
-            "rawvideo",
-            "-pix_fmt",
-            &input.pix_fmt,
-            "-video_size",
-            &format!("{}x{}", input.width, input.height),
-            "-framerate",
-            &rate_s,
-            "-i",
-            "pipe:0",
-        ]
-        .map(str::to_owned),
-    );
-    let scale = format!("scale={}:{}", settings.width, settings.height);
-    match encoder {
-        Encoder::Vaapi => args.extend(
-            [
-                "-vf",
-                &format!("{scale},format=nv12,hwupload"),
-                "-c:v",
-                "h264_vaapi",
-                "-aud",
-                "1",
-                "-bsf:v",
-                "dump_extra",
-            ]
-            .map(str::to_owned),
-        ),
-        Encoder::X264 => args.extend(
-            [
-                "-vf",
-                &scale,
-                "-c:v",
-                "libx264",
-                "-preset",
-                "ultrafast",
-                "-tune",
-                "zerolatency",
-                "-pix_fmt",
-                "yuv420p",
-                "-x264-params",
-                "aud=1:repeat-headers=1",
-            ]
-            .map(str::to_owned),
-        ),
-    }
-    args.extend(
-        [
-            "-g",
-            &rate_s,
-            "-keyint_min",
-            &rate_s,
-            "-bf",
-            "0",
-            "-b:v",
-            &br.to_string(),
-            "-maxrate",
-            &br.to_string(),
-            "-bufsize",
-            &(br / 2).to_string(),
-            "-flush_packets",
-            "1",
-            "-f",
-            "h264",
-            "pipe:1",
-        ]
-        .map(str::to_owned),
-    );
-    args
-}
-
 /// The GStreamer pipeline that turns the portal's PipeWire stream into raw
 /// BGRx frames of the share's size and rate on stdout. `keepalive-time`
 /// makes a still screen keep producing frames.
@@ -269,72 +157,6 @@ pub fn pipewire_args(fd: i32, node: u32, settings: &Settings) -> Vec<String> {
     .collect()
 }
 
-/// Splits an H.264 Annex B byte stream into access units at the access unit
-/// delimiters the encoder puts before every frame.
-#[derive(Debug, Default)]
-pub struct AccessUnits {
-    pending: Vec<u8>,
-}
-
-/// The NAL unit type of an access unit delimiter.
-const NAL_AUD: u8 = 9;
-/// The NAL unit type of an IDR slice.
-const NAL_IDR: u8 = 5;
-
-/// Every NAL unit's start (the index of its first header byte) and type.
-fn nal_units(bytes: &[u8]) -> Vec<(usize, usize, u8)> {
-    // (start code index, header index, type)
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i + 3 < bytes.len() {
-        if bytes[i] == 0 && bytes[i + 1] == 0 && bytes[i + 2] == 1 {
-            let code = if i > 0 && bytes[i - 1] == 0 { i - 1 } else { i };
-            out.push((code, i + 3, bytes[i + 3] & 0x1f));
-            i += 3;
-        } else {
-            i += 1;
-        }
-    }
-    out
-}
-
-/// Whether an access unit holds an IDR slice, so a decoder can start there.
-#[must_use]
-pub fn is_keyframe(unit: &[u8]) -> bool {
-    nal_units(unit).iter().any(|(_, _, t)| *t == NAL_IDR)
-}
-
-impl AccessUnits {
-    /// Takes more bytes and returns every access unit they complete.
-    pub fn push(&mut self, bytes: &[u8]) -> Vec<Vec<u8>> {
-        self.pending.extend_from_slice(bytes);
-        let starts: Vec<usize> = nal_units(&self.pending)
-            .into_iter()
-            .filter(|(_, _, t)| *t == NAL_AUD)
-            .map(|(code, _, _)| code)
-            .collect();
-        let mut out = Vec::new();
-        let mut cut = 0;
-        for start in starts {
-            if start > cut {
-                out.push(self.pending[cut..start].to_vec());
-            }
-            cut = start;
-        }
-        // An access unit is complete only when the next one's delimiter has
-        // arrived; what follows the last delimiter waits.
-        self.pending.drain(..cut);
-        out.retain(|u| !u.is_empty());
-        out
-    }
-
-    /// What is left when the stream ends.
-    pub fn finish(&mut self) -> Option<Vec<u8>> {
-        let rest = std::mem::take(&mut self.pending);
-        (!rest.is_empty()).then_some(rest)
-    }
-}
-
 // ---------------------------------------------------------------------------
 // The tools and the displays, looked at in the background.
 
@@ -345,52 +167,6 @@ struct Probe {
     pipewiresrc: bool,
     portal: bool,
     list: HelperList,
-}
-
-fn run_quiet(program: &str, args: &[&str]) -> Option<Vec<u8>> {
-    let out = Command::new(program)
-        .args(args)
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .output()
-        .ok()?;
-    out.status.success().then_some(out.stdout)
-}
-
-/// Which H.264 encoder ffmpeg has that works here: VA-API if a test encode
-/// succeeds on the render node, else `libx264`, else none.
-#[must_use]
-pub fn probe_encoder() -> Option<Encoder> {
-    let encoders = String::from_utf8(run_quiet("ffmpeg", &["-hide_banner", "-encoders"])?).ok()?;
-    if encoders.contains(" h264_vaapi ") && Path::new("/dev/dri/renderD128").exists() {
-        let test = run_quiet(
-            "ffmpeg",
-            &[
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-vaapi_device",
-                "/dev/dri/renderD128",
-                "-f",
-                "lavfi",
-                "-i",
-                "testsrc2=size=64x64:rate=5",
-                "-frames:v",
-                "2",
-                "-vf",
-                "format=nv12,hwupload",
-                "-c:v",
-                "h264_vaapi",
-                "-f",
-                "h264",
-                "pipe:1",
-            ],
-        );
-        if test.is_some_and(|b| !b.is_empty()) {
-            return Some(Encoder::Vaapi);
-        }
-    }
-    encoders.contains(" libx264 ").then_some(Encoder::X264)
 }
 
 pub use crate::screen::{probe_decoder, viewer_params};
@@ -791,40 +567,8 @@ impl Capture for LinuxScreen {
         }));
 
         // The encoded stream, split into frames.
-        {
-            let frames_tx = frames_tx.clone();
-            let stopping = stopping.clone();
-            std::thread::Builder::new()
-                .name("screen-encoded".into())
-                .spawn(move || {
-                    let mut encoded = encoded;
-                    let mut units = AccessUnits::default();
-                    let mut buf = vec![0u8; 256 * 1024];
-                    loop {
-                        match encoded.read(&mut buf) {
-                            Ok(0) | Err(_) => break,
-                            Ok(n) => {
-                                for unit in units.push(&buf[..n]) {
-                                    let key = is_keyframe(&unit);
-                                    let frame = EncodedFrame {
-                                        at: 0,
-                                        key,
-                                        bytes: unit,
-                                    };
-                                    if frames_tx.send(Captured::Frame(frame)).is_err() {
-                                        return;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if !stopping.load(Ordering::SeqCst) {
-                        tracing::info!("the encoder's stream ended");
-                        let _ = frames_tx.send(Captured::Ended(StopReason::Error));
-                    }
-                })
-                .map_err(|_| RefuseReason::NoEncoder)?;
-        }
+        read_frames(encoded, frames_tx.clone(), stopping.clone())
+            .map_err(|_| RefuseReason::NoEncoder)?;
 
         // The sharing notification and its Stop action, and the portal
         // session's end, which is the platform withdrawing consent.

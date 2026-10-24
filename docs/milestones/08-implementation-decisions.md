@@ -184,3 +184,49 @@ this build (the run, LP-152). Two findings: `adb shell input text` truncates lon
 so the pairing offer went in two pieces with the emulator's keyboard disabled; and a share's
 input region is computed when the share starts, so a layout that changes during the share maps
 positions by the old one until the next share.
+
+## LP-150: the Mac shares its screen
+
+**ScreenCaptureKit into ffmpeg's VideoToolbox encoder.** The plan's VideoToolbox is reached
+through ffmpeg, as Linux reaches VA-API, so the encoder arguments, the probe and the split of
+the stream into frames are one module for both desktops (`screen::encode`, moved out of the
+Linux backend). `lp-macos::screen` holds the ScreenCaptureKit code: the displays, the Screen
+Recording check, and a stream of one display at the share's size and rate, the cursor
+drawn in, delivered as BGRA rows packed tightly by an output object of the crate's own class
+on a dispatch queue of its own. ffmpeg's `h264_videotoolbox` writes no access unit
+delimiters and keeps the parameter sets in the stream's header, so two bitstream filters
+put the parameter sets before every keyframe and then a delimiter before every frame
+(`dump_extra=freq=keyframe,h264_metadata=aud=insert`). The order was checked on the Linux
+machine with `libx264` made to keep its parameter sets in the header as VideoToolbox does:
+every access unit started with a delimiter and every keyframe carried both sets. Where ffmpeg
+has no working VideoToolbox encoder, `libx264` is used, and without ffmpeg the Mac does not
+share.
+
+**A pacer repeats the newest frame.** ScreenCaptureKit delivers a frame only when the
+display changed. A thread writes the newest frame into ffmpeg at the agreed rate, the same
+one again while the screen is still, so the encoder's keyframe every second reaches a viewer
+who joins late, as `pipewiresrc`'s keepalive does on Linux.
+
+**Consent is Screen Recording, applied on the next start.** A share asked for without the
+permission asks macOS for it and is refused for `consent`; macOS applies the permission to
+the next start of the process, so the daemon is restarted once after the user allows it, and
+the install guide says how. The menu bar's sharing indicator is the platform's, so no
+notification is posted, unlike Linux; stopping the share from the indicator ends it with
+`consent`, any other end of the stream with `error`.
+
+**Displays by their display id, the region by points.** A display's id on the wire is its
+`CGDirectDisplayID`, its size the pixel size, its name "Built-in display", "Main display"
+or "Display <id>", and the main display is the primary. With more than one display the
+share's input region is the display's rectangle in points as a fraction of the displays'
+bounding box (`input::geometry::region_of`, shared with the input backend), which is what the
+Mac's injector places the pointer by.
+
+**`lpview` is unchanged.** It was written on winit, softbuffer and an ffmpeg decoder, which
+all run on macOS, so the plan's AppKit viewer is not needed; it already type-checks for the
+Mac.
+
+**Built here, run on the Mac.** Type-checked and linted for `aarch64-apple-darwin` on the
+Linux machine, as LP-144 was; built, linked and run on the Mac. To be recorded from that
+run: the permission prompt and restart, the encoder the probe picks, the latency and CPU at
+the default size and rate, and whether macOS's monthly reminder for screen recording
+applications appears.

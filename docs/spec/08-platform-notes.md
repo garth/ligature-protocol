@@ -46,7 +46,7 @@ A macOS machine is a full peer. The binding daemon runs as a per-user launchd ag
 from an application bundle, `~/Applications/Ligature.app` (installed by the release
 tarball's `install.sh`, state in `~/Library/Application Support/ligature`, control socket
 in `$TMPDIR/ligature`, the UDP port fixed at 47471), because macOS grants notifications,
-and later Accessibility and Screen Recording, to a bundle by its identifier, and
+Accessibility, Input Monitoring and Screen Recording, to a bundle by its identifier, and
 the principal daemon as a launchd daemon, mirroring the Linux split; presence comes from
 the console-user and session state that the system exposes to daemons. Bonjour is the
 native mDNS/DNS-SD implementation and CoreBluetooth the BLE stack, so discovery needs no
@@ -82,8 +82,13 @@ extra components. What a third-party daemon may offer is bounded by platform per
   barriers: the daemon watches the cursor in its tap and starts a drive when the cursor
   reaches a mapped edge. Secure input, which macOS turns on in a password field, keeps the
   keyboard from every tap.
-- **Displays**: capturing or mirroring the screen needs Screen Recording, granted per
-  application by the user under Transparency, Consent and Control.
+- **Displays**: ScreenCaptureKit captures a display for a share, and serves only a process
+  with the Screen Recording permission, which the user grants to the bundle once under
+  Privacy and Security. macOS applies a newly granted permission to the next start of the
+  process, so the first share is refused and the daemon is restarted after the user allows
+  it. While a share runs the menu bar shows the system's own sharing indicator, and
+  stopping the share there ends it with `consent`. ScreenCaptureKit delivers a frame only
+  when the display changed, so a still screen's frame is repeated at the agreed rate.
 - **Keys**: the Keychain stores the local store's keys; the Secure Enclave holds only
   P-256 keys, so an Ed25519 key is software-held and may be wrapped by one
   ([ADR 0027](../adr/0027-ed25519.md)).

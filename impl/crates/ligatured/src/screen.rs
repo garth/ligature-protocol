@@ -31,6 +31,8 @@ use tokio::sync::mpsc;
 
 use crate::daemon::Daemon;
 
+pub mod encode;
+
 /// How often the capture's flags are re-read for the manifest.
 const ADVERTISE_POLL: Duration = Duration::from_secs(1);
 /// How long the viewer waits for `started` or `refused`, which may wait on

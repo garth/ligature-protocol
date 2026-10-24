@@ -182,7 +182,7 @@ From a checkout, the same install with the binaries you build:
 
 ```sh
 cd impl
-cargo build --release -p ligatured -p lpctl
+cargo build --release -p ligatured -p lpctl -p lpview
 ../packaging/install.sh target/release
 ```
 

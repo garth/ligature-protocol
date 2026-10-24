@@ -51,6 +51,8 @@ fn control_messages_validate() {
         types::INPUT_LAYOUT_UNSET,
         types::INPUT_STATUS,
         types::INPUT_RELEASE,
+        types::INPUT_DRIVE,
+        types::INPUT_SEND,
         types::SCREEN_DISPLAYS,
         types::SCREEN_START,
         types::SCREEN_STOP,

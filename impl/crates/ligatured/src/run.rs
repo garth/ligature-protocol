@@ -153,8 +153,24 @@ pub async fn run(
             }),
         );
     }
-    // The platform capture, encoder and viewer arrive with LP-149 (Linux)
-    // and LP-150 (macOS).
+    #[cfg(target_os = "linux")]
+    if std::env::var_os(FAKE_SCREEN_ENV).is_none() {
+        // The ScreenCast portal or wlr-screencopy, and ffmpeg (LP-149).
+        daemon.attach_screen(
+            Some(crate::screen_linux::LinuxScreen::start(
+                daemon.store().clone(),
+            )),
+            crate::screen_linux::viewer_params(),
+        );
+    }
+    #[cfg(not(target_os = "linux"))]
+    if std::env::var_os(FAKE_SCREEN_ENV).is_none()
+        && let Some(viewer) = crate::screen::viewer_params()
+    {
+        // A Mac views through lpview where ffmpeg is installed; its own
+        // capture arrives with LP-150.
+        daemon.attach_screen(None, Some(viewer));
+    }
 
     spawn_connection_events(daemon.clone(), events);
     spawn_discovery(daemon.clone());

@@ -1,12 +1,13 @@
 #!/bin/sh
-# Installs ligatured and lpctl for the current user and runs the daemon as a
+# Installs ligatured, lpctl and lpview for the current user and runs the daemon as a
 # service: a systemd user unit on Linux, a launchd agent on macOS (LP-85).
 #
 #   ./install.sh [SOURCE_DIR] [--no-start]
 #
 # SOURCE_DIR holds the two binaries; it defaults to this script's directory,
 # which is the case in a release tarball. From a checkout, point it at
-# impl/target/release after `cargo build --release -p ligatured -p lpctl`.
+# impl/target/release after `cargo build --release -p ligatured -p lpctl -p lpview`.
+# lpview, the screen viewer, is installed when it is there.
 # --no-start installs and enables the service without starting it, for a
 # machine where a daemon is still running by hand.
 #
@@ -42,7 +43,12 @@ unit_dir=$here
 
 mkdir -p "$bin_dir"
 install -m 755 "$source_dir/ligatured" "$source_dir/lpctl" "$bin_dir/"
-echo "installed ligatured and lpctl in $bin_dir"
+installed="ligatured and lpctl"
+if [ -x "$source_dir/lpview" ]; then
+    install -m 755 "$source_dir/lpview" "$bin_dir/"
+    installed="ligatured, lpctl and lpview"
+fi
+echo "installed $installed in $bin_dir"
 case ":$PATH:" in
     *":$bin_dir:"*) ;;
     *) echo "note: $bin_dir is not on your PATH" ;;
@@ -74,7 +80,7 @@ Darwin)
     [ -e "$plist" ] || plist=$unit_dir/launchd/org.ligatureprotocol.ligatured.plist
     # A downloaded binary carries the quarantine attribute, which Gatekeeper
     # would act on; the release binaries are ad hoc signed by the linker.
-    xattr -d com.apple.quarantine "$bin_dir/ligatured" "$bin_dir/lpctl" 2>/dev/null || true
+    xattr -d com.apple.quarantine "$bin_dir/ligatured" "$bin_dir/lpctl" "$bin_dir/lpview" 2>/dev/null || true
     mkdir -p "$HOME/Library/Logs/ligature" "$HOME/Library/LaunchAgents"
     target=$HOME/Library/LaunchAgents/org.ligatureprotocol.ligatured.plist
     sed "s|HOME|$HOME|g" "$plist" > "$target"

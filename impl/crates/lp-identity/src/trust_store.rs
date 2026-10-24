@@ -30,7 +30,7 @@ use crate::facts;
 /// The schema version this daemon writes. Step 2 rewrote `created_at` in
 /// the fixed-width form of [`Timestamp::to_rfc3339_fixed`], so the column
 /// sorts as time.
-pub const SCHEMA_VERSION: u32 = 3;
+pub const SCHEMA_VERSION: u32 = 4;
 
 /// The persistent local store of signed facts.
 pub struct TrustStore {
@@ -173,7 +173,55 @@ impl TrustStore {
             )
             .map_err(store_err)?;
         }
+        if version < 4 {
+            // Settings local to the device that are neither facts nor the
+            // layout (milestone 8, LP-149): the screen-cast portal's restore
+            // token. Never gossiped.
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS local_settings (
+                    key    TEXT PRIMARY KEY,
+                    value  TEXT NOT NULL
+                );
+                PRAGMA user_version = 4;",
+            )
+            .map_err(store_err)?;
+        }
         Ok(())
+    }
+
+    /// A setting local to this device, if set.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Store`] on a database error.
+    pub fn local_setting(&self, key: &str) -> Result<Option<String>, Error> {
+        self.conn()
+            .query_row(
+                "SELECT value FROM local_settings WHERE key = ?1",
+                [key],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(store_err)
+    }
+
+    /// Sets a setting local to this device, or removes it with `None`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Store`] on a database error.
+    pub fn set_local_setting(&self, key: &str, value: Option<&str>) -> Result<(), Error> {
+        let conn = self.conn();
+        match value {
+            Some(v) => conn.execute(
+                "INSERT INTO local_settings (key, value) VALUES (?1, ?2)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                params![key, v],
+            ),
+            None => conn.execute("DELETE FROM local_settings WHERE key = ?1", params![key]),
+        }
+        .map(|_| ())
+        .map_err(store_err)
     }
 
     /// The input layout: each edge of this device's screen that leads to
@@ -667,6 +715,29 @@ mod tests {
 
     fn locations(dir: &Path) -> Locations {
         Locations::resolve(Some(dir), None)
+    }
+
+    #[test]
+    fn local_settings_are_set_replaced_and_removed() {
+        let store = TrustStore::in_memory().unwrap();
+        assert_eq!(store.local_setting("screen.restore_token").unwrap(), None);
+        store
+            .set_local_setting("screen.restore_token", Some("a"))
+            .unwrap();
+        store
+            .set_local_setting("screen.restore_token", Some("b"))
+            .unwrap();
+        assert_eq!(
+            store
+                .local_setting("screen.restore_token")
+                .unwrap()
+                .as_deref(),
+            Some("b")
+        );
+        store
+            .set_local_setting("screen.restore_token", None)
+            .unwrap();
+        assert_eq!(store.local_setting("screen.restore_token").unwrap(), None);
     }
 
     #[test]

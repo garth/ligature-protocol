@@ -21,5 +21,5 @@ Darwin)
     echo "removed the ligatured launchd agent"
     ;;
 esac
-rm -f "$bin_dir/ligatured" "$bin_dir/lpctl"
-echo "removed ligatured and lpctl from $bin_dir"
+rm -f "$bin_dir/ligatured" "$bin_dir/lpctl" "$bin_dir/lpview"
+echo "removed ligatured, lpctl and lpview from $bin_dir"

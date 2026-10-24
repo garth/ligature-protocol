@@ -26,3 +26,5 @@ pub mod notifications_linux;
 pub mod notifications_macos;
 pub mod run;
 pub mod screen;
+#[cfg(target_os = "linux")]
+pub mod screen_linux;

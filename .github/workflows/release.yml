@@ -71,7 +71,7 @@ jobs:
           workspaces: impl
       - name: Build
         working-directory: impl
-        run: cargo build --release -p ligatured -p lpctl
+        run: cargo build --release -p ligatured -p lpctl -p lpview
       - name: Package
         run: packaging/package.sh linux ${{ matrix.arch }} ${{ needs.version.outputs.version }} impl/target/release dist
       - uses: actions/upload-artifact@v7
@@ -94,13 +94,13 @@ jobs:
       - name: Build both architectures
         working-directory: impl
         run: |
-          cargo build --release -p ligatured -p lpctl --target aarch64-apple-darwin
-          cargo build --release -p ligatured -p lpctl --target x86_64-apple-darwin
+          cargo build --release -p ligatured -p lpctl -p lpview --target aarch64-apple-darwin
+          cargo build --release -p ligatured -p lpctl -p lpview --target x86_64-apple-darwin
       - name: Universal binaries
         working-directory: impl
         run: |
           mkdir -p target/universal
-          for b in ligatured lpctl; do
+          for b in ligatured lpctl lpview; do
             lipo -create -output "target/universal/$b" \
               "target/aarch64-apple-darwin/release/$b" "target/x86_64-apple-darwin/release/$b"
             codesign --sign - --force "target/universal/$b"

@@ -87,6 +87,11 @@ pub mod types {
     pub const INPUT_STATUS: &str = "org.ligatureprotocol.control.input.status";
     /// `input.release`: end the drive this device runs.
     pub const INPUT_RELEASE: &str = "org.ligatureprotocol.control.input.release";
+    /// `input.drive`: start driving a device (`key`) with an absolute entry
+    /// at `x`, `y`, for a viewer; answered with the driven screen's size.
+    pub const INPUT_DRIVE: &str = "org.ligatureprotocol.control.input.drive";
+    /// `input.send`: a batch of `events` to the device being driven.
+    pub const INPUT_SEND: &str = "org.ligatureprotocol.control.input.send";
     /// `screen.displays`: list a device's displays (`key`).
     pub const SCREEN_DISPLAYS: &str = "org.ligatureprotocol.control.screen.displays";
     /// `screen.start`: watch a device's display (`key`, `display`, `width`,
@@ -171,6 +176,15 @@ pub struct Request {
     /// `screen.start`: the frame rate wanted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frame_rate: Option<u32>,
+    /// `input.drive`: the entry point across the screen, a fraction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub x: Option<f64>,
+    /// `input.drive`: the entry point down the screen, a fraction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub y: Option<f64>,
+    /// `input.send`: the events, in order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub events: Option<Vec<lp_core::input::InputEvent>>,
 }
 
 impl Request {
@@ -655,6 +669,10 @@ fn unsafe_free_uid() -> u32 {
 pub struct ConnectionState {
     /// Pairing sessions keyed by the request id that opened them.
     pub pairings: std::collections::HashMap<u64, crate::ceremony::PairingHandle>,
+    /// This connection started the drive the daemon runs (`input.drive`):
+    /// when it closes, the drive ends, so a viewer that dies leaves nothing
+    /// driven.
+    pub drove: bool,
 }
 
 /// Something to write to the client.
@@ -681,7 +699,16 @@ async fn connection(daemon: Arc<Daemon>, stream: UnixStream) -> Result<(), Error
         }
     });
     let mut state = ConnectionState::default();
-    while let Some(body) = read_frame(&mut reader).await? {
+    let mut failed = None;
+    loop {
+        let body = match read_frame(&mut reader).await {
+            Ok(Some(body)) => body,
+            Ok(None) => break,
+            Err(e) => {
+                failed = Some(e);
+                break;
+            }
+        };
         let request: Request = match frame::decode(&body) {
             Ok(r) => r,
             Err(e) => {
@@ -703,9 +730,16 @@ async fn connection(daemon: Arc<Daemon>, stream: UnixStream) -> Result<(), Error
             break;
         }
     }
+    if state.drove
+        && let Some(input) = daemon.input_sync()
+        && input.is_driving()
+    {
+        tracing::info!("the client that started the drive went away; ending it");
+        input.release_local(None).await;
+    }
     drop(out);
     let _ = writer_task.await;
-    Ok(())
+    failed.map_or(Ok(()), Err)
 }
 
 mod serde_json_like {
@@ -883,7 +917,7 @@ pub async fn handle(
             return handle_files(daemon, request, out);
         }
         t if t.starts_with(types::PREFIX) && t.contains(".input.") => {
-            return Some(handle_input(daemon, request).await);
+            return Some(handle_input(daemon, state, request).await);
         }
         t if t.starts_with(types::PREFIX) && t.contains(".screen.") => {
             return handle_screen(daemon, request, out).await;
@@ -1045,7 +1079,11 @@ pub struct ScreenStopped {
 }
 
 /// Handles an `input.*` request (milestone 7).
-async fn handle_input(daemon: &Arc<Daemon>, request: Request) -> Response {
+async fn handle_input(
+    daemon: &Arc<Daemon>,
+    state: &mut ConnectionState,
+    request: Request,
+) -> Response {
     let id = request.id;
     let Some(input) = daemon.input_sync() else {
         return Response::error(
@@ -1089,6 +1127,32 @@ async fn handle_input(daemon: &Arc<Daemon>, request: Request) -> Response {
             Err(e) => Err(e),
         },
         types::INPUT_STATUS => Response::ok(id, &input.status()),
+        types::INPUT_DRIVE => match request.key {
+            Some(peer) => {
+                let enter = lp_core::input::Enter::absolute(
+                    request.x.unwrap_or(0.5),
+                    request.y.unwrap_or(0.5),
+                );
+                input.drive(peer, enter).await.and_then(|ready| {
+                    state.drove = true;
+                    Response::ok(
+                        id,
+                        &InputDriven {
+                            width: ready.width,
+                            height: ready.height,
+                        },
+                    )
+                })
+            }
+            None => return bad("input.drive needs a key"),
+        },
+        types::INPUT_SEND => match request.events {
+            Some(events) => input
+                .send(events, None)
+                .await
+                .and_then(|()| Response::ok(id, &Empty {})),
+            None => return bad("input.send needs events"),
+        },
         types::INPUT_RELEASE => {
             if input.is_driving() {
                 input.release_local(None).await;
@@ -1109,6 +1173,15 @@ async fn handle_input(daemon: &Arc<Daemon>, request: Request) -> Response {
         Ok(r) => r,
         Err(e) => Response::error(id, ErrorBody::from_error(&e)),
     }
+}
+
+/// The `input.drive` result: the driven screen's size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InputDriven {
+    /// Width in pixels.
+    pub width: u32,
+    /// Height in pixels.
+    pub height: u32,
 }
 
 /// The `input.layout` result.

@@ -188,7 +188,9 @@ The reference implementation is Rust and is also the production implementation
   `ligatured` (user daemon; control socket; systemd unit in `crates/ligatured/systemd/`,
   launchd plist in `crates/ligatured/launchd/`),
   `lpctl` (CLI; `lpctl upgrade` and the daily release check live in its `upgrade` module,
-  ADR 0042), `lp-vectors` (conformance vector formats and loader, test support,
+  ADR 0042), `lpview` (the screen viewer: a winit window drawn through softbuffer, ffmpeg
+  as a child to decode, the daemon's control socket for the share and the drive),
+  `lp-vectors` (conformance vector formats and loader, test support,
   `publish = false`), `ligature-android` (the daemon as a `cdylib` for the Android app behind
   UniFFI 0.32 proc macros, `publish = false`; allows `unsafe_code` for the exported C ABI;
   its `uniffi-bindgen` binary, feature `bindgen`, generates the Kotlin), `lp-macos` (the
@@ -198,9 +200,10 @@ The reference implementation is Rust and is also the production implementation
   Dependency direction: `lp-crypto` depends only on `lp-core`; `lp-identity` and
   `lp-transport` depend on `lp-core` and `lp-crypto`; binaries depend on the layer crates;
   integrations depend on `lp-core` and never the other way round; `lp-vectors` is only ever
-  a dev-dependency; `lpctl` depends on the `ligatured` library for the control channel
-  types and client, since the two are built and installed together; `ligature-android`
-  depends on the `ligatured` library and runs its loops without the control socket.
+  a dev-dependency; `lpctl` and `lpview` depend on the `ligatured` library for the
+  control channel types and client, since they are built and installed together;
+  `ligature-android` depends on the `ligatured` library and runs its loops without the
+  control socket.
 - `impl/android/`: the Android app, a Gradle project (Kotlin, Compose, min SDK 29) with its
   own README. Gradle runs `cargo ndk` and `uniffi-bindgen` before compiling; the library and
   the generated bindings live under `app/build/` and are never committed. `mise.toml` there

@@ -7,6 +7,7 @@ members = [
     "crates/lp-transport",
     "crates/ligatured",
     "crates/lpctl",
+    "crates/lpview",
     "crates/ligature-android",
     "crates/lp-macos",
     "crates/lp-vectors",
@@ -86,7 +87,12 @@ wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 wayland-protocols-misc = { version = "0.3", features = ["client"] }
 reis = { version = "0.7", features = ["tokio"] }
 # The portal wrapper, for the InputCapture session, barriers and signals.
-ashpd = { version = "0.13", default-features = false, features = ["tokio", "input_capture"] }
+ashpd = { version = "0.13", default-features = false, features = ["tokio", "input_capture", "screencast"] }
+# lpview (LP-149): a window and a software framebuffer to draw decoded frames
+# in, without a GPU or toolkit dependency; client-side decorations without a
+# title font.
+winit = { version = "0.30", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen", "wayland-csd-adwaita-notitle"] }
+softbuffer = "0.4"
 rustix = { version = "1", features = ["fs", "event", "pipe"] }
 # Linux notifications over the session bus (milestone 3, LP-91).
 zbus = { version = "6", default-features = false, features = ["tokio", "proxy"] }

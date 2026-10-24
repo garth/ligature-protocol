@@ -1,0 +1,765 @@
+//! `lpview`: watch another of your devices' screens in a window, and drive it
+//! (milestone 8, LP-149).
+//!
+//! The local daemon does the protocol: `lpview` asks it over the control
+//! socket to watch a device (`screen.start`) and receives the encoded frames
+//! as events, which an ffmpeg child decodes into raw pictures this program
+//! draws into a window, scaled to fit. A click on the picture asks the daemon
+//! to drive the device (`input.drive`, an absolute entry where the click
+//! landed); from then on the pointer's position over the picture, its
+//! buttons and wheel, and the keyboard go to the device as `input` events,
+//! until both Control keys are pressed, the window loses focus, or it
+//! closes. Keys travel as Linux evdev codes from winit's physical key codes,
+//! so the device's own layout applies.
+
+use std::io::{Read as _, Write as _};
+use std::num::NonZeroU32;
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use clap::Parser;
+use ligatured::control::{
+    Client, Devices, Empty, Event, InputDriven, Request, ScreenStopped, types,
+};
+use lp_core::input::{BTN_LEFT, BTN_MIDDLE, BTN_RIGHT, InputEvent, KEY_LEFTCTRL, KEY_RIGHTCTRL};
+use lp_core::paths::{DATA_DIR_ENV, Locations, RUNTIME_DIR_ENV};
+use lp_core::screen::Started;
+use lp_core::{Error, PublicKey};
+use tokio::sync::mpsc;
+use winit::application::ApplicationHandler;
+use winit::dpi::{LogicalSize, PhysicalPosition};
+use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
+use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::window::{Window, WindowId};
+
+/// Command-line options.
+#[derive(Debug, Parser)]
+#[command(version, about = "Watch and drive another of your devices' screens")]
+struct Options {
+    /// The device: its name, or a prefix of its key or fingerprint.
+    device: String,
+    /// The display id, from `lpctl screen displays`; the primary one by default.
+    #[arg(long)]
+    display: Option<String>,
+    /// The widest picture wanted.
+    #[arg(long, default_value_t = 1920)]
+    width: u32,
+    /// The tallest picture wanted.
+    #[arg(long, default_value_t = 1080)]
+    height: u32,
+    /// The frame rate wanted.
+    #[arg(long, default_value_t = 30)]
+    rate: u32,
+    /// Watch only: never drive the device.
+    #[arg(long)]
+    view_only: bool,
+    /// The daemon's data directory (default: the platform's).
+    #[arg(long, env = DATA_DIR_ENV)]
+    data_dir: Option<PathBuf>,
+    /// The daemon's runtime directory, holding the control socket.
+    #[arg(long, env = RUNTIME_DIR_ENV)]
+    runtime_dir: Option<PathBuf>,
+}
+
+/// What the network thread tells the window.
+#[derive(Debug)]
+enum UserEvent {
+    /// The share runs.
+    Started(Started),
+    /// A new picture is in the shared slot.
+    Frame,
+    /// Driving began or ended.
+    Driving(bool),
+    /// The share ended, with why.
+    Ended(String),
+}
+
+/// What the window asks of the network thread.
+#[derive(Debug)]
+enum Command_ {
+    /// Start driving with the pointer at this point of the picture.
+    Drive(f64, f64),
+    /// Events for the device being driven.
+    Events(Vec<InputEvent>),
+    /// Stop driving.
+    Release,
+}
+
+/// The latest decoded picture: width, height and 0RGB pixels.
+type Picture = Option<(u32, u32, Vec<u32>)>;
+
+fn main() {
+    let options = Options::parse();
+    let locations = Locations::resolve(options.data_dir.as_deref(), options.runtime_dir.as_deref());
+    let event_loop = match EventLoop::<UserEvent>::with_user_event().build() {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("lpview: no display to open a window on: {e}");
+            std::process::exit(1);
+        }
+    };
+    let proxy = event_loop.create_proxy();
+    let picture: Arc<Mutex<Picture>> = Arc::new(Mutex::new(None));
+    let (commands, commands_rx) = mpsc::unbounded_channel::<Command_>();
+    {
+        let picture = picture.clone();
+        let options = OptionsForNet::from(&options);
+        std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .build()
+                .expect("a runtime for lpview");
+            let ended = runtime.block_on(network(
+                options,
+                locations,
+                proxy.clone(),
+                picture,
+                commands_rx,
+            ));
+            let message = match ended {
+                Ok(reason) => format!("the share ended ({reason})"),
+                Err(e) => e.to_string(),
+            };
+            let _ = proxy.send_event(UserEvent::Ended(message));
+        });
+    }
+    let mut app = App {
+        device: options.device.clone(),
+        view_only: options.view_only,
+        window: None,
+        surface: None,
+        picture,
+        commands,
+        started: None,
+        driving: false,
+        cursor: None,
+        target: (0.0, 0.0, 1.0, 1.0),
+        held_ctrl: (false, false),
+        ended: None,
+        debug: std::env::var_os("LPVIEW_DEBUG").is_some(),
+    };
+    if let Err(e) = event_loop.run_app(&mut app) {
+        eprintln!("lpview: {e}");
+    }
+    if let Some(message) = app.ended {
+        eprintln!("lpview: {message}");
+    }
+}
+
+/// What the network thread needs of the options.
+#[derive(Debug, Clone)]
+struct OptionsForNet {
+    device: String,
+    display: Option<String>,
+    width: u32,
+    height: u32,
+    rate: u32,
+}
+
+impl From<&Options> for OptionsForNet {
+    fn from(o: &Options) -> Self {
+        Self {
+            device: o.device.clone(),
+            display: o.display.clone(),
+            width: o.width,
+            height: o.height,
+            rate: o.rate,
+        }
+    }
+}
+
+/// A device by its key, or by its name or a prefix of its key or
+/// fingerprint among this person's bindings, as `lpctl` resolves it.
+async fn resolve_device(client: &mut Client, device: &str) -> Result<PublicKey, Error> {
+    if let Ok(key) = PublicKey::parse(device) {
+        return Ok(key);
+    }
+    let known: Devices = client.request(Request::new(types::DEVICES, 0)).await?;
+    let needle = device.to_lowercase();
+    let matches: Vec<PublicKey> = known
+        .devices
+        .iter()
+        .filter(|d| d.role == "binding" && !d.this_device && !d.revoked)
+        .filter(|d| {
+            d.display_name
+                .as_deref()
+                .is_some_and(|n| n.to_lowercase() == needle)
+                || d.key.to_string().starts_with(device)
+                || d.key.fingerprint().starts_with(device)
+        })
+        .map(|d| d.key)
+        .collect();
+    match matches.as_slice() {
+        [one] => Ok(*one),
+        [] => Err(Error::Decode(format!(
+            "no device named {device}; see lpctl devices"
+        ))),
+        many => Err(Error::Decode(format!(
+            "{device} names {} devices; use the key",
+            many.len()
+        ))),
+    }
+}
+
+/// The ffmpeg that decodes the share's H.264 into raw 0RGB pictures of its
+/// size, as fast as they come.
+fn decoder(started: &Started) -> std::io::Result<std::process::Child> {
+    Command::new("ffmpeg")
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-fflags",
+            "nobuffer",
+            "-flags",
+            "low_delay",
+            "-probesize",
+            "32",
+            "-analyzeduration",
+            "0",
+            "-f",
+            "h264",
+            "-i",
+            "pipe:0",
+            "-vf",
+            &format!("scale={}:{}", started.width, started.height),
+            "-pix_fmt",
+            "bgr0",
+            "-f",
+            "rawvideo",
+            "pipe:1",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+}
+
+/// Runs the share and the drive until the share ends; returns why it ended.
+async fn network(
+    options: OptionsForNet,
+    locations: Locations,
+    proxy: EventLoopProxy<UserEvent>,
+    picture: Arc<Mutex<Picture>>,
+    mut commands: mpsc::UnboundedReceiver<Command_>,
+) -> Result<String, Error> {
+    let socket = locations.control_socket();
+    let mut watch = Client::connect(&socket).await?;
+    let peer = resolve_device(&mut watch, &options.device).await?;
+
+    // The drive, on a connection of its own: one batch of events every few
+    // milliseconds while driving.
+    let mut drive = Client::connect(&socket).await?;
+    let driver_proxy = proxy.clone();
+    let driver = tokio::spawn(async move {
+        let mut batch: Vec<InputEvent> = Vec::new();
+        let mut tick = tokio::time::interval(Duration::from_millis(8));
+        loop {
+            tokio::select! {
+                command = commands.recv() => match command {
+                    Some(Command_::Drive(x, y)) => {
+                        let mut req = Request::new(types::INPUT_DRIVE, 0);
+                        req.key = Some(peer);
+                        req.x = Some(x);
+                        req.y = Some(y);
+                        let driven: Result<InputDriven, Error> = drive.request(req).await;
+                        if std::env::var_os("LPVIEW_DEBUG").is_some() {
+                            eprintln!("lpview: input.drive at {x},{y}: {driven:?}");
+                        }
+                        if let Err(e) = &driven {
+                            eprintln!("lpview: cannot drive: {e}");
+                        }
+                        let _ = driver_proxy.send_event(UserEvent::Driving(driven.is_ok()));
+                    }
+                    Some(Command_::Events(events)) => batch.extend(events),
+                    Some(Command_::Release) => {
+                        batch.clear();
+                        let _: Result<Empty, Error> =
+                            drive.request(Request::new(types::INPUT_RELEASE, 0)).await;
+                    }
+                    None => {
+                        let _: Result<Empty, Error> =
+                            drive.request(Request::new(types::INPUT_RELEASE, 0)).await;
+                        return;
+                    }
+                },
+                _ = tick.tick() => {
+                    if batch.is_empty() {
+                        continue;
+                    }
+                    let mut req = Request::new(types::INPUT_SEND, 0);
+                    req.events = Some(std::mem::take(&mut batch));
+                    let sent: Result<Empty, Error> = drive.request(req).await;
+                    if sent.is_err() {
+                        // The drive ended on the daemon's side: the chord,
+                        // the device going away.
+                        let _ = driver_proxy.send_event(UserEvent::Driving(false));
+                    }
+                }
+            }
+        }
+    });
+
+    // The share: started, then the frames into the decoder.
+    let mut req = Request::new(types::SCREEN_START, 0);
+    req.key = Some(peer);
+    req.display = options.display.clone();
+    req.width = Some(options.width);
+    req.height = Some(options.height);
+    req.frame_rate = Some(options.rate);
+    let mut feed: Option<std::process::ChildStdin> = None;
+    let mut child: Option<std::process::Child> = None;
+    let response = watch
+        .call(req, |event: &Event| {
+            if let Some(started) = &event.started {
+                match decoder(started) {
+                    Ok(mut c) => {
+                        feed = c.stdin.take();
+                        if let Some(mut out) = c.stdout.take() {
+                            let (w, h) = (started.width, started.height);
+                            let picture = picture.clone();
+                            let proxy = proxy.clone();
+                            std::thread::spawn(move || {
+                                let size = w as usize * h as usize * 4;
+                                let mut raw = vec![0u8; size];
+                                while out.read_exact(&mut raw).is_ok() {
+                                    let pixels: Vec<u32> = raw
+                                        .as_chunks::<4>()
+                                        .0
+                                        .iter()
+                                        .map(|p| u32::from_le_bytes([p[0], p[1], p[2], 0]))
+                                        .collect();
+                                    *picture
+                                        .lock()
+                                        .unwrap_or_else(std::sync::PoisonError::into_inner) =
+                                        Some((w, h, pixels));
+                                    if proxy.send_event(UserEvent::Frame).is_err() {
+                                        return;
+                                    }
+                                }
+                            });
+                        }
+                        child = Some(c);
+                    }
+                    Err(e) => eprintln!("lpview: cannot start ffmpeg to decode: {e}"),
+                }
+                let _ = proxy.send_event(UserEvent::Started(started.clone()));
+            }
+            if let Some(frame) = &event.frame
+                && let Some(stdin) = feed.as_mut()
+                && stdin.write_all(&frame.bytes.0).is_err()
+            {
+                feed = None;
+            }
+            None
+        })
+        .await?;
+    drop(feed);
+    if let Some(mut c) = child {
+        let _ = c.kill();
+        let _ = c.wait();
+    }
+    driver.abort();
+    let ended: ScreenStopped = response.into_ok()?;
+    Ok(ended.reason.to_string())
+}
+
+struct App {
+    device: String,
+    view_only: bool,
+    window: Option<Arc<Window>>,
+    surface: Option<softbuffer::Surface<Arc<Window>, Arc<Window>>>,
+    picture: Arc<Mutex<Picture>>,
+    commands: mpsc::UnboundedSender<Command_>,
+    started: Option<Started>,
+    driving: bool,
+    cursor: Option<PhysicalPosition<f64>>,
+    /// Where the picture is drawn in the window: x, y, width, height.
+    target: (f64, f64, f64, f64),
+    held_ctrl: (bool, bool),
+    ended: Option<String>,
+    /// `LPVIEW_DEBUG` set: every window event is printed.
+    debug: bool,
+}
+
+impl App {
+    fn title(&self) -> String {
+        let state = match (&self.started, self.driving, self.view_only) {
+            (None, _, _) => "connecting…".to_owned(),
+            (Some(s), true, _) => format!("{} — driving; both Ctrl keys to let go", s.display),
+            (Some(s), false, true) => s.display.clone(),
+            (Some(s), false, false) => format!("{} — click to drive", s.display),
+        };
+        format!("{} · {state}", self.device)
+    }
+
+    fn retitle(&self) {
+        if let Some(w) = &self.window {
+            w.set_title(&self.title());
+        }
+    }
+
+    /// The pointer's position as fractions of the picture, if over it.
+    fn fraction(&self, at: PhysicalPosition<f64>) -> Option<(f64, f64)> {
+        let (x, y, w, h) = self.target;
+        let fx = (at.x - x) / w;
+        let fy = (at.y - y) / h;
+        ((0.0..=1.0).contains(&fx) && (0.0..=1.0).contains(&fy)).then_some((fx, fy))
+    }
+
+    fn send(&self, events: Vec<InputEvent>) {
+        if self.driving {
+            let _ = self.commands.send(Command_::Events(events));
+        }
+    }
+
+    fn release(&mut self) {
+        if self.driving {
+            let _ = self.commands.send(Command_::Release);
+            self.driving = false;
+            self.retitle();
+        }
+    }
+
+    fn redraw(&mut self) {
+        let (Some(window), Some(surface)) = (&self.window, self.surface.as_mut()) else {
+            return;
+        };
+        let size = window.inner_size();
+        let (Some(ww), Some(wh)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
+        else {
+            return;
+        };
+        if surface.resize(ww, wh).is_err() {
+            return;
+        }
+        let Ok(mut buffer) = surface.buffer_mut() else {
+            return;
+        };
+        buffer.fill(0);
+        let guard = self
+            .picture
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some((pw, ph, pixels)) = guard.as_ref() {
+            let (ww, wh) = (size.width as f64, size.height as f64);
+            let scale = (ww / f64::from(*pw)).min(wh / f64::from(*ph));
+            let (dw, dh) = (f64::from(*pw) * scale, f64::from(*ph) * scale);
+            let (dx, dy) = ((ww - dw) / 2.0, (wh - dh) / 2.0);
+            self.target = (dx, dy, dw, dh);
+            let (x0, y0) = (dx as usize, dy as usize);
+            let (x1, y1) = (
+                ((dx + dw) as usize).min(size.width as usize),
+                ((dy + dh) as usize).min(size.height as usize),
+            );
+            let row = size.width as usize;
+            for y in y0..y1 {
+                let sy = (((y - y0) as f64 / scale) as usize).min(*ph as usize - 1);
+                let src = &pixels[sy * *pw as usize..(sy + 1) * *pw as usize];
+                let dst = &mut buffer[y * row..(y + 1) * row];
+                for (x, out) in dst.iter_mut().enumerate().take(x1).skip(x0) {
+                    let sx = (((x - x0) as f64 / scale) as usize).min(*pw as usize - 1);
+                    *out = src[sx];
+                }
+            }
+        }
+        drop(guard);
+        let _ = buffer.present();
+    }
+}
+
+impl ApplicationHandler<UserEvent> for App {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.window.is_some() {
+            return;
+        }
+        let attributes = Window::default_attributes()
+            .with_title(self.title())
+            .with_inner_size(LogicalSize::new(1280.0, 720.0));
+        let window = match event_loop.create_window(attributes) {
+            Ok(w) => Arc::new(w),
+            Err(e) => {
+                self.ended = Some(format!("cannot open a window: {e}"));
+                event_loop.exit();
+                return;
+            }
+        };
+        let surface = softbuffer::Context::new(window.clone())
+            .and_then(|context| softbuffer::Surface::new(&context, window.clone()));
+        match surface {
+            Ok(s) => self.surface = Some(s),
+            Err(e) => {
+                self.ended = Some(format!("cannot draw in the window: {e}"));
+                event_loop.exit();
+                return;
+            }
+        }
+        self.window = Some(window);
+    }
+
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
+        match event {
+            UserEvent::Started(started) => {
+                self.started = Some(started);
+                self.retitle();
+            }
+            UserEvent::Frame => {
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
+            UserEvent::Driving(driving) => {
+                self.driving = driving;
+                self.retitle();
+            }
+            UserEvent::Ended(message) => {
+                self.ended = Some(message);
+                event_loop.exit();
+            }
+        }
+    }
+
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
+        if self.debug && !matches!(event, WindowEvent::RedrawRequested) {
+            eprintln!("lpview: {event:?}");
+        }
+        match event {
+            WindowEvent::CloseRequested => {
+                self.release();
+                event_loop.exit();
+            }
+            WindowEvent::RedrawRequested => self.redraw(),
+            WindowEvent::Resized(_) => {
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
+            WindowEvent::Focused(false) => self.release(),
+            WindowEvent::CursorMoved { position, .. } => {
+                self.cursor = Some(position);
+                if self.driving
+                    && let Some((x, y)) = self.fraction(position)
+                {
+                    self.send(vec![InputEvent::Position { x, y }]);
+                }
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                let pressed = state == ElementState::Pressed;
+                if !self.driving {
+                    if self.debug {
+                        eprintln!(
+                            "lpview: click while not driving: started {} cursor {:?} target {:?} fraction {:?}",
+                            self.started.is_some(),
+                            self.cursor,
+                            self.target,
+                            self.cursor.and_then(|c| self.fraction(c))
+                        );
+                    }
+                    if pressed
+                        && button == MouseButton::Left
+                        && !self.view_only
+                        && self.started.is_some()
+                        && let Some((x, y)) = self.cursor.and_then(|c| self.fraction(c))
+                    {
+                        // The first click takes control; it is not sent.
+                        let _ = self.commands.send(Command_::Drive(x, y));
+                    }
+                    return;
+                }
+                let code = match button {
+                    MouseButton::Left => BTN_LEFT,
+                    MouseButton::Right => BTN_RIGHT,
+                    MouseButton::Middle => BTN_MIDDLE,
+                    MouseButton::Back => 275,
+                    MouseButton::Forward => 276,
+                    MouseButton::Other(_) => return,
+                };
+                self.send(vec![InputEvent::Button { code, pressed }]);
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let event = match delta {
+                    // winit's positive is away from the user; a wheel step
+                    // down is positive on the wire, as on Wayland.
+                    MouseScrollDelta::LineDelta(x, y) => InputEvent::Scroll {
+                        dx: -f64::from(x),
+                        dy: -f64::from(y),
+                        discrete: true,
+                    },
+                    MouseScrollDelta::PixelDelta(p) => InputEvent::Scroll {
+                        dx: -p.x,
+                        dy: -p.y,
+                        discrete: false,
+                    },
+                };
+                self.send(vec![event]);
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                if event.repeat {
+                    return;
+                }
+                let PhysicalKey::Code(key) = event.physical_key else {
+                    return;
+                };
+                let Some(code) = evdev_code(key) else {
+                    return;
+                };
+                let pressed = event.state == ElementState::Pressed;
+                match code {
+                    KEY_LEFTCTRL => self.held_ctrl.0 = pressed,
+                    KEY_RIGHTCTRL => self.held_ctrl.1 = pressed,
+                    _ => {}
+                }
+                self.send(vec![InputEvent::Key { code, pressed }]);
+                if self.held_ctrl == (true, true) {
+                    self.held_ctrl = (false, false);
+                    self.release();
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The Linux evdev code of a physical key, from winit's layout-independent
+/// code, so the driven device applies its own layout. Keys without an evdev
+/// code are not sent.
+#[must_use]
+fn evdev_code(key: KeyCode) -> Option<u16> {
+    use KeyCode as K;
+    Some(match key {
+        K::Escape => 1,
+        K::Digit1 => 2,
+        K::Digit2 => 3,
+        K::Digit3 => 4,
+        K::Digit4 => 5,
+        K::Digit5 => 6,
+        K::Digit6 => 7,
+        K::Digit7 => 8,
+        K::Digit8 => 9,
+        K::Digit9 => 10,
+        K::Digit0 => 11,
+        K::Minus => 12,
+        K::Equal => 13,
+        K::Backspace => 14,
+        K::Tab => 15,
+        K::KeyQ => 16,
+        K::KeyW => 17,
+        K::KeyE => 18,
+        K::KeyR => 19,
+        K::KeyT => 20,
+        K::KeyY => 21,
+        K::KeyU => 22,
+        K::KeyI => 23,
+        K::KeyO => 24,
+        K::KeyP => 25,
+        K::BracketLeft => 26,
+        K::BracketRight => 27,
+        K::Enter => 28,
+        K::ControlLeft => KEY_LEFTCTRL,
+        K::KeyA => 30,
+        K::KeyS => 31,
+        K::KeyD => 32,
+        K::KeyF => 33,
+        K::KeyG => 34,
+        K::KeyH => 35,
+        K::KeyJ => 36,
+        K::KeyK => 37,
+        K::KeyL => 38,
+        K::Semicolon => 39,
+        K::Quote => 40,
+        K::Backquote => 41,
+        K::ShiftLeft => 42,
+        K::Backslash => 43,
+        K::KeyZ => 44,
+        K::KeyX => 45,
+        K::KeyC => 46,
+        K::KeyV => 47,
+        K::KeyB => 48,
+        K::KeyN => 49,
+        K::KeyM => 50,
+        K::Comma => 51,
+        K::Period => 52,
+        K::Slash => 53,
+        K::ShiftRight => 54,
+        K::NumpadMultiply => 55,
+        K::AltLeft => 56,
+        K::Space => 57,
+        K::CapsLock => 58,
+        K::F1 => 59,
+        K::F2 => 60,
+        K::F3 => 61,
+        K::F4 => 62,
+        K::F5 => 63,
+        K::F6 => 64,
+        K::F7 => 65,
+        K::F8 => 66,
+        K::F9 => 67,
+        K::F10 => 68,
+        K::NumLock => 69,
+        K::ScrollLock => 70,
+        K::Numpad7 => 71,
+        K::Numpad8 => 72,
+        K::Numpad9 => 73,
+        K::NumpadSubtract => 74,
+        K::Numpad4 => 75,
+        K::Numpad5 => 76,
+        K::Numpad6 => 77,
+        K::NumpadAdd => 78,
+        K::Numpad1 => 79,
+        K::Numpad2 => 80,
+        K::Numpad3 => 81,
+        K::Numpad0 => 82,
+        K::NumpadDecimal => 83,
+        K::IntlBackslash => 86,
+        K::F11 => 87,
+        K::F12 => 88,
+        K::NumpadEnter => 96,
+        K::ControlRight => KEY_RIGHTCTRL,
+        K::NumpadDivide => 98,
+        K::PrintScreen => 99,
+        K::AltRight => 100,
+        K::Home => 102,
+        K::ArrowUp => 103,
+        K::PageUp => 104,
+        K::ArrowLeft => 105,
+        K::ArrowRight => 106,
+        K::End => 107,
+        K::ArrowDown => 108,
+        K::PageDown => 109,
+        K::Insert => 110,
+        K::Delete => 111,
+        K::AudioVolumeMute => 113,
+        K::AudioVolumeDown => 114,
+        K::AudioVolumeUp => 115,
+        K::Pause => 119,
+        K::SuperLeft => 125,
+        K::SuperRight => 126,
+        K::ContextMenu => 127,
+        K::MediaTrackNext => 163,
+        K::MediaPlayPause => 164,
+        K::MediaTrackPrevious => 165,
+        K::MediaStop => 166,
+        _ => return None,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn physical_keys_map_to_evdev_codes() {
+        assert_eq!(evdev_code(KeyCode::KeyA), Some(30));
+        assert_eq!(evdev_code(KeyCode::KeyZ), Some(44));
+        assert_eq!(evdev_code(KeyCode::Enter), Some(28));
+        assert_eq!(evdev_code(KeyCode::ControlLeft), Some(KEY_LEFTCTRL));
+        assert_eq!(evdev_code(KeyCode::ControlRight), Some(KEY_RIGHTCTRL));
+        assert_eq!(evdev_code(KeyCode::ArrowLeft), Some(105));
+        assert_eq!(evdev_code(KeyCode::F12), Some(88));
+        assert_eq!(evdev_code(KeyCode::Fn), None);
+    }
+}

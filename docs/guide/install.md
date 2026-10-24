@@ -26,8 +26,8 @@ work) and a notification daemon on the session bus for notifications.
     ./install.sh
     ```
 
-    It copies `ligatured` and `lpctl` to `~/.local/bin`, installs the `ligatured` user unit
-    and starts it. Make sure `~/.local/bin` is on your `PATH`.
+    It copies `ligatured`, `lpctl` and `lpview` to `~/.local/bin`, installs the `ligatured`
+    user unit and starts it. Make sure `~/.local/bin` is on your `PATH`.
 
 2. Open the port. The service fixes the daemon's UDP port at 47471 so that one firewall rule
     lets your other devices dial in. With ufw:
@@ -49,6 +49,13 @@ work) and a notification daemon on the session bus for notifications.
 The daemon does not need a graphical session to run: it finds the compositor's socket on its
 own, advertises the clipboard only while a compositor is reachable, and keeps gossiping and
 receiving files when none is.
+
+Sharing the screen and watching another device's with `lpview` use programs the installer
+does not bring, since the daemon links no video library: ffmpeg with an H.264 encoder
+(`libx264`, or VA-API where the GPU has it) to share and to watch, and GStreamer's PipeWire
+plugin (`gst-plugin-pipewire` on Arch) to share through the ScreenCast portal. Without the
+plugin a compositor with `wlr-screencopy`, Hyprland among them, is captured directly instead;
+without ffmpeg the machine offers neither, and `lpctl caps` shows what it offers.
 
 ## macOS
 
@@ -74,13 +81,17 @@ The daemon runs as a per-user launchd agent that starts at login.
     xattr -dr com.apple.quarantine .
     ```
 
-3. Allow notifications once. The daemon shows your other devices' notifications through
+3. To watch another device's screen with `lpview`, install ffmpeg (`brew install ffmpeg`).
+    The Mac does not share its own screen yet: macOS grants screen capture only to an
+    application bundle, and the daemon is not one yet.
+
+4. Allow notifications once. The daemon shows your other devices' notifications through
     AppleScript, which posts as Script Editor, and a Mac where Script Editor has never posted
     drops them silently. Open Script Editor, run
     `display notification "Ligature" with title "LP"` once and click **Allow**. From then on
     the daemon's notifications show, with no restart.
 
-4. Check it:
+5. Check it:
 
     ```sh
     lpctl status
@@ -109,7 +120,7 @@ With a Rust toolchain:
 ```sh
 git clone https://github.com/garth/ligature-protocol
 cd ligature-protocol/impl
-cargo build --release -p ligatured -p lpctl
+cargo build --release -p ligatured -p lpctl -p lpview
 ../packaging/install.sh target/release
 ```
 

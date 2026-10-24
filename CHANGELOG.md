@@ -36,6 +36,11 @@ release workflow publishes the section as the release notes with the installers.
   finger moves, a tap clicks, a hold drags, two fingers scroll, the field types, with
   Backspace, Enter and right-click buttons; the phone advertises `input` as a provider
   only (LP-145).
+- Linux: the screen is shared through the ScreenCast portal (or `wlr-screencopy` where the
+  portal is missing) and encoded by ffmpeg, with a "Sharing" notification whose action
+  stops it; `lpview <device>` watches another device's screen in a window and, after a
+  click, drives it until both Control keys are pressed; a Mac with ffmpeg can watch with
+  `lpview` too (LP-149).
 
 ### Fixed
 

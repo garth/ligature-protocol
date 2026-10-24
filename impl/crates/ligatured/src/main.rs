@@ -45,6 +45,8 @@ struct Options {
 
 /// Internal subcommands.
 #[derive(Debug, clap::Subcommand)]
+// The variants are the helper subcommands the daemon spawns by name.
+#[allow(clippy::enum_variant_names)]
 enum Command {
     /// The Wayland clipboard helper the daemon starts for itself (Linux).
     #[command(hide = true)]
@@ -52,6 +54,14 @@ enum Command {
     /// The Wayland input helper the daemon starts for itself (Linux).
     #[command(hide = true)]
     InputHelper,
+    /// The Wayland screen helper the daemon starts for itself (Linux):
+    /// `list`, or `capture OUTPUT RATE`.
+    #[command(hide = true)]
+    ScreenHelper {
+        /// The command and its arguments.
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
 }
 
 fn main() {
@@ -83,6 +93,22 @@ fn main() {
         #[cfg(not(target_os = "linux"))]
         {
             eprintln!("input helper is Linux only");
+            std::process::exit(1);
+        }
+    }
+    if let Some(Command::ScreenHelper { args }) = &options.command {
+        #[cfg(target_os = "linux")]
+        {
+            if let Err(e) = ligatured::screen_linux::run_helper(args) {
+                eprintln!("screen helper: {e}");
+                std::process::exit(1);
+            }
+            return;
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = args;
+            eprintln!("screen helper is Linux only");
             std::process::exit(1);
         }
     }

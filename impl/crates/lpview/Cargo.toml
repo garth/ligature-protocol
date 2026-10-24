@@ -1,0 +1,19 @@
+[package]
+name = "lpview"
+description = "Ligature Protocol viewer: watch and drive another of your devices' screens"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+lp-core.workspace = true
+ligatured.workspace = true
+clap.workspace = true
+tokio.workspace = true
+winit.workspace = true
+softbuffer.workspace = true
+
+[lints]
+workspace = true

@@ -16,13 +16,14 @@ itself; what crosses between devices is signed facts, gossiped.
 
 ## Schema and migrations
 
-- The schema version is `PRAGMA user_version` (2 today), checked in `migrate()` at open: a
+- The schema version is `PRAGMA user_version` (4 today), checked in `migrate()` at open: a
   store newer than the daemon is refused with an error, an older one is brought forward step
   by step (`if version < N { … PRAGMA user_version = N }`, each step in its own
   transaction). A change adds the next step and raises `SCHEMA_VERSION`; it never edits an
   earlier step, since stores at every earlier version exist on the owner's devices. Step 2
   rewrote `created_at` in the fixed-width form of `Timestamp::to_rfc3339_fixed` so the
-  column sorts as time.
+  column sorts as time. Step 3 added `input_layout` (LP-142) and step 4
+  `local_settings` (LP-149), both rows local to the device.
 - `facts` is the table of record: `hash` (the fact id, SHA-256 of the payload bytes),
   `kind`, `payload` and `signature` as bytes exactly as received, `signer`, `subject`,
   `created_at`, `quarantined`. Payload bytes are never re-encoded on the way in or out

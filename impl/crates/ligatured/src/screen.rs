@@ -17,6 +17,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use lp_core::input::Region;
 use lp_core::screen::{
     Codec, Display, Displays, Frame, RefuseReason, Refused, SCREEN_TYPE, ScreenMessage,
     ScreenParams, Start, Started, Stop, StopReason, chunk_frame, fit, screen_descriptor,
@@ -80,6 +81,8 @@ pub struct Settings {
     pub height: u32,
     /// The frame rate.
     pub frame_rate: u32,
+    /// The viewing device's name, for the platform's sharing indicator.
+    pub viewer: String,
 }
 
 impl Settings {
@@ -100,6 +103,9 @@ pub struct Share {
     pub frames: mpsc::UnboundedReceiver<Captured>,
     /// Keyframe requests and the stop.
     pub control: mpsc::UnboundedSender<ShareControl>,
+    /// Where the shared display lies in the whole screen, when it is one of
+    /// several: the viewer's input positions are mapped through it.
+    pub region: Option<Region>,
 }
 
 /// The sharer's platform: displays, and a share of one.
@@ -109,6 +115,10 @@ pub trait Capture: Send + Sync {
     fn params(&self) -> ScreenParams;
     /// The displays this device can share.
     fn displays(&self) -> Vec<Display>;
+    /// Where `display` lies in the whole screen, for a device with several.
+    fn region(&self, _display: &str) -> Option<Region> {
+        None
+    }
     /// Starts a share with `settings`, which the sync has already fitted to
     /// the display and the viewer. Blocks on the platform's consent where it
     /// has one, so it runs off the async runtime.
@@ -620,6 +630,10 @@ impl ScreenSync {
             width,
             height,
             frame_rate: start.frame_rate.clamp(1, MAX_FRAME_RATE),
+            viewer: self
+                .daemon
+                .device_display_name(&peer)
+                .unwrap_or_else(|| peer.fingerprint()),
         };
         // The capture may block on the platform's consent dialog.
         let starting = {
@@ -663,6 +677,10 @@ impl ScreenSync {
             return;
         }
         crate::grants::record_implicit_for(&self.daemon, &peer, SCREEN_TYPE);
+        let region = share.region.or_else(|| capture.region(&chosen.id));
+        if let (Some(region), Some(input)) = (region, self.daemon.input_sync()) {
+            input.set_region(&peer, Some(region));
+        }
         if stream
             .send(&ScreenMessage::Started(settings.started()))
             .await
@@ -677,6 +695,9 @@ impl ScreenSync {
             .run_share(&peer, &chosen.id, stream, share, stop_rx)
             .await;
         lock(&self.sharing).remove(&chosen.id);
+        if let Some(input) = self.daemon.input_sync() {
+            input.set_region(&peer, None);
+        }
         tracing::info!(%peer, display = %chosen.id, %reason, "share ended");
     }
 
@@ -794,6 +815,31 @@ async fn refuse(stream: &mut FramedStream, reason: RefuseReason) {
         .send(&ScreenMessage::Refused(Refused { reason }))
         .await;
     stream.finish();
+}
+
+/// Whether ffmpeg decodes H.264 on this machine, which is what `lpview`
+/// needs to show a share.
+#[must_use]
+pub fn probe_decoder() -> bool {
+    std::process::Command::new("ffmpeg")
+        .args(["-hide_banner", "-decoders"])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .is_some_and(|d| d.contains(" h264 "))
+}
+
+/// The viewer params a desktop daemon advertises: views when ffmpeg decodes
+/// H.264, which `lpview` uses.
+#[must_use]
+pub fn viewer_params() -> Option<ScreenParams> {
+    probe_decoder().then(|| ScreenParams {
+        views: true,
+        ..ScreenParams::default()
+    })
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -972,6 +1018,10 @@ impl Capture for FakeCapture {
                 }
             });
         }
-        Ok(Share { frames, control })
+        Ok(Share {
+            frames,
+            control,
+            region: None,
+        })
     }
 }

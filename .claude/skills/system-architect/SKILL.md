@@ -62,6 +62,7 @@ flowchart LR
     daemon --> transport
     daemon -. macOS only .-> macos[lp-macos]
     ctl[lpctl] --> daemon
+    view[lpview] --> daemon
     android[ligature-android] --> daemon
     integrations[integrations/*] --> core
     vectors[lp-vectors] -. dev-dependency of the layer crates .-> core

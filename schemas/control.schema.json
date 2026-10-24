@@ -47,7 +47,9 @@
         "org.ligatureprotocol.control.screen.displays",
         "org.ligatureprotocol.control.screen.start",
         "org.ligatureprotocol.control.screen.stop",
-        "org.ligatureprotocol.control.screen.status"
+        "org.ligatureprotocol.control.screen.status",
+        "org.ligatureprotocol.control.input.drive",
+        "org.ligatureprotocol.control.input.send"
       ]
     },
     "eventType": {
@@ -165,6 +167,29 @@
           "type": "integer",
           "minimum": 1,
           "description": "screen.start: the frame rate wanted."
+        },
+        "x": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "input.drive: the entry point across the screen."
+        },
+        "y": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "input.drive: the entry point down the screen."
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "description": "An event of capability.input.schema.json, told apart by kind."
+          },
+          "description": "input.send: the events, in order."
         }
       }
     },

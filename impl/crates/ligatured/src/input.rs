@@ -21,7 +21,7 @@ use std::time::{Duration, Instant};
 
 use lp_core::input::{
     Edge, Enter, Events, INPUT_TYPE, Injected, InputEvent, InputMessage, InputParams, KEY_LEFTCTRL,
-    KEY_RIGHTCTRL, Leave, Ready, input_descriptor,
+    KEY_RIGHTCTRL, Leave, Ready, Region, input_descriptor,
 };
 use lp_core::{Error, PublicKey};
 use lp_identity::trust::Recognition;
@@ -200,6 +200,9 @@ pub struct InputSync {
     drive: Mutex<Option<Drive>>,
     driven: Mutex<Option<Driven>>,
     samples: Mutex<Vec<f64>>,
+    /// Per controller, the part of this screen its absolute positions
+    /// refer to: the display it watches (milestone 8).
+    regions: Mutex<HashMap<PublicKey, Region>>,
     offered: tokio::sync::Mutex<Option<InputParams>>,
     /// Local events, for the fakes and tests: a drive began or ended.
     changes: broadcast::Sender<Change>,
@@ -250,6 +253,7 @@ impl InputSync {
             drive: Mutex::new(None),
             driven: Mutex::new(None),
             samples: Mutex::new(Vec::new()),
+            regions: Mutex::new(HashMap::new()),
             offered: tokio::sync::Mutex::new(None),
             changes,
         });
@@ -267,6 +271,21 @@ impl InputSync {
             }
         });
         this
+    }
+
+    /// Makes `peer`'s absolute positions refer to `region` of this screen,
+    /// or to the whole screen with `None`: the screen family sets it while
+    /// `peer` watches one display of several.
+    pub fn set_region(&self, peer: &PublicKey, region: Option<Region>) {
+        let mut regions = lock(&self.regions);
+        match region {
+            Some(r) => {
+                regions.insert(*peer, r);
+            }
+            None => {
+                regions.remove(peer);
+            }
+        }
     }
 
     /// Local drive changes, for tests and the app.
@@ -791,7 +810,16 @@ impl InputSync {
                 if lock(&self.driven).is_some() {
                     return Err(Error::Io("already driven".to_owned()));
                 }
+                let region = lock(&self.regions)
+                    .get(peer)
+                    .copied()
+                    .unwrap_or(Region::WHOLE);
                 let start = enter.start().unwrap_or((0.5, 0.5));
+                let start = if absolute {
+                    region.map(start.0, start.1)
+                } else {
+                    start
+                };
                 let (width, height) = inject.screen();
                 inject.begin(start)?;
                 *lock(&self.driven) = Some(Driven {
@@ -811,6 +839,10 @@ impl InputSync {
             InputMessage::Events(batch) => {
                 let mut out = Vec::new();
                 let mut left: Option<Leave> = None;
+                let region = lock(&self.regions)
+                    .get(peer)
+                    .copied()
+                    .unwrap_or(Region::WHOLE);
                 {
                     let mut guard = lock(&self.driven);
                     let Some(driven) = guard.as_mut().filter(|d| d.peer == *peer) else {
@@ -843,8 +875,11 @@ impl InputSync {
                                 if !params.absolute {
                                     continue;
                                 }
-                                driven.x = x.clamp(0.0, 1.0);
-                                driven.y = y.clamp(0.0, 1.0);
+                                let (mx, my) = region.map(*x, *y);
+                                driven.x = mx;
+                                driven.y = my;
+                                inject.inject(&InputEvent::Position { x: mx, y: my })?;
+                                continue;
                             }
                             InputEvent::Text { .. } if !params.text => continue,
                             InputEvent::Key { code, pressed }

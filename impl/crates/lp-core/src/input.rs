@@ -91,6 +91,41 @@ pub fn input_descriptor(params: InputParams) -> Descriptor {
     d
 }
 
+/// A part of the driven device's whole screen, as fractions of it: where one
+/// display lies in a layout of several. A viewer driving a shared display
+/// sends positions as fractions of that display, and the driven device maps
+/// them into its whole screen through the share's region.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Region {
+    /// Left, from the whole screen's left.
+    pub x: f64,
+    /// Top, from the whole screen's top.
+    pub y: f64,
+    /// Width.
+    pub width: f64,
+    /// Height.
+    pub height: f64,
+}
+
+impl Region {
+    /// The whole screen.
+    pub const WHOLE: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        width: 1.0,
+        height: 1.0,
+    };
+
+    /// A point given as fractions of this region, as fractions of the whole.
+    #[must_use]
+    pub fn map(&self, x: f64, y: f64) -> (f64, f64) {
+        (
+            (self.x + x.clamp(0.0, 1.0) * self.width).clamp(0.0, 1.0),
+            (self.y + y.clamp(0.0, 1.0) * self.height).clamp(0.0, 1.0),
+        )
+    }
+}
+
 /// An edge of a screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

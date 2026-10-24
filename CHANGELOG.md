@@ -13,6 +13,11 @@ release workflow publishes the section as the release notes with the installers.
 - Every release carries `SHA256SUMS` over its files and `SHA256SUMS.minisig`, its
   signature by the project's release key, made with minisign; the install guide has the
   public key and the commands that verify a download (LP-139).
+- `lpctl upgrade` installs the latest release on a desktop after verifying its checksum
+  file against the release key and the package against the checksum; `lpctl upgrade
+  --check` only reports, and every other `lpctl` command run on a terminal says once a
+  day when a newer release exists (`LIGATURE_NO_UPDATE_CHECK=1` switches the check off)
+  (LP-140).
 
 ### Fixed
 

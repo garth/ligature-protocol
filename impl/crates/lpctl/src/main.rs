@@ -19,6 +19,8 @@ use ligatured::grants::Grants;
 use lp_core::paths::{DATA_DIR_ENV, Locations, RUNTIME_DIR_ENV};
 use lp_core::{Error, PublicKey};
 
+mod upgrade;
+
 /// Command-line options.
 #[derive(Debug, Parser)]
 #[command(version, about = "Ligature Protocol command-line tool")]
@@ -53,6 +55,17 @@ enum Command {
     },
     /// Show the daemon's status.
     Status,
+    /// Install the latest release on this device: verified against the project's
+    /// release key, then its install.sh replaces the binaries and restarts the service.
+    Upgrade {
+        /// Only say whether a newer release exists.
+        #[arg(long)]
+        check: bool,
+    },
+    /// The detached half of the daily check for a new release: refreshes the
+    /// check file in the data directory.
+    #[command(hide = true)]
+    RefreshUpdateCache,
     /// List this person's devices.
     Devices,
     /// Pair: with no offer, this device is the newcomer and shows an offer;
@@ -167,15 +180,56 @@ enum ClipboardAction {
 async fn main() {
     let options = Options::parse();
     let locations = Locations::resolve(options.data_dir.as_deref(), options.runtime_dir.as_deref());
-    if let Err(e) = run(&options, &locations).await {
+    let current = upgrade::current_version();
+    let mut newer = None;
+    let result = match &options.command {
+        Command::Upgrade { check } => upgrade_command(*check, current.clone()),
+        Command::RefreshUpdateCache => {
+            upgrade::refresh(&upgrade::Source::default(), &locations, &current)
+        }
+        _ => {
+            newer = upgrade::begin(&locations, &current);
+            run(&options, &locations).await
+        }
+    };
+    let failed = result.is_err();
+    if let Err(e) = result {
         eprintln!("lpctl: {e}");
+    }
+    // The notice comes last, after the command's own output or its error.
+    if let Some(newer) = newer {
+        eprintln!("{}", upgrade::notice(&newer, &current));
+    }
+    if failed {
         std::process::exit(1);
     }
+}
+
+/// `lpctl upgrade`: no daemon needed, so it runs before the control socket is
+/// opened, and it may replace this very binary.
+fn upgrade_command(check_only: bool, current: semver::Version) -> Result<(), Error> {
+    let upgrader = upgrade::Upgrader::new(upgrade::Source::default(), current.clone());
+    let mut out = std::io::stdout();
+    match upgrader.run(check_only, &mut out)? {
+        upgrade::Outcome::UpToDate => println!("{current} is the latest release"),
+        upgrade::Outcome::Available(v) => {
+            println!(
+                "Ligature Protocol {v} is available (this device has {current}); lpctl upgrade installs it"
+            );
+        }
+        upgrade::Outcome::Installed(v) => {
+            println!(
+                "installed {v}; update your other devices too, and lpctl status shows the daemon"
+            );
+        }
+    }
+    Ok(())
 }
 
 async fn run(options: &Options, locations: &Locations) -> Result<(), Error> {
     let mut client = Client::connect(&locations.control_socket()).await?;
     match &options.command {
+        Command::Upgrade { .. } | Command::RefreshUpdateCache => unreachable!("handled in main"),
         Command::Init { name, device_name } => {
             let mut req = Request::new(types::INIT, 0);
             req.name = Some(name.clone());

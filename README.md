@@ -174,7 +174,9 @@ other devices dial in. On the phone, install the APK and open it (the
 [app's README](impl/android/README.md) has the first run).
 Every release also carries `SHA256SUMS` signed with the project's release key; the
 [install guide](docs/guide/install.md#verifying-a-download) has the key and the commands
-that verify a download.
+that verify a download. On a desktop that is already installed, `lpctl upgrade` fetches the
+latest release, verifies it the same way and installs it, and `lpctl` mentions a newer
+release once a day.
 
 From a checkout, the same install with the binaries you build:
 

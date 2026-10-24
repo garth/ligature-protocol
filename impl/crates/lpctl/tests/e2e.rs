@@ -161,7 +161,8 @@ impl Daemon {
         let mut command = Command::new(lpctl());
         command
             .env_remove("LIGATURE_DATA_DIR")
-            .env_remove("LIGATURE_RUNTIME_DIR");
+            .env_remove("LIGATURE_RUNTIME_DIR")
+            .env("LIGATURE_NO_UPDATE_CHECK", "1");
         for (name, value) in &self.ctl_env {
             command.env(name, value);
         }

@@ -187,7 +187,8 @@ The reference implementation is Rust and is also the production implementation
   clients are unimplemented stubs),
   `ligatured` (user daemon; control socket; systemd unit in `crates/ligatured/systemd/`,
   launchd plist in `crates/ligatured/launchd/`),
-  `lpctl` (CLI), `lp-vectors` (conformance vector formats and loader, test support,
+  `lpctl` (CLI; `lpctl upgrade` and the daily release check live in its `upgrade` module,
+  ADR 0042), `lp-vectors` (conformance vector formats and loader, test support,
   `publish = false`), `ligature-android` (the daemon as a `cdylib` for the Android app behind
   UniFFI 0.32 proc macros, `publish = false`; allows `unsafe_code` for the exported C ABI;
   its `uniffi-bindgen` binary, feature `bindgen`, generates the Kotlin), `lp-macos` (the

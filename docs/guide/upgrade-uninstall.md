@@ -6,11 +6,21 @@ Install the new version on every device around the same time: while the project 
 a release may change what travels between devices, and a device of the previous version may
 not understand the new one.
 
-**Linux and macOS**: unpack the new tarball and run `./install.sh` again. It replaces the
-binaries and restarts the service; your keys and devices stay. A release that changes the
-store's layout brings it forward on the next start; the change is one way, so a copy of the
-data directory (see [Where things live](install.md#where-things-live)) beforehand is the way
-back.
+**Linux and macOS**: `lpctl upgrade`. It finds the latest release, verifies its checksum
+file against the project's release key (see
+[Verifying a download](install.md#verifying-a-download)) and the package against the
+checksum, then runs the package's `install.sh`, which replaces the binaries and restarts the
+service; your keys and devices stay. `lpctl upgrade --check` only says whether a newer
+release exists. The same by hand: unpack the new tarball and run `./install.sh` again. A
+release that changes the store's layout brings it forward on the next start; the change is
+one way, so a copy of the data directory (see [Where things live](install.md#where-things-live))
+beforehand is the way back.
+
+Once a day, when you run any `lpctl` command on a terminal, it asks the releases page for the
+newest version and, when there is one newer than yours, ends with a line saying so. The
+check is `lpctl`'s alone: the daemon never contacts anything, the request carries nothing
+about you or your devices, and setting `LIGATURE_NO_UPDATE_CHECK=1` switches it off. The
+result is kept in `update-check.json` in the data directory.
 
 **Android**: install the new APK over the old one. The release APK is signed with the
 project's key, so the update keeps the app's identity and data. The version code grows with

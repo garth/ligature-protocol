@@ -25,6 +25,8 @@ allow = [
     # uniffi and its support crates (LP-77): file-level copyleft that never
     # touches our own files.
     "MPL-2.0",
+    # webpki-roots, the Mozilla root store lpctl upgrade verifies GitHub with (LP-140).
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.9
 

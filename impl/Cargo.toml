@@ -61,9 +61,17 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4.6", features = ["derive", "env"] }
 gethostname = "1"
 qrcode = { version = "0.14", default-features = false }
+# lpctl upgrade (LP-140, ADR 0042): the releases API and the download over
+# rustls with the Mozilla roots (no gzip, no platform verifier), the checksum
+# file's minisign signature, and the version comparison.
+ureq = { version = "3.5", default-features = false, features = ["rustls"] }
+minisign-verify = "0.3"
+semver = "1.0"
 
 # Test support: temporary directories and the schema checks of the vectors.
 tempfile = "3"
+# blake2: minisign prehashes with BLAKE2b-512, so a test can sign as minisign does.
+blake2 = "0.11"
 jsonschema = { version = "0.60", default-features = false }
 
 # Platform integration (LP-29). Clipboard, notification and pasteboard crates are

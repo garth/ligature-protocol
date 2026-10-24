@@ -23,3 +23,4 @@ pub mod notifications_linux;
 #[cfg(target_os = "macos")]
 pub mod notifications_macos;
 pub mod run;
+pub mod screen;

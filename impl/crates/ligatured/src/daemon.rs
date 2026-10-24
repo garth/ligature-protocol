@@ -82,6 +82,7 @@ pub struct Daemon {
     notifications_impl: Mutex<Option<Arc<dyn crate::notifications::Notifications>>>,
     files: Mutex<Option<Arc<crate::files_sync::FilesSync>>>,
     input: Mutex<Option<Arc<crate::input::InputSync>>>,
+    screen: Mutex<Option<Arc<crate::screen::ScreenSync>>>,
     ceremonies: Arc<std::sync::atomic::AtomicUsize>,
 }
 
@@ -217,6 +218,7 @@ impl Daemon {
             notifications_impl: Mutex::new(None),
             files: Mutex::new(None),
             input: Mutex::new(None),
+            screen: Mutex::new(None),
             ceremonies: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         });
         crate::gossip::register(&daemon);
@@ -673,6 +675,9 @@ impl Daemon {
         if let Some(sync) = self.input_sync() {
             sync.detach(peer);
         }
+        if let Some(sync) = self.screen_sync() {
+            sync.detach(peer);
+        }
     }
 
     /// Starts carrying notifications through the given backend. Called once
@@ -731,6 +736,31 @@ impl Daemon {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(sync.clone());
         sync
+    }
+
+    /// Starts the screen family (milestone 8): a capture if this platform
+    /// shares its display, viewer params if it shows one. Called once at
+    /// startup.
+    pub fn attach_screen(
+        self: &Arc<Self>,
+        capture: Option<Arc<dyn crate::screen::Capture>>,
+        viewer: Option<lp_core::screen::ScreenParams>,
+    ) -> Arc<crate::screen::ScreenSync> {
+        let sync = crate::screen::ScreenSync::start(self.clone(), capture, viewer);
+        *self
+            .screen
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(sync.clone());
+        sync
+    }
+
+    /// The screen synchroniser, if screen is attached.
+    #[must_use]
+    pub fn screen_sync(&self) -> Option<Arc<crate::screen::ScreenSync>> {
+        self.screen
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 
     /// The input synchroniser, if input is attached.

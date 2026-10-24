@@ -43,7 +43,11 @@
         "org.ligatureprotocol.control.input.layout.set",
         "org.ligatureprotocol.control.input.layout.unset",
         "org.ligatureprotocol.control.input.status",
-        "org.ligatureprotocol.control.input.release"
+        "org.ligatureprotocol.control.input.release",
+        "org.ligatureprotocol.control.screen.displays",
+        "org.ligatureprotocol.control.screen.start",
+        "org.ligatureprotocol.control.screen.stop",
+        "org.ligatureprotocol.control.screen.status"
       ]
     },
     "eventType": {
@@ -51,7 +55,9 @@
       "enum": [
         "org.ligatureprotocol.control.pair.offer",
         "org.ligatureprotocol.control.pair.code",
-        "org.ligatureprotocol.control.files.progress"
+        "org.ligatureprotocol.control.files.progress",
+        "org.ligatureprotocol.control.screen.started",
+        "org.ligatureprotocol.control.screen.frame"
       ]
     },
     "request": {
@@ -140,6 +146,25 @@
             "bottom"
           ],
           "description": "input.layout.set, input.layout.unset: the edge of this device's screen."
+        },
+        "display": {
+          "type": "string",
+          "description": "screen.start: the display to watch, or the primary one when absent."
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "screen.start: the widest picture wanted."
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "screen.start: the tallest picture wanted."
+        },
+        "frameRate": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "screen.start: the frame rate wanted."
         }
       }
     },
@@ -224,6 +249,68 @@
         "progress": {
           "type": "object",
           "description": "files.progress: the transfer so far, with its id, peer, direction, each file's name, size, bytes done and state, and the outcome once it ends (the shape is the daemon's files_sync::TransferProgress)."
+        },
+        "started": {
+          "type": "object",
+          "description": "screen.started: what the sharer settled on, the started message of capability.screen.schema.json without its type.",
+          "required": [
+            "display",
+            "codec",
+            "width",
+            "height",
+            "frameRate"
+          ],
+          "properties": {
+            "display": {
+              "type": "string"
+            },
+            "codec": {
+              "type": "string"
+            },
+            "width": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "height": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "frameRate": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "frame": {
+          "type": "object",
+          "description": "screen.frame: one chunk of one frame, in order, the frame message of capability.screen.schema.json without its type.",
+          "required": [
+            "seq",
+            "at",
+            "key",
+            "last",
+            "bytes"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "at": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "key": {
+              "type": "boolean"
+            },
+            "last": {
+              "type": "boolean"
+            },
+            "bytes": {
+              "type": "string",
+              "contentEncoding": "base64url"
+            }
+          }
         }
       }
     }

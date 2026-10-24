@@ -23,6 +23,11 @@ release workflow publishes the section as the release notes with the installers.
   layout`, `status` and `release`, the layout kept in the store, and in-memory backends
   behind `LIGATURE_FAKE_INPUT=1`; no platform captures or injects yet, so no device
   advertises it (LP-142).
+- The screen capability (milestone 8): the daemon core that lists a device's displays,
+  negotiates a share, chunks frames within the message bound, drops rather than queues
+  and recovers with a keyframe, and ends a share on every path; `lpctl screen displays`,
+  `start` (the encoded stream to a file), `stop` and `status`; a synthetic capture behind
+  `LIGATURE_FAKE_SCREEN=1`; no platform captures or views yet (LP-148).
 
 ### Fixed
 

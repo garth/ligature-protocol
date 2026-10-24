@@ -11,12 +11,13 @@ use std::sync::{Arc, Mutex};
 
 use ligatured::control::{
     Caps, Client, ClipboardPasted, ClipboardText, Devices, Empty, Event, InitResult, InputLayout,
-    Offers, Request, Transfers, types,
+    Offers, Request, ScreenDisplays, ScreenStopped, Transfers, types,
 };
 use ligatured::daemon::Status;
 use ligatured::files_sync::{FileState, TransferEnd, TransferProgress};
 use ligatured::grants::Grants;
 use ligatured::input::InputStatus;
+use ligatured::screen::ScreenStatus;
 use lp_core::paths::{DATA_DIR_ENV, Locations, RUNTIME_DIR_ENV};
 use lp_core::{Error, PublicKey};
 
@@ -111,6 +112,53 @@ enum Command {
         #[command(subcommand)]
         action: InputAction,
     },
+    /// Watch a device's screen or manage the shares this device runs
+    /// (diagnostics: the encoded stream goes to a file, no window).
+    Screen {
+        #[command(subcommand)]
+        action: ScreenAction,
+    },
+}
+
+/// `lpctl screen` actions.
+#[derive(Debug, Subcommand)]
+enum ScreenAction {
+    /// List a device's displays.
+    Displays {
+        /// The device: its name, or a prefix of its key or fingerprint.
+        device: String,
+    },
+    /// Watch a device's display: the encoded H.264 stream is written to a file
+    /// (play it with `ffplay -f h264 FILE`), progress to the terminal.
+    Start {
+        /// The device: its name, or a prefix of its key or fingerprint.
+        device: String,
+        /// The display id, from `displays`; the primary one by default.
+        #[arg(long)]
+        display: Option<String>,
+        /// The widest picture wanted.
+        #[arg(long, default_value_t = 1280)]
+        width: u32,
+        /// The tallest picture wanted.
+        #[arg(long, default_value_t = 720)]
+        height: u32,
+        /// The frame rate wanted.
+        #[arg(long, default_value_t = 30)]
+        rate: u32,
+        /// Where the stream goes.
+        #[arg(long)]
+        out: PathBuf,
+        /// Stop after this many frames.
+        #[arg(long)]
+        frames: Option<u64>,
+    },
+    /// Stop the shares with a device, or every share this device runs.
+    Stop {
+        /// The device: its name, or a prefix of its key or fingerprint.
+        device: Option<String>,
+    },
+    /// What this device shares and watches.
+    Status,
 }
 
 /// `lpctl input` actions.
@@ -443,6 +491,7 @@ async fn run(options: &Options, locations: &Locations) -> Result<(), Error> {
         }
         Command::Files { action } => files(&mut client, locations, action).await?,
         Command::Input { action } => input(&mut client, action).await?,
+        Command::Screen { action } => screen(&mut client, action).await?,
         Command::Caps => {
             let caps: Caps = client.request(Request::new(types::CAPS, 0)).await?;
             println!("this device offers:");
@@ -564,6 +613,125 @@ async fn input(client: &mut Client, action: &InputAction) -> Result<(), Error> {
                 .request(Request::new(types::INPUT_RELEASE, 0))
                 .await?;
             println!("released.");
+        }
+    }
+    Ok(())
+}
+
+/// `lpctl screen`.
+async fn screen(client: &mut Client, action: &ScreenAction) -> Result<(), Error> {
+    match action {
+        ScreenAction::Displays { device } => {
+            let key = resolve_device(client, device).await?;
+            let mut req = Request::new(types::SCREEN_DISPLAYS, 0);
+            req.key = Some(key);
+            let d: ScreenDisplays = client.request(req).await?;
+            for display in d.displays {
+                println!(
+                    "{:<12} {}x{}{}  {}",
+                    display.id,
+                    display.width,
+                    display.height,
+                    if display.primary { "  primary" } else { "" },
+                    display.name.unwrap_or_default()
+                );
+            }
+        }
+        ScreenAction::Start {
+            device,
+            display,
+            width,
+            height,
+            rate,
+            out,
+            frames,
+        } => {
+            let key = resolve_device(client, device).await?;
+            let mut req = Request::new(types::SCREEN_START, 0);
+            req.key = Some(key);
+            req.display = display.clone();
+            req.width = Some(*width);
+            req.height = Some(*height);
+            req.frame_rate = Some(*rate);
+            let mut file = std::fs::File::create(out)
+                .map_err(|e| Error::Io(format!("{}: {e}", out.display())))?;
+            let (mut count, mut bytes_total, mut asked_stop) = (0u64, 0u64, false);
+            let response = client
+                .call(req, |event: &Event| {
+                    if let Some(started) = &event.started {
+                        eprintln!(
+                            "watching {} at {}x{} {} fps ({}); stream in {}",
+                            started.display,
+                            started.width,
+                            started.height,
+                            started.frame_rate,
+                            started.codec,
+                            out.display()
+                        );
+                    }
+                    if let Some(frame) = &event.frame {
+                        let _ = file.write_all(&frame.bytes.0);
+                        bytes_total += frame.bytes.0.len() as u64;
+                        if frame.last {
+                            count += 1;
+                            if count % 30 == 0 {
+                                eprintln!("{count} frames, {}", human(bytes_total));
+                            }
+                            if !asked_stop && frames.is_some_and(|n| count >= n) {
+                                asked_stop = true;
+                                let mut stop = Request::new(types::SCREEN_STOP, 0);
+                                stop.key = Some(key);
+                                return Some(stop);
+                            }
+                        }
+                    }
+                    None
+                })
+                .await?;
+            let ended: ScreenStopped = response.into_ok()?;
+            eprintln!(
+                "share ended ({}): {count} frames, {}",
+                ended.reason,
+                human(bytes_total)
+            );
+        }
+        ScreenAction::Stop { device } => {
+            let mut req = Request::new(types::SCREEN_STOP, 0);
+            if let Some(device) = device {
+                req.key = Some(resolve_device(client, device).await?);
+            }
+            let _: Empty = client.request(req).await?;
+            println!("stopped.");
+        }
+        ScreenAction::Status => {
+            let s: ScreenStatus = client
+                .request(Request::new(types::SCREEN_STATUS, 0))
+                .await?;
+            println!("shares: {}", s.shares);
+            println!("views:  {}", s.views);
+            for share in s.sharing {
+                println!(
+                    "sharing {} to {}… at {}x{} {} fps, {} frames, {} dropped",
+                    share.started.display,
+                    share.peer.fingerprint(),
+                    share.started.width,
+                    share.started.height,
+                    share.started.frame_rate,
+                    share.frames,
+                    share.dropped
+                );
+            }
+            for watch in s.watching {
+                println!(
+                    "watching {} of {}… at {}x{} {} fps, {} frames",
+                    watch.started.display,
+                    watch.peer.fingerprint(),
+                    watch.started.width,
+                    watch.started.height,
+                    watch.started.frame_rate,
+                    watch.frames
+                );
+            }
         }
     }
     Ok(())

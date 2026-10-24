@@ -23,6 +23,10 @@ pub const FAKE_NOTIFICATIONS_ENV: &str = "LIGATURE_FAKE_NOTIFICATIONS";
 /// Set to `1` to attach the in-memory input capture and injector (milestone
 /// 7), so `lpctl input` can be driven without a platform backend.
 pub const FAKE_INPUT_ENV: &str = "LIGATURE_FAKE_INPUT";
+/// Set to `1` to attach a screen capture that generates synthetic frames and
+/// viewer params that take anything (milestone 8), so `lpctl screen` can be
+/// driven without a platform backend.
+pub const FAKE_SCREEN_ENV: &str = "LIGATURE_FAKE_SCREEN";
 
 /// The platform's notification backend, if this platform has one; icons it
 /// writes for the platform go under `locations`.
@@ -130,6 +134,18 @@ pub async fn run(
     }
     // The platform capture and injector arrive with LP-143 (Linux) and
     // LP-144 (macOS); until then a daemon without the fake offers no input.
+    if std::env::var_os(FAKE_SCREEN_ENV).is_some_and(|v| v == "1") {
+        tracing::warn!("using the synthetic screen capture ({FAKE_SCREEN_ENV}=1)");
+        daemon.attach_screen(
+            Some(crate::screen::FakeCapture::generating()),
+            Some(lp_core::screen::ScreenParams {
+                views: true,
+                ..lp_core::screen::ScreenParams::default()
+            }),
+        );
+    }
+    // The platform capture, encoder and viewer arrive with LP-149 (Linux)
+    // and LP-150 (macOS).
 
     spawn_connection_events(daemon.clone(), events);
     spawn_discovery(daemon.clone());

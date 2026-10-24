@@ -249,6 +249,8 @@ pub async fn handle_control(
                             offer: None,
                             code: Some(code),
                             progress: None,
+                            started: None,
+                            frame: None,
                         }))
                         .await;
                 }
@@ -413,6 +415,8 @@ async fn run_join(
                     offer: Some(offer),
                     code: None,
                     progress: None,
+                    started: None,
+                    frame: None,
                 }))
                 .await;
         }

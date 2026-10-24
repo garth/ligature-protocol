@@ -17,6 +17,7 @@ pub mod identity;
 pub mod input;
 pub mod key;
 pub mod paths;
+pub mod screen;
 pub mod wire;
 
 pub use error::Error;

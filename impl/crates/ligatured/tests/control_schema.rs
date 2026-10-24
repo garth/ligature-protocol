@@ -51,12 +51,19 @@ fn control_messages_validate() {
         types::INPUT_LAYOUT_UNSET,
         types::INPUT_STATUS,
         types::INPUT_RELEASE,
+        types::SCREEN_DISPLAYS,
+        types::SCREEN_START,
+        types::SCREEN_STOP,
+        types::SCREEN_STATUS,
     ] {
         let mut r = Request::new(t, 7);
         r.name = Some("Alice".to_owned());
         r.text = Some("hi".to_owned());
         r.pairing = Some(3);
         r.edge = Some("right".to_owned());
+        r.display = Some("DP-1".to_owned());
+        r.width = Some(1280);
+        r.frame_rate = Some(30);
         check(&v, &r);
     }
     check(&v, &Response::ok(1, &Empty {}).unwrap());
@@ -69,6 +76,8 @@ fn control_messages_validate() {
             offer: None,
             code: Some("012345".to_owned()),
             progress: None,
+            started: None,
+            frame: None,
         },
     );
     check(
@@ -79,6 +88,8 @@ fn control_messages_validate() {
             offer: Some("ligature:pair/1?b=z6Mk".to_owned()),
             code: None,
             progress: None,
+            started: None,
+            frame: None,
         },
     );
     assert!(

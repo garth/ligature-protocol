@@ -41,6 +41,12 @@ release workflow publishes the section as the release notes with the installers.
   stops it; `lpview <device>` watches another device's screen in a window and, after a
   click, drives it until both Control keys are pressed; a Mac with ffmpeg can watch with
   `lpview` too (LP-149).
+- Android: the phone shares its screen with another of the person's devices after the
+  user consents in Android's dialog each time, with a Stop sharing action, and a Watch
+  screen shows a desktop's screen and drives it by touch: a tap clicks where it lands, a
+  drag moves the pointer, two fingers scroll, the field types (LP-151).
+- Android: touch on the touchpad and the Watch screen is sent in coalesced batches, so
+  the pointer follows the finger instead of replaying every movement (LP-151).
 
 ### Fixed
 

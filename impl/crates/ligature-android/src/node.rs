@@ -195,6 +195,10 @@ pub struct Node {
     notifications: Arc<crate::HostNotifications>,
     files: Arc<ligatured::files_sync::FilesSync>,
     host: SharedHost,
+    /// The phone's screen, shared through the app (milestone 8).
+    screen: Arc<crate::HostScreen>,
+    /// The share this phone watches: the sharer and its control.
+    watching: Arc<Mutex<WatchSlot>>,
 }
 
 impl std::fmt::Debug for Node {
@@ -263,6 +267,8 @@ impl Node {
             clipboard: clipboard.clone(),
             notifications: notifications.clone(),
             files: files.clone(),
+            screen: crate::HostScreen::new(host.clone()),
+            watching: Arc::new(Mutex::new(None)),
             host,
         });
         let clipboard_config = ligatured::clipboard_sync::ClipboardConfig {
@@ -277,6 +283,15 @@ impl Node {
             node.daemon
                 .attach_clipboard_with(clipboard, clipboard_config);
             node.daemon.attach_notifications(notifications);
+            // The phone shares its screen through the app's media projection
+            // and watches a desktop's in the app (milestone 8).
+            node.daemon.attach_screen(
+                Some(node.screen.clone()),
+                Some(lp_core::screen::ScreenParams {
+                    views: true,
+                    ..lp_core::screen::ScreenParams::default()
+                }),
+            );
             // The phone drives a desktop as a touchpad (milestone 7): it
             // provides input and accepts none, since Android lets an app
             // inject nothing.
@@ -366,6 +381,11 @@ impl Node {
                         .peers_offering(lp_core::capability::CLIPBOARD_TYPE);
                     now.extend(daemon.registry().peers_offering(FILES_TYPE));
                     now.extend(daemon.registry().peers_offering(lp_core::input::INPUT_TYPE));
+                    now.extend(
+                        daemon
+                            .registry()
+                            .peers_offering(lp_core::screen::SCREEN_TYPE),
+                    );
                     if now != last {
                         last = now;
                         host.on_event(Event::StatusChanged);
@@ -432,6 +452,172 @@ impl Node {
         })
     }
 
+    /// Starts driving `peer` with the pointer at `x`, `y`, fractions of its
+    /// screen: the watch screen's first touch. Returns the screen's size.
+    ///
+    /// # Errors
+    ///
+    /// As [`Node::input_start`].
+    pub fn input_start_at(
+        &self,
+        peer: String,
+        x: f64,
+        y: f64,
+    ) -> Result<crate::InputScreen, LpError> {
+        let peer = PublicKey::parse(peer.trim())?;
+        let sync = self.input_sync()?;
+        let ready = self.with_runtime(|rt| {
+            rt.block_on(sync.drive(peer, lp_core::input::Enter::absolute(x, y)))
+        })??;
+        Ok(crate::InputScreen {
+            width: ready.width,
+            height: ready.height,
+        })
+    }
+
+    /// The devices whose screen this phone can watch: this person's
+    /// connected devices whose descriptor says they share.
+    #[must_use]
+    pub fn screen_targets(&self) -> Vec<crate::ScreenTarget> {
+        use lp_core::screen::ScreenParams;
+        let mut targets: Vec<crate::ScreenTarget> = self
+            .daemon
+            .registry()
+            .peers()
+            .into_iter()
+            .filter(|caps| {
+                matches!(
+                    self.daemon.recognise(&caps.peer),
+                    Ok(lp_identity::trust::Recognition::MyBinding { .. })
+                )
+            })
+            .filter(|caps| {
+                caps.capabilities
+                    .iter()
+                    .find_map(ScreenParams::from_descriptor)
+                    .is_some_and(|p| p.shares)
+            })
+            .map(|caps| crate::ScreenTarget {
+                key: caps.peer.to_string(),
+                name: self
+                    .daemon
+                    .device_display_name(&caps.peer)
+                    .unwrap_or_else(|| caps.peer.fingerprint()),
+            })
+            .collect();
+        targets.sort_by(|a, b| a.name.cmp(&b.name).then(a.key.cmp(&b.key)));
+        targets
+    }
+
+    /// Watches `peer`'s primary display, no larger than `max_width` by
+    /// `max_height` and no faster than `frame_rate`. Frames go to
+    /// [`crate::Host::screen_frame`] and the end to
+    /// [`Event::ScreenEnded`]. Blocks until the sharer answers, which may
+    /// wait on its consent.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LpError::BadRequest`] for a malformed key,
+    /// [`LpError::Mismatch`] for a device that does not share or refused,
+    /// and [`LpError::Internal`] when a watch already runs or the stream fails.
+    pub fn screen_watch(
+        &self,
+        peer: String,
+        max_width: u32,
+        max_height: u32,
+        frame_rate: u32,
+    ) -> Result<crate::ScreenWatch, LpError> {
+        let peer = PublicKey::parse(peer.trim())?;
+        if lock_watch(&self.watching).is_some() {
+            return Err(LpError::Internal("already watching a screen".to_owned()));
+        }
+        let sync = self
+            .daemon
+            .screen_sync()
+            .ok_or_else(|| LpError::Internal("screen is not attached".to_owned()))?;
+        let start = lp_core::screen::Start {
+            display: None,
+            codec: lp_core::screen::Codec::H264,
+            width: max_width,
+            height: max_height,
+            frame_rate,
+        };
+        let watching = self.with_runtime(|rt| rt.block_on(sync.watch(&peer, start)))??;
+        let ligatured::screen::Watching {
+            started,
+            mut frames,
+            control,
+        } = watching;
+        *lock_watch(&self.watching) = Some((peer, control));
+        let host = self.host.clone();
+        let peer_s = peer.to_string();
+        let watching = self.watching_slot();
+        self.with_runtime(|rt| {
+            rt.spawn(async move {
+                while let Some(viewed) = frames.recv().await {
+                    match viewed {
+                        ligatured::screen::Viewed::Frame { key, bytes, .. } => {
+                            host.screen_frame(peer_s.clone(), key, bytes);
+                        }
+                        ligatured::screen::Viewed::Stopped(reason) => {
+                            if let Some(slot) = watching.upgrade() {
+                                lock_watch(&slot).take();
+                            }
+                            host.on_event(Event::ScreenEnded {
+                                peer: peer_s.clone(),
+                                reason: reason.to_string(),
+                            });
+                            return;
+                        }
+                    }
+                }
+            });
+        })?;
+        Ok(crate::ScreenWatch {
+            display: started.display,
+            width: started.width,
+            height: started.height,
+            frame_rate: started.frame_rate,
+        })
+    }
+
+    /// Asks the sharer of the watched screen for a keyframe: the decoder
+    /// lost its place.
+    pub fn screen_watch_keyframe(&self) {
+        if let Some((_, control)) = lock_watch(&self.watching).as_ref() {
+            let _ = control.send(ligatured::screen::ShareControl::Keyframe);
+        }
+    }
+
+    /// Stops watching: the user left the watch screen.
+    pub fn screen_watch_stop(&self) {
+        if let Some((_, control)) = lock_watch(&self.watching).take() {
+            let _ = control.send(ligatured::screen::ShareControl::Stop);
+        }
+    }
+
+    /// Whether the app can share the screen (it has an H.264 encoder) and
+    /// the screen's size in pixels.
+    pub fn set_screen_share(&self, available: bool, width: u32, height: u32) {
+        self.screen.set_available(available, width, height);
+    }
+
+    /// The user answered the media projection dialog.
+    pub fn screen_share_started(&self, ok: bool) {
+        self.screen.started(ok);
+    }
+
+    /// One encoded access unit of this phone's screen.
+    pub fn screen_share_frame(&self, key: bool, bytes: Vec<u8>) {
+        self.screen.frame(key, bytes);
+    }
+
+    /// The share of this phone's screen ended on the phone: `consent`,
+    /// `sharer` or `error`.
+    pub fn screen_share_ended(&self, reason: String) {
+        self.screen.ended(&reason);
+    }
+
     /// Sends what the touchpad screen did to the device being driven, as one
     /// batch: motion in the driven screen's pixels, buttons, scroll steps,
     /// keys and text.
@@ -445,6 +631,7 @@ impl Node {
             .into_iter()
             .map(|e| match e {
                 crate::TouchEvent::Motion { dx, dy } => InputEvent::Motion { dx, dy },
+                crate::TouchEvent::Position { x, y } => InputEvent::Position { x, y },
                 crate::TouchEvent::Button { code, pressed } => InputEvent::Button { code, pressed },
                 crate::TouchEvent::Scroll { dx, dy } => InputEvent::Scroll {
                     dx,
@@ -927,6 +1114,10 @@ impl Node {
         &self.daemon
     }
 
+    fn watching_slot(&self) -> std::sync::Weak<Mutex<WatchSlot>> {
+        Arc::downgrade(&self.watching)
+    }
+
     fn input_sync(&self) -> Result<Arc<ligatured::input::InputSync>, LpError> {
         self.daemon
             .input_sync()
@@ -975,6 +1166,15 @@ impl Node {
             .ok_or_else(|| LpError::Internal("node stopped".to_owned()))?;
         Ok(f(&handle))
     }
+}
+
+type WatchSlot = Option<(
+    PublicKey,
+    tokio::sync::mpsc::UnboundedSender<ligatured::screen::ShareControl>,
+)>;
+
+fn lock_watch(m: &Mutex<WatchSlot>) -> std::sync::MutexGuard<'_, WatchSlot> {
+    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 fn finish(pairing: &Pairing, host: &SharedHost, result: Result<(), String>) {

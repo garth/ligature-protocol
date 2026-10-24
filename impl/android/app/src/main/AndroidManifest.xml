@@ -9,6 +9,9 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <!-- Sharing the screen (milestone 8): the projection runs in a service
+         of its own type, after the user consents each time. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
@@ -71,6 +74,26 @@
                 <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
+
+        <!-- Opens the media projection dialog for a viewer's request and
+             starts the share on consent (milestone 8). Not noHistory: the
+             dialog's result comes back to it. -->
+        <activity
+            android:name=".ScreenConsentActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Ligature.Transparent" />
+
+        <service
+            android:name=".ScreenShareService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
+        <!-- The Stop sharing action on the share's notification. -->
+        <receiver
+            android:name=".ScreenShare$StopReceiver"
+            android:exported="false" />
 
         <!-- The cancel action on a transfer's progress notification. -->
         <receiver

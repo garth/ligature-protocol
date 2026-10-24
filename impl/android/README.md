@@ -122,6 +122,21 @@ in the middle of the desktop's screen. Done or Back ends the drive and lifts eve
 button on the desktop; so does the desktop or the connection going away. The phone cannot
 be driven from a desktop: Android lets an app inject nothing (chapter 08).
 
+## Screen
+
+A desktop of yours that shares its screen (a Linux machine with ffmpeg, milestone 8) shows
+on the main screen as a Watch button. Watching shows its primary display at its shape;
+touching the picture drives it: a tap clicks where it lands, a drag moves the pointer
+there, a touch held still then dragged drags with the button down, two fingers scroll,
+and the field types. Done or Back ends the watch.
+
+The phone shares its own screen when a desktop asks (`lpview` or `lpctl screen start`
+there). Android asks every time: the app opens its dialog at once if it is in front, and
+otherwise posts a notification to tap. Choose **Entire screen** in the dialog, since it
+defaults to a single app. While the share runs, Android's cast indicator shows and the
+app's notification has **Stop sharing**; stopping the cast from the quick settings ends it
+too.
+
 ## Where things are
 
 | | |

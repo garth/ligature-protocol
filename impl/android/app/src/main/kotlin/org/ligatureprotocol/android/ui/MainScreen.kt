@@ -38,6 +38,7 @@ import org.ligatureprotocol.android.PairingState
 import org.ligatureprotocol.android.UiState
 import org.ligatureprotocol.core.Device
 import org.ligatureprotocol.core.InputTarget
+import org.ligatureprotocol.core.ScreenTarget
 import org.ligatureprotocol.core.Status
 
 @Composable
@@ -59,6 +60,7 @@ fun MainScreen(
     onNotificationSettings: () -> Unit,
     onToggleApp: (String, Boolean) -> Unit,
     onTouchpad: (InputTarget) -> Unit,
+    onWatch: (ScreenTarget) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -87,6 +89,7 @@ fun MainScreen(
             ClipboardCard(status, onSendClipboard, onReceiveClipboard, state.backgroundRead, state.lastClipboard)
             NotificationsCard(state.notificationAccess, state.apps, onNotificationSettings, onToggleApp)
             if (state.inputTargets.isNotEmpty()) TouchpadCard(state.inputTargets, onTouchpad)
+            if (state.screenTargets.isNotEmpty()) WatchCard(state.screenTargets, onWatch)
             if (state.pairing == null) IntroduceCard(onStartIntroduce)
             DevicesCard(state.devices, onRevoke)
         }
@@ -354,6 +357,21 @@ private fun groupDevices(devices: List<Device>): List<DeviceRow> {
         }
     }
     return rows
+}
+
+@Composable
+private fun WatchCard(targets: List<ScreenTarget>, onWatch: (ScreenTarget) -> Unit) {
+    Card {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Watch a screen", style = MaterialTheme.typography.titleMedium)
+            Text("See one of your desktops here, and drive it by touch.")
+            targets.forEach { target ->
+                OutlinedButton(onClick = { onWatch(target) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Watch ${target.name}")
+                }
+            }
+        }
+    }
 }
 
 @Composable

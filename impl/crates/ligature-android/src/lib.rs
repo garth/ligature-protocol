@@ -21,6 +21,7 @@ mod logging;
 mod node;
 mod notifications;
 mod pairing;
+mod screen;
 
 pub use clipboard::HostClipboard;
 pub use files::HostFiles;
@@ -28,6 +29,7 @@ pub use lp_core::input::{BTN_LEFT, BTN_MIDDLE, BTN_RIGHT};
 pub use node::{Config, Device, Node, OutgoingFile, Status, TransferInfo};
 pub use notifications::HostNotifications;
 pub use pairing::Pairing;
+pub use screen::HostScreen;
 
 use std::sync::Arc;
 
@@ -68,6 +70,36 @@ pub enum Event {
         /// The device that was driven.
         peer: String,
     },
+    /// The share this phone watched ended (milestone 8): the watch screen
+    /// should close.
+    ScreenEnded {
+        /// The device that shared.
+        peer: String,
+        /// `viewer`, `sharer`, `consent` or `error`.
+        reason: String,
+    },
+}
+
+/// A device whose screen this phone can watch (milestone 8).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ScreenTarget {
+    /// Its binding key.
+    pub key: String,
+    /// Its display name.
+    pub name: String,
+}
+
+/// A share this phone watches, as the sharer settled it.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ScreenWatch {
+    /// The display shared.
+    pub display: String,
+    /// The picture's width.
+    pub width: u32,
+    /// The picture's height.
+    pub height: u32,
+    /// The frame rate.
+    pub frame_rate: u32,
 }
 
 /// A device this phone can drive as a touchpad (milestone 7).
@@ -99,6 +131,14 @@ pub enum TouchEvent {
         dx: f64,
         /// Vertical.
         dy: f64,
+    },
+    /// An absolute position, as fractions of the driven screen: the watch
+    /// screen's finger over the picture.
+    Position {
+        /// Across, from the left.
+        x: f64,
+        /// Down, from the top.
+        y: f64,
     },
     /// A pointer button, by evdev code (272 is the left button).
     Button {
@@ -274,6 +314,17 @@ pub trait Host: Send + Sync {
     fn finish_download(&self, id: u64) -> Option<PublishedDownload>;
     /// The download will not complete: remove every trace of it.
     fn abort_download(&self, id: u64);
+    /// One whole encoded frame of the share this phone watches, for the
+    /// decoder: H.264 Annex B, the parameter sets in every keyframe.
+    fn screen_frame(&self, peer: String, key: bool, bytes: Vec<u8>);
+    /// `viewer` asks to watch this phone's screen at most `width` by
+    /// `height` at `frame_rate`: ask the user (the media projection dialog),
+    /// then answer with [`node::Node::screen_share_started`].
+    fn screen_share_requested(&self, viewer: String, width: u32, height: u32, frame_rate: u32);
+    /// The share of this phone's screen ends: stop the projection.
+    fn screen_share_stop(&self);
+    /// The viewer wants a keyframe now.
+    fn screen_share_keyframe(&self);
     /// Something happened that the user interface may want to show.
     fn on_event(&self, event: Event);
     /// A log line from the node, for logcat.

@@ -25,6 +25,12 @@ struct FakeHost {
     /// Pending downloads by handle: the final path.
     pending: Mutex<Vec<(u64, std::path::PathBuf)>>,
     aborted: Mutex<Vec<u64>>,
+    /// Frames of a watched share: whether each was a keyframe, and its size.
+    screen_frames: Mutex<Vec<(bool, usize)>>,
+    /// Share requests: the viewer and the size and rate asked.
+    share_requests: Mutex<Vec<(String, u32, u32, u32)>>,
+    share_keyframes: Mutex<u32>,
+    share_stops: Mutex<u32>,
 }
 
 impl FakeHost {
@@ -140,6 +146,25 @@ impl Host for FakeHost {
 
     fn abort_download(&self, id: u64) {
         self.aborted.lock().unwrap().push(id);
+    }
+
+    fn screen_frame(&self, _peer: String, key: bool, bytes: Vec<u8>) {
+        self.screen_frames.lock().unwrap().push((key, bytes.len()));
+    }
+
+    fn screen_share_requested(&self, viewer: String, width: u32, height: u32, frame_rate: u32) {
+        self.share_requests
+            .lock()
+            .unwrap()
+            .push((viewer, width, height, frame_rate));
+    }
+
+    fn screen_share_stop(&self) {
+        *self.share_stops.lock().unwrap() += 1;
+    }
+
+    fn screen_share_keyframe(&self) {
+        *self.share_keyframes.lock().unwrap() += 1;
     }
 
     fn on_event(&self, event: Event) {
@@ -681,5 +706,230 @@ fn the_phone_is_a_touchpad_for_a_desktop() {
         phone.input_driving().is_none()
     });
     phone.stop();
+    runtime.shutdown_timeout(Duration::from_secs(2));
+}
+
+/// The phone watches a desktop's screen and shares its own (milestone 8,
+/// LP-151): the desktop is a daemon with the in-memory capture; the phone's
+/// capture is the host's, answered by the test as the app would.
+#[test]
+fn the_phone_watches_a_desktop_and_shares_its_own_screen() {
+    use ligatured::screen::{EncodedFrame, FakeCapture, ShareControl, Viewed};
+    use lp_core::facts::Role;
+    use lp_core::paths::Locations;
+    use lp_core::screen::{Codec, Display, SCREEN_TYPE, ScreenParams, Start, StopReason};
+    use lp_core::wire::Timestamp;
+    use lp_identity::cross_signing::PersonKeys;
+    use lp_identity::facts;
+
+    let at = |offset: i64| Timestamp::from_unix(1_760_000_000 + offset).unwrap();
+    let phone_dir = tempfile::tempdir().unwrap();
+    let phone_host = Arc::new(FakeHost::with_downloads());
+    let phone = Node::start(config(&phone_dir, "phone"), phone_host.clone()).unwrap();
+    // The app has an encoder and a 1080x2400 screen.
+    phone.set_screen_share(true, 1080, 2400);
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let desktop_dir = tempfile::tempdir().unwrap();
+    let capture = FakeCapture::new(vec![Display {
+        id: "DP-1".to_owned(),
+        name: None,
+        width: 2560,
+        height: 1440,
+        primary: true,
+    }]);
+    let (desktop, desktop_sync, addr) = {
+        let _guard = runtime.enter();
+        let loc = Locations::resolve(Some(desktop_dir.path()), None);
+        let (d, events) =
+            ligatured::daemon::Daemon::open(loc, "127.0.0.1:0".parse().unwrap(), Some("desktop"))
+                .unwrap();
+        let sync = d.attach_screen(
+            Some(capture.clone()),
+            Some(ScreenParams {
+                views: true,
+                ..ScreenParams::default()
+            }),
+        );
+        ligatured::run::spawn_connection_events(d.clone(), events);
+        let addr = d.manager().endpoint().local_addr().unwrap();
+        (d, sync, addr)
+    };
+    let alice = PersonKeys::generate().unwrap();
+    let person = facts::person_fact(&alice, "Alice", 1, at(0)).unwrap();
+    let roles = [
+        facts::role_fact(
+            &alice,
+            Role::Binding,
+            *phone.daemon().binding().public(),
+            true,
+            at(1),
+        )
+        .unwrap(),
+        facts::role_fact(
+            &alice,
+            Role::Binding,
+            *desktop.binding().public(),
+            true,
+            at(2),
+        )
+        .unwrap(),
+    ];
+    for d in [phone.daemon(), &desktop] {
+        d.store().insert(&person).unwrap();
+        for r in &roles {
+            d.store().insert(r).unwrap();
+        }
+        d.update_keys(|k| k.set_joined(*alice.person(), Some(&alice.self_signing)))
+            .unwrap();
+    }
+    let dial = phone.daemon().clone();
+    runtime
+        .block_on(async move { dial.manager().connect(addr).await })
+        .unwrap();
+    until("both see each other's screen", || {
+        phone.daemon().registry().peers_offering(SCREEN_TYPE).len() == 1
+            && desktop.registry().peers_offering(SCREEN_TYPE).len() == 1
+            && desktop.registry().peers().iter().any(|p| {
+                p.capabilities
+                    .iter()
+                    .any(|d| ScreenParams::from_descriptor(d).is_some_and(|p| p.shares))
+            })
+    });
+
+    // The phone watches the desktop, fitted to what it takes.
+    let targets = phone.screen_targets();
+    assert_eq!(targets.len(), 1);
+    let desktop_key = desktop.binding().public().to_string();
+    assert_eq!(targets[0].key, desktop_key);
+    let watch = phone
+        .screen_watch(desktop_key.clone(), 1280, 720, 30)
+        .unwrap();
+    assert_eq!(
+        (
+            watch.display.as_str(),
+            watch.width,
+            watch.height,
+            watch.frame_rate
+        ),
+        ("DP-1", 1280, 720, 30)
+    );
+    assert!(
+        phone
+            .screen_watch(desktop_key.clone(), 1280, 720, 30)
+            .is_err(),
+        "one at a time"
+    );
+    until("the desktop's capture runs", || {
+        capture.running() == vec!["DP-1".to_owned()]
+    });
+    assert!(capture.emit(
+        "DP-1",
+        EncodedFrame {
+            at: 1,
+            key: true,
+            bytes: vec![1; 300_000],
+        },
+    ));
+    capture.emit(
+        "DP-1",
+        EncodedFrame {
+            at: 2,
+            key: false,
+            bytes: vec![2; 1000],
+        },
+    );
+    until("two frames reached the host", || {
+        phone_host.screen_frames.lock().unwrap().len() == 2
+    });
+    assert_eq!(
+        *phone_host.screen_frames.lock().unwrap(),
+        vec![(true, 300_000), (false, 1000)]
+    );
+    phone.screen_watch_keyframe();
+    until("the keyframe request reached the desktop", || {
+        capture.keyframe_requests() == 1
+    });
+    phone.screen_watch_stop();
+    until("the host was told the watch ended", || {
+        phone_host.events.lock().unwrap().iter().any(|e| {
+            matches!(e, Event::ScreenEnded { peer, reason } if *peer == desktop_key && reason == "viewer")
+        })
+    });
+    until("the desktop stopped capturing", || capture.stops() == 1);
+
+    // The desktop watches the phone: the app is asked, consents, encodes.
+    let phone_key = *phone.daemon().binding().public();
+    let start = Start {
+        display: None,
+        codec: Codec::H264,
+        width: 1080,
+        height: 2400,
+        frame_rate: 30,
+    };
+    let watch = {
+        let sync = desktop_sync.clone();
+        let start = start.clone();
+        runtime.spawn(async move { sync.watch(&phone_key, start).await })
+    };
+    until("the app was asked", || {
+        phone_host.share_requests.lock().unwrap().len() == 1
+    });
+    let (viewer, w, h, rate) = phone_host.share_requests.lock().unwrap()[0].clone();
+    assert_eq!(viewer, desktop.binding().public().fingerprint());
+    // A 1080x2400 screen fitted within the desktop viewer's 1920x1080.
+    assert_eq!((w, h, rate), (486, 1080, 30));
+    phone.screen_share_started(true);
+    let mut watching = runtime.block_on(watch).unwrap().unwrap();
+    assert_eq!(watching.started.display, "screen");
+    phone.screen_share_frame(true, vec![9; 50_000]);
+    phone.screen_share_frame(false, vec![8; 500]);
+    let frames = runtime.block_on(async {
+        let mut got = Vec::new();
+        while got.len() < 2 {
+            match watching.frames.recv().await.unwrap() {
+                Viewed::Frame { key, bytes, .. } => got.push((key, bytes.len())),
+                Viewed::Stopped(r) => panic!("stopped: {r}"),
+            }
+        }
+        got
+    });
+    assert_eq!(frames, vec![(true, 50_000), (false, 500)]);
+    watching.control.send(ShareControl::Keyframe).unwrap();
+    until("the app was asked for a keyframe", || {
+        *phone_host.share_keyframes.lock().unwrap() == 1
+    });
+    // The user stops the projection from the phone's notification shade.
+    phone.screen_share_ended("consent".to_owned());
+    let reason = runtime.block_on(async {
+        loop {
+            if let Viewed::Stopped(r) = watching.frames.recv().await.unwrap() {
+                return r;
+            }
+        }
+    });
+    assert_eq!(reason, StopReason::Consent);
+    until("the app was told to stop", || {
+        *phone_host.share_stops.lock().unwrap() == 1
+    });
+
+    // The user refuses the next one.
+    let refused = {
+        let sync = desktop_sync.clone();
+        runtime.spawn(async move { sync.watch(&phone_key, start).await })
+    };
+    until("the app was asked again", || {
+        phone_host.share_requests.lock().unwrap().len() == 2
+    });
+    phone.screen_share_started(false);
+    let err = runtime.block_on(refused).unwrap().unwrap_err();
+    assert!(err.to_string().contains("consent"), "{err}");
+
+    phone.stop();
+    desktop.shutdown();
     runtime.shutdown_timeout(Duration::from_secs(2));
 }

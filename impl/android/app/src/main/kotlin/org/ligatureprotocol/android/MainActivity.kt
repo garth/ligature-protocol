@@ -24,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.ligatureprotocol.android.ui.MainScreen
 import org.ligatureprotocol.android.ui.TouchpadScreen
+import org.ligatureprotocol.android.ui.WatchScreen
 
 /** The one screen: status, create or pair, devices, send the clipboard. */
 class MainActivity : ComponentActivity() {
@@ -46,6 +47,19 @@ class MainActivity : ComponentActivity() {
             MaterialTheme(colorScheme = if (dark) darkColorScheme() else lightColorScheme()) {
                 Surface {
                     val state by NodeHolder.state.collectAsStateWithLifecycle()
+                    val watching = state.watching
+                    if (watching != null) {
+                        WatchScreen(
+                            deviceName = watching.target.name,
+                            width = watching.watch.width.toInt(),
+                            height = watching.watch.height.toInt(),
+                            canDrive = watching.canDrive,
+                            onTouch = NodeHolder::watchTouch,
+                            onType = NodeHolder::watchType,
+                            onStop = NodeHolder::stopWatch,
+                        )
+                        return@Surface
+                    }
                     val touchpad = state.touchpad
                     if (touchpad != null) {
                         TouchpadScreen(
@@ -73,6 +87,7 @@ class MainActivity : ComponentActivity() {
                         onNotificationSettings = ::notificationSettings,
                         onToggleApp = NodeHolder::setAppEnabled,
                         onTouchpad = NodeHolder::startTouchpad,
+                        onWatch = NodeHolder::startWatch,
                     )
                 }
             }
@@ -81,8 +96,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        ScreenShare.foreground = true
         // Back from Settings: notification access may have changed.
         if (NodeHolder.isRunning) NodeHolder.refreshNotificationAccess(this)
+    }
+
+    override fun onPause() {
+        ScreenShare.foreground = false
+        super.onPause()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

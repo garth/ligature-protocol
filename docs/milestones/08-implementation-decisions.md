@@ -131,3 +131,56 @@ screen, F9 fired a binding there, both Control keys released, and killing `lpvie
 the drive and the share. The loopback round trip in a debug build was 35 ms, most of it the
 injector's Wayland round trip per event. Not exercised: the portal path, which needs the
 owner at the picker, and VA-API, which this machine refuses.
+
+## LP-151: the phone shares its screen and watches a desktop's
+
+**The capture is the app's; the node waits on it.** Only an app may capture an Android screen,
+after the user consents in the media projection dialog, and only the app runs `MediaCodec`.
+So the node's capture (`HostScreen`) asks the host when a viewer starts a share
+(`screen_share_requested`), waits up to a minute for `screen_share_started`, then takes the
+encoded access units the app hands it (`screen_share_frame`) and the end
+(`screen_share_ended`); the viewer's keyframe request and the stop go back to the host. The
+phone advertises `shares` once the app has said it has an H.264 encoder and the screen's
+size, and `views` always, since every Android device decodes H.264.
+
+**Consent every share, from where Android allows.** Android keeps an app in the background
+from opening activities, so a request becomes a high-priority notification, "deskbox wants to
+see your screen", whose tap opens the dialog; when the app is in front the dialog opens at
+once. The dialog defaults to sharing one app, and the user picks the entire screen. On
+consent a foreground service of the media projection type mirrors the screen into a virtual
+display on the encoder's input surface; Android shows its cast indicator and the app's own
+notification carries Stop sharing, which ends the share with `sharer`, while stopping the
+projection from the system ends it with `consent`. A request answers only within 55 seconds,
+so a tap on a stale notification opens nothing.
+
+**The encoder is configured for viewers that join late.** Dimensions are rounded down to
+multiples of 16, which encoders want (486x1080 asked becomes 480x1072, which the viewer scales);
+a keyframe comes every second and on request (`PARAMETER_KEY_REQUEST_SYNC_FRAME`); a still
+screen repeats its last frame at the frame rate. Encoders that refuse to put the parameter
+sets before every keyframe (the emulator's) are configured without it, and the app puts the
+codec configuration it saved before each keyframe that lacks it.
+
+**Watching decodes into a surface.** The Watch screen is a `SurfaceView` at the share's
+aspect, and the node hands each whole access unit to `WatchDecoder`, which drops deltas until
+its first keyframe and asks for one. Touch on the picture drives the desktop with absolute
+positions: the first touch starts the drive there (`input_start_at`), a tap clicks where it
+lands, a drag moves the pointer with it, a touch held still then dragged drags with the button
+down, two fingers scroll, and the field types. Touch events go through one queue for the watch
+and the touchpad alike, drained by one worker task that sums consecutive motion and keeps
+only the newest of consecutive positions, so a drag goes where the finger is rather than
+replaying where it was.
+
+**Checked on the emulator against a desktop daemon.** A desktop daemon sharing a nested
+Hyprland's headless output (the window output stops rendering when its window is not on the
+visible workspace) was paired into the emulator's test identity. The Watch screen showed the
+desktop's picture, a tap at a quarter of the picture put the desktop's pointer at exactly a
+quarter of its screen, and a drag settled at its end within about a second and a half on the
+debug build. The desktop then watched the emulator: the dialog came up at once, and 45 frames
+arrived and decoded at 480x1072, showing the emulator's screen with the cast indicator and the
+sharing notification; stopping from the desktop stopped the service, and Stop sharing on the
+phone ended a second share with `sharer`. The Pixel runs the build and advertises `input` and
+`screen` to the owner's daemon; a share to or from it waits for a desktop of the owner's on
+this build (the run, LP-152). Two findings: `adb shell input text` truncates long strings,
+so the pairing offer went in two pieces with the emulator's keyboard disabled; and a share's
+input region is computed when the share starts, so a layout that changes during the share maps
+positions by the old one until the next share.

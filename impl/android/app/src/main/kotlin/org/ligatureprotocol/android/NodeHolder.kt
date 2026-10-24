@@ -30,6 +30,8 @@ import org.ligatureprotocol.core.DownloadTarget
 import org.ligatureprotocol.core.Event
 import org.ligatureprotocol.core.Host
 import org.ligatureprotocol.core.InputTarget
+import org.ligatureprotocol.core.ScreenTarget
+import org.ligatureprotocol.core.ScreenWatch
 import org.ligatureprotocol.core.TouchEvent
 import org.ligatureprotocol.core.LocalNotification
 import org.ligatureprotocol.core.LogLevel
@@ -41,6 +43,14 @@ import org.ligatureprotocol.core.PublishedDownload
 import org.ligatureprotocol.core.Status
 import java.io.File
 import java.util.concurrent.Executors
+
+/** A share this phone watches, and whether touch drives it yet. */
+data class Watching(
+    val target: ScreenTarget,
+    val watch: ScreenWatch,
+    val canDrive: Boolean,
+    val driving: Boolean = false,
+)
 
 /** A ceremony as the screen shows it. */
 data class PairingState(
@@ -71,6 +81,10 @@ data class UiState(
     val inputTargets: List<InputTarget> = emptyList(),
     /** The device being driven, while the touchpad screen is open. */
     val touchpad: InputTarget? = null,
+    /** The devices whose screen this phone can watch (milestone 8). */
+    val screenTargets: List<ScreenTarget> = emptyList(),
+    /** The share this phone watches, while the watch screen is open. */
+    val watching: Watching? = null,
 )
 
 /**
@@ -121,6 +135,12 @@ object NodeHolder : Host {
             cacheDir = appContext.cacheDir.absolutePath,
         )
         node = Node.start(config, this)
+        val metrics = appContext.resources.displayMetrics
+        node?.setScreenShare(
+            ScreenShare.hasEncoder(),
+            minOf(metrics.widthPixels, metrics.heightPixels).toUInt(),
+            maxOf(metrics.widthPixels, metrics.heightPixels).toUInt(),
+        )
         if (listenerConnected) node?.setNotificationsEmitting(true)
         _state.update {
             it.copy(
@@ -156,6 +176,7 @@ object NodeHolder : Host {
         val devices = runCatching { n.devices() }.getOrDefault(emptyList())
         val last = runCatching { n.clipboardText() }.getOrNull()
         val targets = runCatching { n.inputTargets() }.getOrDefault(emptyList())
+        val screens = runCatching { n.screenTargets() }.getOrDefault(emptyList())
         val driving = runCatching { n.inputDriving() }.getOrNull()
         _state.update {
             it.copy(
@@ -163,6 +184,7 @@ object NodeHolder : Host {
                 devices = devices,
                 lastClipboard = last,
                 inputTargets = targets,
+                screenTargets = screens,
                 touchpad = if (driving == null) null else it.touchpad ?: targets.firstOrNull { t -> t.key == driving },
             )
         }
@@ -183,10 +205,121 @@ object NodeHolder : Host {
         refresh()
     }
 
-    /** What the touchpad screen did, sent as one batch. */
-    fun touch(events: List<TouchEvent>) = async {
-        val n = node ?: return@async
-        runCatching { n.inputSend(events) }.onFailure { Log.d(TAG, "touch events dropped: ${it.message}") }
+    /** Opens the watch screen: the device's primary display, at most 1920 by 1080. */
+    fun startWatch(target: ScreenTarget) = async {
+        call { n ->
+            val watch = n.screenWatch(target.key, 1920u, 1080u, 30u)
+            val canDrive = runCatching { n.inputTargets() }.getOrDefault(emptyList()).any { it.key == target.key }
+            _state.update { it.copy(watching = Watching(target, watch, canDrive)) }
+        }
+    }
+
+    /** The user left the watch screen: the watch and any drive end. */
+    fun stopWatch() = async {
+        val n = node
+        if (_state.value.watching?.driving == true) n?.inputStop()
+        n?.screenWatchStop()
+        WatchDecoder.release()
+        _state.update { it.copy(watching = null) }
+        refresh()
+    }
+
+    /**
+     * A touch on the watched picture at [x], [y]: the first one starts the
+     * drive there, every one moves the pointer there, then [events] follow.
+     */
+    fun watchTouch(x: Double, y: Double, events: List<TouchEvent>) {
+        if (_state.value.watching?.canDrive != true) return
+        enqueue(listOf(TouchEvent.Position(x, y)) + events)
+    }
+
+    /** Typing on the watched desktop, once a touch has started the drive. */
+    fun watchType(events: List<TouchEvent>) {
+        if (_state.value.watching?.driving == true) enqueue(events)
+    }
+
+    /** The decoder lost its place: ask the sharer for a keyframe. */
+    fun screenWatchKeyframe() {
+        node?.screenWatchKeyframe()
+    }
+
+    /** The user answered the media projection dialog, or the service could not start. */
+    fun screenShareAnswered(ok: Boolean) {
+        node?.screenShareStarted(ok)
+    }
+
+    /** One encoded access unit of this phone's screen. */
+    fun screenShareFrame(key: Boolean, bytes: ByteArray) {
+        node?.screenShareFrame(key, bytes)
+    }
+
+    /** The share of this phone's screen ended here. */
+    fun screenShareEnded(reason: String) {
+        node?.screenShareEnded(reason)
+    }
+
+    /** What the touchpad screen did; queued and sent in coalesced batches. */
+    fun touch(events: List<TouchEvent>) = enqueue(events)
+
+    /**
+     * Touch arrives faster than a batch can be sent, so events wait in a queue
+     * that one worker task drains: consecutive motion is summed and
+     * consecutive positions keep only the newest, so the pointer goes where
+     * the finger is now rather than replaying where it was.
+     */
+    private val touchQueue = ArrayList<TouchEvent>()
+    private var touchFlushing = false
+
+    private fun enqueue(events: List<TouchEvent>) {
+        synchronized(touchQueue) {
+            touchQueue.addAll(events)
+            if (touchFlushing) return
+            touchFlushing = true
+        }
+        async { flushTouch() }
+    }
+
+    private fun flushTouch() {
+        while (true) {
+            val batch = synchronized(touchQueue) {
+                if (touchQueue.isEmpty()) {
+                    touchFlushing = false
+                    return
+                }
+                val drained = coalesce(touchQueue)
+                touchQueue.clear()
+                drained
+            }
+            val n = node ?: continue
+            val w = _state.value.watching
+            if (w != null && w.canDrive && !w.driving) {
+                // The first touch on a watched picture starts the drive there.
+                val at = batch.firstNotNullOfOrNull { it as? TouchEvent.Position }
+                if (at != null) {
+                    val started = runCatching { n.inputStartAt(w.target.key, at.x, at.y) }
+                    if (started.isFailure) {
+                        Log.d(TAG, "cannot drive ${w.target.name}: ${started.exceptionOrNull()?.message}")
+                        continue
+                    }
+                    _state.update { s -> s.copy(watching = s.watching?.copy(driving = true)) }
+                }
+            }
+            runCatching { n.inputSend(batch) }.onFailure { Log.d(TAG, "touch events dropped: ${it.message}") }
+        }
+    }
+
+    private fun coalesce(events: List<TouchEvent>): List<TouchEvent> {
+        val out = ArrayList<TouchEvent>(events.size)
+        for (e in events) {
+            val last = out.lastOrNull()
+            when {
+                e is TouchEvent.Position && last is TouchEvent.Position -> out[out.size - 1] = e
+                e is TouchEvent.Motion && last is TouchEvent.Motion ->
+                    out[out.size - 1] = TouchEvent.Motion(last.dx + e.dx, last.dy + e.dy)
+                else -> out.add(e)
+            }
+        }
+        return out
     }
 
     fun createPerson(name: String) = async { call { it.init(name) } }
@@ -585,6 +718,15 @@ object NodeHolder : Host {
 
     override fun abortDownload(id: ULong) = Transfers.abortDownload(appContext, id)
 
+    override fun screenFrame(peer: String, key: Boolean, bytes: ByteArray) = WatchDecoder.feed(key, bytes)
+
+    override fun screenShareRequested(viewer: String, width: UInt, height: UInt, frameRate: UInt) =
+        ScreenShare.request(appContext, viewer, width.toInt(), height.toInt(), frameRate.toInt())
+
+    override fun screenShareStop() = ScreenShare.stop(appContext)
+
+    override fun screenShareKeyframe() = ScreenShare.keyframe()
+
     override fun onEvent(event: Event) {
         when (event) {
             is Event.StatusChanged -> refresh()
@@ -608,7 +750,12 @@ object NodeHolder : Host {
             is Event.ClipboardReceived -> refresh()
             is Event.TransferChanged -> Transfers.changed(appContext, event.info)
             is Event.InputEnded -> {
-                _state.update { it.copy(touchpad = null) }
+                _state.update { s -> s.copy(touchpad = null, watching = s.watching?.copy(driving = false)) }
+                refresh()
+            }
+            is Event.ScreenEnded -> {
+                WatchDecoder.release()
+                _state.update { it.copy(watching = null) }
                 refresh()
             }
         }

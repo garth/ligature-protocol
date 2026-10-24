@@ -59,8 +59,11 @@ withdrawn id is refused.
 
 ## Limits
 
-- One connection per pair of devices carries everything, so a transfer shares the link with
-  the clipboard and notifications; chunks are small enough that neither stalls the other.
+- Two devices hold one connection between them, and inside it every exchange has a stream
+  of its own: one for each transfer's control messages, one for each file in flight, beside
+  the clipboard's and the notifications'. The receiver says how many files it takes at once
+  (a desktop four, a phone one), and the streams move independently, so a large file never
+  blocks a small one or the clipboard; what they share is the network link itself.
 - Files travel between your own devices only. Sharing with other people is specified but not
   built.
 - There is no resume: a transfer that drops is started again from the beginning.

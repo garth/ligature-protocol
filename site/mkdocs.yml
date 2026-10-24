@@ -11,6 +11,7 @@ repo_name: garth/ligature-protocol
 edit_uri: edit/main/docs/
 copyright: >-
   Specification and documentation CC-BY-4.0, code Apache-2.0.
+  Supported by <a href="https://nordstack.co.uk">NordStack Ltd</a>.
 docs_dir: ../docs
 site_dir: ../build/site
 strict: true

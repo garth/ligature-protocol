@@ -20,11 +20,11 @@ the manifest it arrives in. See
 
 A family with two directions declares in its `params` which of them the device offers: `emits` and
 `displays` for notifications (section 3c), `send` and `receive` for files (section 3d), `accepts`
-and `provides` for input (section 3g), and the same shape for media control (control, be controlled)
-when it is specified. A device advertises the family if it offers either direction; the peer reads
-the flags to know what it may send and what it will receive. One stream per session carries both
-directions for the clipboard and notifications; files, whose payloads are large, use a stream per
-transfer and per file (section 3d).
+and `provides` for input (section 3g), `shares` and `views` for screen (section 3h), and the same
+shape for media control (control, be controlled) when it is specified. A device advertises the
+family if it offers either direction; the peer reads the flags to know what it may send and what it
+will receive. One stream per session carries both directions for the clipboard and notifications;
+files, whose payloads are large, use a stream per transfer and per file (section 3d).
 
 ## 2a. Manifests and the live registry
 
@@ -59,7 +59,7 @@ flowchart LR
 The first families are: notifications, clipboard, files, share, remote input, media
 control, telephony/SMS, displays, sensors. Each will become its own spec section with its
 own schema; share (section 3a), clipboard (section 3b), notifications (section 3c), files
-(section 3d) and input (section 3g) are specified so far.
+(section 3d), input (section 3g) and screen (section 3h) are specified so far.
 
 ## 3a. Sharing between people
 
@@ -253,6 +253,52 @@ trip, and QUIC datagrams for `events` are the remedy named if it calls for one, 
 ADR of their own beside [ADR 0036](../adr/0036-stream-framing-and-message-typing.md).
 Nothing about a drive is stored (chapter 09). Open question: a layout shared across a
 person's devices as a signed fact, so one device configures the whole set.
+
+## 3h. Screen
+
+`org.ligatureprotocol.capability.screen`
+([schema](../../schemas/capability.screen.schema.json)) lets one device's display be
+watched live on another of the person's devices, and, with input (section 3g), driven
+from it. It is device-scoped, offered as input is
+([ADR 0040](../adr/0040-binding-stands-in-for-principal.md)), and between one person's
+own devices the protocol asks nothing: the platform's own consent, where the platform has
+one, is the gate (chapter 08). The descriptor's `params` say `shares` (this device captures
+and encodes a display), `views` (it decodes and shows one), `codecs` (what it encodes or
+decodes, most preferred first; `h264` is the first and so far the only one, as an Annex B
+byte stream with the parameter sets repeated in every keyframe so a decoder can start at
+any keyframe), and as a viewer `maxWidth`, `maxHeight` and `maxFrameRate`, the largest and
+fastest picture it takes.
+
+A **share** is one stream with the capability type as its purpose, opened by the viewer.
+`displays` without a list asks the sharer what it has and is answered by `displays` with
+the list, each display an `id` stable for the session, a `name`, its `width` and `height`
+and whether it is `primary`. `start` names a display (the primary one when it names
+none), the `codec` and the largest `width` and `height` and fastest `frameRate` the viewer
+wants; the sharer answers `started` with what it settled on, which may be smaller or
+slower and never larger or faster, the picture scaled down keeping the display's aspect,
+or `refused` with a reason (`consent`, `no-encoder`, `no-display`, `busy`) and ends the
+stream. Then `frame` messages carry the encoded picture: each is one chunk of one frame
+with the frame's `seq`, its capture time `at` in microseconds since the share started,
+whether it is a `key` frame, whether this chunk is the `last`, and up to 256 KiB of
+`bytes`, a frame being the concatenation of its chunks in order, so no message exceeds
+the bound of [ADR 0036](../adr/0036-stream-framing-and-message-typing.md) and the bound
+stands as it is. The sharer paces frames to the agreed rate and, when the stream's flow
+control holds it back, drops frames rather than queues them, so the picture stays current
+rather than complete; it sends a keyframe every few seconds and whenever the viewer sends
+`keyframe`, after a loss or a late start. `stop` from either side, with a reason (`viewer`,
+`sharer`, `consent`, `error`), ends the share and then the stream; a stream that ends
+without one is a stop too, and either way the sharer ends its capture at once.
+
+Driving a shared display is the input family on its own stream: the viewer sends an
+absolute `enter` and `position` events as fractions of the shared display, computed from
+where the pointer is in its picture through the `started` size, and keys, buttons, scroll
+and `text` as section 3g has them; a multi-display sharer maps the fractions to the
+display it is sharing. Viewing and driving are two streams of two families on one session,
+and a viewer may watch without driving. One stream carries one share for its life; a
+second viewer is a second share. Nothing of a share is stored, and the sharing device
+shows that it shares, by the platform's indicator or a notification of its own, for the
+share's life (chapter 09 section 4.4). Open question: audio with the picture, and a window
+rather than a display.
 
 ## 4. Requests and grants
 

@@ -130,6 +130,15 @@ pressed. What this family cannot defend against is a compromised peer of the sam
 it is the person, as far as the protocol can tell, and the remedy is the rebuild of
 chapter 07.
 
+A shared screen (chapter 05 section 3h) is the most sensitive thing the protocol carries:
+everything on it, including other people's messages and secrets shown briefly. It travels
+only on the authenticated pairwise session to a device of the same person, nothing of it
+is stored, and the sharing device shows that it shares for the share's life, by the
+platform's own indicator where the platform has one and by a notification of the daemon's
+where it has none, so a share never runs unseen. The same lost device that can drive the
+desktop can watch it until it is revoked, which is one more reason revocation takes
+effect at the next session start and ends a live one.
+
 ### 4.5 No remote trust
 
 Nothing a stranger can do over the network makes any device recognise them. A `person`

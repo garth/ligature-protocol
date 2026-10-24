@@ -1,0 +1,238 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ligatureprotocol.org/schemas/capability.screen.schema.json",
+  "title": "org.ligatureprotocol.capability.screen",
+  "description": "DRAFT. The screen capability (spec chapter 05 section 3h): device-scoped, one device's display watched live on another. The descriptor's params say whether the device shares (captures and encodes a display), views (decodes and shows one), which codecs it offers or takes in preference order, the largest picture and the highest frame rate a viewer takes. A share is one stream (purpose org.ligatureprotocol.capability.screen, ADR 0036) opened by the viewer: displays to list the sharer's displays, start answered by started or refused, then frame messages from the sharer, chunked so no message exceeds the bound of ADR 0036, keyframe from the viewer when it needs one, and stop from either side; the stream's end stops the share. Control of a shared display is the input capability on its own stream, with positions as fractions of the shared display.",
+  "$defs": {
+    "params": {
+      "type": "object",
+      "description": "The descriptor's params for this capability.",
+      "properties": {
+        "shares": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether this device captures and encodes a display. False while the platform has not granted the daemon capture, or has no encoder for any codec it lists."
+        },
+        "views": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether this device decodes and shows a shared display."
+        },
+        "codecs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/codec" },
+          "uniqueItems": true,
+          "default": ["h264"],
+          "description": "The codecs this device encodes (if it shares) or decodes (if it views), most preferred first."
+        },
+        "maxWidth": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1920,
+          "description": "The widest picture this device takes as a viewer, in pixels; a sharer scales down to it and never up."
+        },
+        "maxHeight": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1080,
+          "description": "The tallest picture this device takes as a viewer, in pixels."
+        },
+        "maxFrameRate": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 30,
+          "description": "The highest frame rate this device takes as a viewer, in frames per second."
+        }
+      }
+    },
+    "codec": {
+      "type": "string",
+      "enum": ["h264"],
+      "description": "A video codec. h264: H.264 as an Annex B byte stream, the parameter sets repeated in every keyframe, so a decoder starts at any keyframe."
+    },
+    "displayId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "The sharer's name for one of its displays, stable for the session."
+    },
+    "display": {
+      "type": "object",
+      "description": "One display a sharer offers.",
+      "required": ["id", "width", "height"],
+      "properties": {
+        "id": { "$ref": "#/$defs/displayId" },
+        "name": {
+          "type": "string",
+          "description": "What the platform calls it, for a picker."
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Its width in pixels."
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Its height in pixels."
+        },
+        "primary": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether it is the display a start without an id shares."
+        }
+      }
+    },
+    "displays": {
+      "type": "object",
+      "description": "From the viewer, without a list: what displays does the sharer have. From the sharer: the list.",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.screen.displays"
+        },
+        "displays": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/display" },
+          "description": "The sharer's displays; present only in the answer."
+        }
+      }
+    },
+    "start": {
+      "type": "object",
+      "description": "From the viewer: share this display (the primary one when no id is given) with this codec, no larger than this and no faster than this.",
+      "required": ["type", "codec", "width", "height", "frameRate"],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.screen.start"
+        },
+        "display": { "$ref": "#/$defs/displayId" },
+        "codec": { "$ref": "#/$defs/codec" },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The widest picture the viewer wants, in pixels."
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The tallest picture the viewer wants, in pixels."
+        },
+        "frameRate": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The frame rate the viewer wants, in frames per second."
+        }
+      }
+    },
+    "started": {
+      "type": "object",
+      "description": "From the sharer: the share runs with these settings, which may be smaller or slower than asked, never larger or faster. The picture keeps the display's aspect, so width and height together say how a position maps to it.",
+      "required": ["type", "display", "codec", "width", "height", "frameRate"],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.screen.started"
+        },
+        "display": { "$ref": "#/$defs/displayId" },
+        "codec": { "$ref": "#/$defs/codec" },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The picture's width in pixels."
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The picture's height in pixels."
+        },
+        "frameRate": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The frame rate the sharer paces to."
+        }
+      }
+    },
+    "refused": {
+      "type": "object",
+      "description": "From the sharer: the share does not start. The stream ends after it.",
+      "required": ["type", "reason"],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.screen.refused"
+        },
+        "reason": {
+          "type": "string",
+          "enum": ["consent", "no-encoder", "no-display", "busy"],
+          "description": "consent: the platform's consent was not given, or not in time. no-encoder: no encoder for the codec asked. no-display: no display with that id. busy: a share of this display already runs."
+        }
+      }
+    },
+    "frame": {
+      "type": "object",
+      "description": "From the sharer: one chunk of one encoded frame. A frame is the concatenation of its chunks in order, the last marked; no chunk exceeds 256 KiB, so no message exceeds the bound of ADR 0036.",
+      "required": ["type", "seq", "at", "key", "last", "bytes"],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.screen.frame"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The frame's number, counting up from the start of the share; every chunk of a frame carries the same seq."
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "When the frame was captured, in microseconds since the share started, for pacing and the latency measurement."
+        },
+        "key": {
+          "type": "boolean",
+          "description": "Whether the frame is a keyframe, which a decoder may start at."
+        },
+        "last": {
+          "type": "boolean",
+          "description": "Whether this chunk completes the frame."
+        },
+        "bytes": {
+          "type": "string",
+          "contentEncoding": "base64url",
+          "description": "The chunk, at most 262144 bytes; a byte string in CBOR."
+        }
+      }
+    },
+    "keyframe": {
+      "type": "object",
+      "description": "From the viewer: send a keyframe now, after a loss or a late start.",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.screen.keyframe"
+        }
+      }
+    },
+    "stop": {
+      "type": "object",
+      "description": "From either side: the share ends. The stream ends after it; a stream that ends without one is a stop too.",
+      "required": ["type", "reason"],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.screen.stop"
+        },
+        "reason": {
+          "type": "string",
+          "enum": ["viewer", "sharer", "consent", "error"],
+          "description": "viewer: the viewer closed. sharer: the sharer's user stopped it. consent: the platform withdrew its consent. error: capture or encoding failed."
+        }
+      }
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/displays" },
+    { "$ref": "#/$defs/start" },
+    { "$ref": "#/$defs/started" },
+    { "$ref": "#/$defs/refused" },
+    { "$ref": "#/$defs/frame" },
+    { "$ref": "#/$defs/keyframe" },
+    { "$ref": "#/$defs/stop" }
+  ]
+}

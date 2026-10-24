@@ -718,41 +718,33 @@ impl ScreenSync {
             tokio::select! {
                 captured = share.frames.recv() => {
                     let Some(captured) = captured else { break StopReason::Error };
-                    let mut frame = match captured {
+                    let first = match captured {
                         Captured::Frame(f) => f,
                         Captured::Ended(reason) => break reason,
                     };
-                    // Drain what piled up while the last frame was written:
-                    // the stream held us back, so send the newest only and
-                    // ask for a keyframe to make the picture whole again.
-                    let mut dropped = 0u64;
+                    // What piled up while the last frame was written.
+                    let mut backlog = vec![first];
                     let mut ended = None;
                     while let Ok(next) = share.frames.try_recv() {
                         match next {
-                            Captured::Frame(f) => {
-                                dropped += 1;
-                                frame = f;
-                            }
+                            Captured::Frame(f) => backlog.push(f),
                             Captured::Ended(reason) => {
                                 ended = Some(reason);
                                 break;
                             }
                         }
                     }
-                    if dropped > 0 {
-                        need_key = true;
+                    let (send, dropped) = select_backlog(backlog, &mut need_key);
+                    if dropped > 0 && need_key {
                         let _ = share.control.send(ShareControl::Keyframe);
                     }
-                    if need_key && !frame.key {
-                        dropped += 1;
-                    } else {
-                        need_key = false;
+                    let mut failed = false;
+                    for frame in send {
                         let at = if frame.at == 0 {
                             u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX)
                         } else {
                             frame.at
                         };
-                        let mut failed = false;
                         for chunk in chunk_frame(seq, at, frame.key, &frame.bytes) {
                             if stream.send(&ScreenMessage::Frame(chunk)).await.is_err() {
                                 failed = true;
@@ -760,10 +752,14 @@ impl ScreenSync {
                             }
                         }
                         if failed {
-                            break StopReason::Error;
+                            break;
                         }
                         seq += 1;
                     }
+                    if failed {
+                        break StopReason::Error;
+                    }
+                    let dropped = dropped as u64;
                     if let Some(s) = lock(&self.sharing).get_mut(display) {
                         s.frames = seq;
                         s.dropped += dropped;
@@ -806,6 +802,33 @@ impl ScreenSync {
                 sync.serve(peer, stream).await;
             })
         })
+    }
+}
+
+/// Which frames of a backlog to send, and how many are dropped. One frame
+/// is sent as it is. Of several, the stream held the sharer back, so the
+/// picture is brought up to date: from the newest keyframe on the frames
+/// form a chain a decoder can follow and all go, and those before it are
+/// dropped; with no keyframe in the backlog every frame is dropped and
+/// `need_key` is set, since a delta whose predecessor was dropped would
+/// corrupt the picture. While `need_key` is set, deltas are dropped until a
+/// keyframe arrives.
+fn select_backlog(backlog: Vec<EncodedFrame>, need_key: &mut bool) -> (Vec<EncodedFrame>, usize) {
+    let total = backlog.len();
+    let from = if total == 1 && !*need_key {
+        Some(0)
+    } else {
+        backlog.iter().rposition(|f| f.key)
+    };
+    match from {
+        Some(i) => {
+            *need_key = false;
+            (backlog.into_iter().skip(i).collect(), i)
+        }
+        None => {
+            *need_key = true;
+            (Vec::new(), total)
+        }
     }
 }
 
@@ -1023,5 +1046,51 @@ impl Capture for FakeCapture {
             control,
             region: None,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn f(key: bool, n: u8) -> EncodedFrame {
+        EncodedFrame {
+            at: 0,
+            key,
+            bytes: vec![n],
+        }
+    }
+
+    fn ids(frames: &[EncodedFrame]) -> Vec<u8> {
+        frames.iter().map(|f| f.bytes[0]).collect()
+    }
+
+    #[test]
+    fn a_backlog_is_sent_from_its_newest_keyframe() {
+        let mut need = false;
+        let (send, dropped) = select_backlog(vec![f(false, 1)], &mut need);
+        assert_eq!((ids(&send), dropped, need), (vec![1], 0, false));
+        // A burst: the keyframe and the delta after it both go.
+        let (send, dropped) = select_backlog(vec![f(true, 1), f(false, 2)], &mut need);
+        assert_eq!((ids(&send), dropped, need), (vec![1, 2], 0, false));
+        // Frames before the newest keyframe are dropped.
+        let (send, dropped) = select_backlog(
+            vec![
+                f(false, 1),
+                f(true, 2),
+                f(false, 3),
+                f(true, 4),
+                f(false, 5),
+            ],
+            &mut need,
+        );
+        assert_eq!((ids(&send), dropped, need), (vec![4, 5], 3, false));
+        // No keyframe in a backlog: everything goes, and deltas wait for one.
+        let (send, dropped) = select_backlog(vec![f(false, 1), f(false, 2)], &mut need);
+        assert_eq!((ids(&send), dropped, need), (vec![], 2, true));
+        let (send, dropped) = select_backlog(vec![f(false, 3)], &mut need);
+        assert_eq!((ids(&send), dropped, need), (vec![], 1, true));
+        let (send, dropped) = select_backlog(vec![f(true, 4)], &mut need);
+        assert_eq!((ids(&send), dropped, need), (vec![4], 0, false));
     }
 }

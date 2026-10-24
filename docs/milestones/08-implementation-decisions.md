@@ -25,12 +25,15 @@ attached, and a `Watching` handle per share. A daemon attaches a capture, viewer
 both.
 
 **Drop rather than queue, then a keyframe.** The capture's channel is unbounded and the sync
-is the bound: when a frame has been written and more than one is waiting, the sync sends only
-the newest, counts the rest as dropped, asks the encoder for a keyframe, and drops every
-delta frame until that keyframe arrives, since a delta frame whose predecessors were dropped
-would corrupt the picture. The two-daemon test cannot make a loopback stream fall behind, so
-this path is exercised only by the counters; the run with the real devices over wireless is
-where it shows.
+is the bound: when a frame has been written and more have piled up, the backlog is brought up
+to date rather than sent whole. From the newest keyframe in it on, the frames form a chain a
+decoder can follow, so they all go and only the frames before that keyframe are dropped; a
+backlog with no keyframe is dropped whole, a keyframe is asked for, and deltas are dropped
+until it comes, since a delta whose predecessor was dropped would corrupt the picture. An
+earlier rule that kept only the newest frame dropped a keyframe and the delta after it when
+the two arrived together (found under LP-151). The two-daemon test cannot make a loopback
+stream fall behind for long, so the rule is checked by a unit test of `select_backlog`; the
+run with the real devices over wireless is where it shows.
 
 **One share per display, many per device.** A second `start` for a display already shared is
 refused `busy`; another display of the same device shares at the same time on its own stream.

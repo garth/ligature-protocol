@@ -80,6 +80,18 @@ not yet built. Each release is reviewed against the project's threat model befor
 out; the reports are in the
 [repository](https://github.com/garth/ligature-protocol/tree/main/docs/security-audit).
 
+## Sponsors
+
+Organisations that support the project's development. Tiers are Gold, Silver and Bronze;
+a tier appears here as soon as it has a sponsor. To sponsor Ligature, get in touch through
+the [discussions](https://github.com/garth/ligature-protocol/discussions).
+
+### Gold
+
+[![NordStack](assets/sponsors/nordstack.svg){ width="320" }](https://nordstack.co.uk)
+
+[NordStack Ltd](https://nordstack.co.uk), an independent UK software firm.
+
 <small>Specification and documentation
 [CC-BY-4.0](https://github.com/garth/ligature-protocol/blob/main/LICENSE-SPEC), code
 [Apache-2.0](https://github.com/garth/ligature-protocol/blob/main/LICENSE).</small>

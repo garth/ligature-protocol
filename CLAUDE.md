@@ -161,6 +161,10 @@ The reference implementation is Rust and is also the production implementation
   `06-phone-and-media.md` (the phone's SMS and calls, media control), `07-shared-input.md`
   (one keyboard and mouse across the desktops, the phone as a touchpad) and
   `08-remote-desktop.md` (a screen viewed, then controlled) are drafts.
+- Sponsors are listed in two places that stay identical: the README's "Sponsors" section
+  and the landing page `docs/index.md`, grouped by tier (Gold, Silver, Bronze; a tier is
+  written only once it has a sponsor), each with a logo under `docs/assets/sponsors/` and
+  a link. Adding a sponsor edits both and adds the logo file.
 - `site/`: the documentation site for users, MkDocs with the Material theme: the landing
   page (`docs/index.md`), the user guide and the specification, and nothing else (the ADRs,
   the milestone plans and the audits are for the repository; `mkdocs.yml` excludes them and

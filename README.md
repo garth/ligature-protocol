@@ -261,6 +261,18 @@ side, at [garth.github.io/ligature-protocol](https://garth.github.io/ligature-pr
   [security audits](docs/security-audit/), the latest from
   [2026-10-23](docs/security-audit/ligature-security-audit-2026-10-23.md)
 
+## Sponsors
+
+Organisations that support the project's development. Tiers are Gold, Silver and Bronze;
+a tier appears here as soon as it has a sponsor. To sponsor Ligature, get in touch through
+the [discussions](https://github.com/garth/ligature-protocol/discussions).
+
+### Gold
+
+[![NordStack](docs/assets/sponsors/nordstack.svg)](https://nordstack.co.uk)
+
+[NordStack Ltd](https://nordstack.co.uk), an independent UK software firm.
+
 ## Licence
 
 Code is licensed under [Apache-2.0](LICENSE). The specification text under `docs/` is

@@ -269,7 +269,10 @@ the [discussions](https://github.com/garth/ligature-protocol/discussions).
 
 ### Gold
 
-[![NordStack](docs/assets/sponsors/nordstack.svg)](https://nordstack.co.uk)
+<a href="https://nordstack.co.uk"><picture>
+<source media="(prefers-color-scheme: dark)" srcset="docs/assets/sponsors/nordstack-dark.svg">
+<img alt="NordStack" src="docs/assets/sponsors/nordstack.svg" width="300">
+</picture></a>
 
 [NordStack Ltd](https://nordstack.co.uk), an independent UK software firm.
 

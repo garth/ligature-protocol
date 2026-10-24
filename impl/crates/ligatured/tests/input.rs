@@ -336,6 +336,31 @@ async fn the_release_chord_gives_the_input_back() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_driven_device_never_follows_its_own_layout() {
+    let (a, b, c, _c_dir) = three().await;
+    a.sync
+        .set_edge(Edge::Right, *b.daemon.binding().public())
+        .unwrap();
+    // b's own layout leads its right edge to c, which takes no input, and its
+    // left edge back to a.
+    b.sync
+        .set_edge(Edge::Left, *a.daemon.binding().public())
+        .unwrap();
+    b.sync.set_edge(Edge::Right, *c.binding().public()).unwrap();
+    a.capture.hit_edge(Edge::Right, 0.5);
+    until("b is driven", || b.sync.driven_by().is_some()).await;
+    // The pointer a drives reaches b's edges, which b's capture sees as it
+    // would the user's own pointer (a Mac's event tap does): b starts nothing.
+    b.capture.hit_edge(Edge::Left, 0.5);
+    b.capture.hit_edge(Edge::Right, 0.5);
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert!(!b.sync.is_driving());
+    assert_eq!(b.capture.taken(), None);
+    assert_eq!(b.sync.driven_by(), Some(*a.daemon.binding().public()));
+    assert!(a.sync.is_driving());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_disconnect_mid_drive_lifts_everything_and_returns_the_pointer() {
     let (a, b, _c, _c_dir) = three().await;
     a.sync

@@ -734,7 +734,11 @@ impl InputSync {
                 event = events.recv() => {
                     match event {
                         Ok(CaptureEvent::EdgeHit { edge, at }) => {
-                            if self.is_driving() {
+                            // A driven device never follows its own layout
+                            // (decision 7): the pointer at its edge is the
+                            // controller's, which a capture that watches the
+                            // cursor sees as the user's own.
+                            if self.is_driving() || self.driven_by().is_some() {
                                 continue;
                             }
                             let Some(peer) = lock(&self.layout).get(&edge).copied() else {

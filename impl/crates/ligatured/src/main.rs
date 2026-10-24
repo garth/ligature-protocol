@@ -136,14 +136,31 @@ fn main() {
     }
 }
 
+/// The log filter: `RUST_LOG`, or `info` when it is unset or empty, with the
+/// portal proxies' noise quieted. The portal wrapper's proxies have no
+/// properties to cache, which zbus reports at warn level on every request
+/// object; the service sets `RUST_LOG=info`, so the quieting applies whatever
+/// it says, unless it names zbus itself, for someone debugging the bus.
+fn log_directives(rust_log: Option<&str>) -> String {
+    let base = rust_log
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("info");
+    if base.contains("zbus") {
+        base.to_owned()
+    } else {
+        format!("{base},zbus::proxy=error")
+    }
+}
+
 /// The daemon proper, once the runtime is up.
 async fn daemon(options: Options) {
+    let directives = log_directives(std::env::var("RUST_LOG").ok().as_deref());
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-            // The portal wrapper's proxies have no properties to cache,
-            // which zbus reports at warn level on every request object.
-            EnvFilter::new("info,zbus::proxy=error")
-        }))
+        .with_env_filter(
+            EnvFilter::try_new(&directives)
+                .unwrap_or_else(|_| EnvFilter::new(log_directives(None))),
+        )
         .with_writer(std::io::stderr)
         .init();
     let locations = Locations::resolve(options.data_dir.as_deref(), options.runtime_dir.as_deref());
@@ -158,5 +175,23 @@ async fn daemon(options: Options) {
     {
         tracing::error!(%e, "ligatured stopped");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::log_directives;
+
+    #[test]
+    fn the_portal_proxies_are_quieted_whatever_rust_log_says() {
+        assert_eq!(log_directives(None), "info,zbus::proxy=error");
+        assert_eq!(log_directives(Some("")), "info,zbus::proxy=error");
+        assert_eq!(log_directives(Some("info")), "info,zbus::proxy=error");
+        assert_eq!(
+            log_directives(Some("debug,quinn=warn")),
+            "debug,quinn=warn,zbus::proxy=error"
+        );
+        // Someone debugging the bus gets what they asked for.
+        assert_eq!(log_directives(Some("info,zbus=debug")), "info,zbus=debug");
     }
 }

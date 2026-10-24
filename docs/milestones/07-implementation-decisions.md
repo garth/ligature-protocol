@@ -72,7 +72,9 @@ daemon; the libei event stream is not `Send`, so it runs on a thread of its own 
 single-threaded runtime. `Deactivated` and `Disabled` from the compositor end a drive as a
 release would (`CaptureEvent::Lost`), and `ZonesChanged` re-arms. The portal wrapper is
 `ashpd`, which still builds on zbus 5 beside the daemon's zbus 6; a later dependency update
-can bring the two together.
+can bring the two together. Its request and session proxies have no properties, and zbus
+warns on each that it could not fill their cache, so the daemon's log filter sets
+`zbus::proxy` to `error` whatever `RUST_LOG` says, unless `RUST_LOG` names zbus itself.
 
 **Injection is a helper, as the clipboard is.** `ligatured input-helper` binds a
 `zwlr_virtual_pointer_v1` and, on the first key, a `zwp_virtual_keyboard_v1` with the seat's

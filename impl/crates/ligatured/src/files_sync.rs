@@ -421,6 +421,40 @@ impl std::fmt::Debug for FilesSync {
     }
 }
 
+/// One data stream counted as being received, from its first chunk until
+/// the receiver answers it. The sender opens the next stream on that answer,
+/// so the count drops before it is sent: the receiver's `maxStreams` bounds
+/// the streams it is still answering, and a stream already answered is not
+/// counted against the next one while its task winds down.
+struct ReceivingSlot<'a> {
+    counter: &'a AtomicU32,
+    held: AtomicBool,
+}
+
+impl<'a> ReceivingSlot<'a> {
+    fn take(counter: &'a AtomicU32, peak: &AtomicU32) -> Self {
+        let now = counter.fetch_add(1, Ordering::SeqCst) + 1;
+        peak.fetch_max(now, Ordering::SeqCst);
+        Self {
+            counter,
+            held: AtomicBool::new(true),
+        }
+    }
+
+    /// The stream is answered: it no longer counts. Idempotent.
+    fn release(&self) {
+        if self.held.swap(false, Ordering::SeqCst) {
+            self.counter.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+}
+
+impl Drop for ReceivingSlot<'_> {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
 impl FilesSync {
     /// Starts carrying files for `daemon`, landing pushed ones in `store`:
     /// registers the stream handler and advertises the capability.
@@ -1347,8 +1381,7 @@ impl FilesSync {
             stream.reset(FAILED_CODE);
             return;
         };
-        let now = self.receiving.fetch_add(1, Ordering::SeqCst) + 1;
-        self.peak_receiving.fetch_max(now, Ordering::SeqCst);
+        let slot = ReceivingSlot::take(&self.receiving, &self.peak_receiving);
         let transfer = incoming.transfer.clone();
         transfer.file(&file.id, |p| p.state = FileState::Active);
         let landing = match &incoming.destination {
@@ -1357,9 +1390,10 @@ impl FilesSync {
             Destination::Memory => Ok(MemoryLanding::open(&file)),
         };
         let state = match landing {
-            Ok(landing) => Self::pump(&mut stream, landing, &file, &transfer).await,
+            Ok(landing) => Self::pump(&mut stream, landing, &file, &transfer, &slot).await,
             Err(e) => {
                 tracing::warn!(%e, name = %file.name, "cannot start landing a file");
+                slot.release();
                 Self::fail_file(&mut stream, Reason::WriteFailed).await;
                 FileState::Failed {
                     reason: Some(Reason::WriteFailed),
@@ -1368,7 +1402,7 @@ impl FilesSync {
             }
         };
         transfer.file(&file.id, |p| p.state = state);
-        self.receiving.fetch_sub(1, Ordering::SeqCst);
+        drop(slot);
         incoming.done();
     }
 
@@ -1388,6 +1422,7 @@ impl FilesSync {
         landing: Box<dyn Landing>,
         file: &FileDescriptor,
         transfer: &Transfer,
+        slot: &ReceivingSlot<'_>,
     ) -> FileState {
         let (tx, rx) = mpsc::channel::<WriterCommand>(4);
         let modified = file.modified;
@@ -1406,6 +1441,7 @@ impl FilesSync {
                 Ok(Some(FilesMessage::Chunk(FilesChunk { bytes }))) => {
                     let len = bytes.0.len() as u64;
                     if written + len > file.size {
+                        slot.release();
                         Self::fail_file(stream, Reason::SizeMismatch).await;
                         break Err(failed(Reason::SizeMismatch));
                     }
@@ -1421,6 +1457,7 @@ impl FilesSync {
                 }
                 Ok(Some(FilesMessage::End(FilesEnd { sha256 }))) => {
                     if written != file.size {
+                        slot.release();
                         Self::fail_file(stream, Reason::SizeMismatch).await;
                         break Err(failed(Reason::SizeMismatch));
                     }
@@ -1463,6 +1500,7 @@ impl FilesSync {
                 drop(tx);
                 match writer.await {
                     Ok(Ok(landed)) => {
+                        slot.release();
                         let _ = stream.send(&FilesMessage::Received).await;
                         stream.finish();
                         let location = landed.location.clone();
@@ -1470,10 +1508,12 @@ impl FilesSync {
                         FileState::Received { location }
                     }
                     Ok(Err(reason)) => {
+                        slot.release();
                         Self::fail_file(stream, reason).await;
                         failed(reason)
                     }
                     Err(e) => {
+                        slot.release();
                         Self::fail_file(stream, Reason::WriteFailed).await;
                         FileState::Failed {
                             reason: Some(Reason::WriteFailed),

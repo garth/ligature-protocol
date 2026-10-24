@@ -568,6 +568,9 @@ async fn a_file_whose_bytes_do_not_match_its_descriptor_is_refused() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_file_whose_landed_bytes_do_not_match_the_hash_is_dropped_with_its_part_file() {
     let (a, b, _alice) = pair_with(2, 2, |dir| Arc::new(CorruptingStore { dir })).await;
+    // The receiver forgets a transfer the moment it ends, so its record is
+    // taken as it starts rather than looked for after.
+    let mut b_started = b.files.subscribe();
     let bytes = pattern(10_000, 3);
     let file = FileDescriptor::new("f1", "photo.bin", bytes.len() as u64);
     let transfer = a
@@ -589,26 +592,23 @@ async fn a_file_whose_landed_bytes_do_not_match_the_hash_is_dropped_with_its_par
         ),
         "the sender is told why: {outcome:?}"
     );
-    let recorded = || {
-        b.files.transfers().iter().any(|t| {
-            matches!(
-                t.files[0].state,
-                FileState::Failed {
-                    reason: Some(Reason::HashMismatch),
-                    ..
-                }
-            )
-        })
-    };
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
-    while !recorded() {
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "the receiver recorded the failure: {:?}",
-            b.files.transfers()
-        );
-        tokio::time::sleep(Duration::from_millis(25)).await;
-    }
+    let received = tokio::time::timeout(Duration::from_secs(10), b_started.recv())
+        .await
+        .expect("the receiver started a transfer")
+        .unwrap();
+    let recorded = tokio::time::timeout(Duration::from_secs(10), received.wait())
+        .await
+        .expect("the receiver's transfer ended");
+    assert!(
+        matches!(
+            recorded.files[0].state,
+            FileState::Failed {
+                reason: Some(Reason::HashMismatch),
+                ..
+            }
+        ),
+        "the receiver recorded the failure: {recorded:?}"
+    );
     assert!(
         listing(b.downloads.path()).is_empty(),
         "no file and no part file: {:?}",

@@ -125,8 +125,8 @@ The reference implementation is Rust and is also the production implementation
   from `SECURITY.md` and the README; a Critical or High finding is named in one only once
   it is fixed or has an advisory.
 - `docs/milestones/`: one plan per milestone with scope, non-goals, decisions to pin, exit
-  criteria and a task breakdown; milestones 1 to 5 are done and 6 to 8 are drafted (epics
-  LP-111, LP-112 and LP-113), none in progress. `01-clipboard-poc.md` is done (Linux and
+  criteria and a task breakdown; milestones 1 to 5 are done, 6 is drafted (epic LP-111) and
+  7 and 8 are accepted and in progress (epics LP-112 and LP-113, tasks LP-141 to LP-152).
   macOS share the clipboard) and `01-implementation-decisions.md` records its non-protocol
   choices (store is
   SQLite via rusqlite bundled; keys in a separate 0600 file; state under `data/` in the

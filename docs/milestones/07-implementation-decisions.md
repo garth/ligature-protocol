@@ -138,3 +138,67 @@ leaving the screen (Done or Back) calls `inputStop`, which sends `release` and l
 everything on the desktop. The node test `the_phone_is_a_touchpad_for_a_desktop` runs the
 calls end to end against a daemon with the in-memory injector, built as the daemon tests
 build their identities, and ends one drive by the screen and one by the daemon going away.
+
+## LP-144: macOS capture and injection
+
+**Both sides run in the daemon, inside `Ligature.app`.** macOS grants Accessibility and Input
+Monitoring to a bundle by its identifier, and LP-94 put the daemon in one, so no helper is
+needed. The Quartz calls live in `lp-macos::input`, the crate allowed `unsafe`; the daemon's
+`input_macos` holds only safe code, and the arithmetic it needs (the key table, modifiers,
+click counting, scroll units) is in `input::mac`, built and tested on every platform.
+
+**Capture is an event tap that watches the cursor.** macOS has no pointer barriers, so a
+session tap at the head of the queue sees every mouse move and the daemon reports an edge
+hit when the cursor arrives on an armed edge of the displays' bounding box, once per
+arrival (`input::geometry::EdgeWatch`), so a pointer resting there while no drive can start
+does not repeat. The zone arithmetic the Linux portal used moved to `input::geometry` and is
+shared. While driving, the tap swallows every event, the cursor is frozen with
+`CGAssociateMouseAndMouseCursorPosition` (the mouse still reports its motion, in points)
+and hidden. Hiding it from a background process needs the window server's
+`SetsCursorInBackground` connection property, which is not public: it is looked up by name
+at run time, and without it the cursor stays visible but still. Key repeats are dropped,
+since the driven device repeats for itself.
+
+**Modifiers are flag changes.** macOS reports a modifier as `FlagsChanged` with the flags
+after it, not as a key press. The side is read from the device-dependent bits (left and
+right Shift, Control, Option and Command each have one); a source that sets none toggles.
+Caps Lock reports only its new state, so it travels as a press and a release each time.
+
+**Keys map by position through one table.** Virtual key codes name ANSI positions, as evdev
+codes do, so the table pairs them one to one; Print Screen, Scroll Lock and Pause, which a
+Mac lacks, are typed as F13 to F15, as macOS does with a PC keyboard; anything else
+unmapped is dropped and logged at debug. Apple's ISO keyboards report the key left of 1 and
+the key beside left Shift swapped relative to a PC's, which the table does not correct.
+
+**Injection posts tagged events.** Events are posted at the HID level from an event source
+whose user data is a fixed tag, and the tap passes tagged events without looking, so the
+pointer a Mac is driven by never looks like its user's. The daemon core now also ignores
+an edge hit while the device is driven (LP-142's decision 7, tested), since any capture
+that watches the cursor would otherwise start a drive back. The pointer position is
+tracked and kept on a display (`clamp_to_zones`, for layouts that are not rectangles); a
+move while a button is down is posted as a drag; a button carries the click count, counted
+against the user's double-click interval and a 4-point slop, which is what makes a double
+click on the controller a double click on the Mac; every event carries the held modifiers'
+flags.
+
+**Scroll changes sign.** The wire's scroll is positive down and right, Quartz's up and
+left. A wheel is posted in lines, smooth scrolling in pixels, and the fraction of a unit
+waits for the next event. Captured scroll goes the other way, points from a trackpad and
+lines from a wheel, with the user's natural-scrolling setting already applied.
+
+**Text is a string on a key event.** `text` is posted as key down and up events carrying
+the string, at most 20 UTF-16 units each, so any character types whatever the layout.
+
+**The permissions gate the descriptor.** At start the daemon asks for whichever of the two
+permissions is missing, which macOS prompts for once each. A supervisor thread checks both
+every two seconds, starts the tap once both are granted, and re-reads the displays. The
+family `provides` while the tap runs and `accepts` while Accessibility is held; the manifest
+re-reads both every second, so granting one adds the family to every peer's view and
+withdrawing one removes it, and a withdrawal mid-drive ends the drive as a lost capture.
+
+**Built here, run on the Mac.** The code is type-checked and linted for
+`aarch64-apple-darwin` on the Linux machine, with a stand-in C compiler since there is no
+macOS SDK there; it is built, linked and run on the Mac. To be recorded from that run:
+whether the cursor hides, whether posted scroll follows the natural-scrolling setting a
+second time, whether the permissions survive a rebuilt ad hoc signature, and what secure
+input (a password field) does to the keyboard while driving.

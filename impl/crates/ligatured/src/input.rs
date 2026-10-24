@@ -32,6 +32,9 @@ use tokio::sync::{broadcast, mpsc};
 
 use crate::daemon::Daemon;
 
+pub mod geometry;
+pub mod mac;
+
 /// How often the backends' flags are re-read for the manifest.
 const ADVERTISE_POLL: Duration = Duration::from_secs(1);
 /// One input frame: captured events within it travel as one batch.

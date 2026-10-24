@@ -18,6 +18,8 @@ pub mod grants;
 pub mod input;
 #[cfg(target_os = "linux")]
 pub mod input_linux;
+#[cfg(target_os = "macos")]
+pub mod input_macos;
 pub mod notification_sync;
 pub mod notifications;
 #[cfg(target_os = "linux")]

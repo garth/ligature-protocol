@@ -141,8 +141,15 @@ pub async fn run(
             Some(crate::input_linux::LinuxInject::start()),
         );
     }
-    // The macOS capture and injector arrive with LP-144; until then a Mac
-    // without the fake offers no input.
+    #[cfg(target_os = "macos")]
+    if std::env::var_os(FAKE_INPUT_ENV).is_none() {
+        // A Quartz event tap for capture and posted events for injection,
+        // behind Accessibility and Input Monitoring (LP-144).
+        daemon.attach_input(
+            Some(crate::input_macos::MacCapture::start()),
+            Some(crate::input_macos::MacInject::start()),
+        );
+    }
     if std::env::var_os(FAKE_SCREEN_ENV).is_some_and(|v| v == "1") {
         tracing::warn!("using the synthetic screen capture ({FAKE_SCREEN_ENV}=1)");
         daemon.attach_screen(

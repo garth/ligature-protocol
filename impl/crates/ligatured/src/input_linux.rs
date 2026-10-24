@@ -38,6 +38,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
 use crate::clipboard_linux::select_wayland_socket;
+use crate::input::geometry::{Zone, back_position, edge_fraction, size};
 use crate::input::{Capture, CaptureEvent, Inject};
 
 /// The largest frame between the daemon and its input helper.
@@ -778,19 +779,6 @@ mod helper {
 // ---------------------------------------------------------------------------
 // Capture: the InputCapture portal and libei.
 
-/// One zone of the portal: an output's logical rectangle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Zone {
-    /// Left, in layout pixels.
-    pub x: i32,
-    /// Top.
-    pub y: i32,
-    /// Width.
-    pub width: u32,
-    /// Height.
-    pub height: u32,
-}
-
 /// One pointer barrier the daemon set: which edge it stands for and on
 /// which zone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -856,47 +844,7 @@ pub fn barriers_for(edges: &[Edge], zones: &[Zone]) -> Vec<EdgeBarrier> {
 /// portal reported, as a fraction of the whole layout's edge.
 #[must_use]
 pub fn hit_at(barrier: &EdgeBarrier, zones: &[Zone], cursor: (f64, f64)) -> f64 {
-    let (left, top, right, bottom) = bounds(zones);
-    match barrier.edge {
-        Edge::Left | Edge::Right => {
-            ((cursor.1 - f64::from(top)) / f64::from(bottom - top).max(1.0)).clamp(0.0, 1.0)
-        }
-        Edge::Top | Edge::Bottom => {
-            ((cursor.0 - f64::from(left)) / f64::from(right - left).max(1.0)).clamp(0.0, 1.0)
-        }
-    }
-}
-
-/// Where to put the cursor back when the pointer returns by `edge` at `at`:
-/// just inside the layout's edge.
-#[must_use]
-pub fn back_position(edge: Edge, at: f64, zones: &[Zone]) -> (f64, f64) {
-    let (left, top, right, bottom) = bounds(zones);
-    let at = at.clamp(0.0, 1.0);
-    let x_along = f64::from(left) + at * f64::from(right - left).max(1.0);
-    let y_along = f64::from(top) + at * f64::from(bottom - top).max(1.0);
-    match edge {
-        Edge::Left => (f64::from(left) + 2.0, y_along),
-        Edge::Right => (f64::from(right) - 3.0, y_along),
-        Edge::Top => (x_along, f64::from(top) + 2.0),
-        Edge::Bottom => (x_along, f64::from(bottom) - 3.0),
-    }
-}
-
-fn bounds(zones: &[Zone]) -> (i32, i32, i32, i32) {
-    let left = zones.iter().map(|z| z.x).min().unwrap_or(0);
-    let top = zones.iter().map(|z| z.y).min().unwrap_or(0);
-    let right = zones
-        .iter()
-        .map(|z| z.x + z.width as i32)
-        .max()
-        .unwrap_or(1);
-    let bottom = zones
-        .iter()
-        .map(|z| z.y + z.height as i32)
-        .max()
-        .unwrap_or(1);
-    (left, top, right, bottom)
+    edge_fraction(barrier.edge, zones, cursor)
 }
 
 struct CaptureState {
@@ -1214,8 +1162,7 @@ impl Capture for LinuxCapture {
     }
 
     fn screen(&self) -> (u32, u32) {
-        let (left, top, right, bottom) = bounds(&lock(&self.state).zones);
-        ((right - left).max(0) as u32, (bottom - top).max(0) as u32)
+        size(&lock(&self.state).zones)
     }
 
     fn arm(&self, edges: &[Edge]) {

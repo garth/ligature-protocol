@@ -25,3 +25,8 @@ pub use pasteboard::{
 /// daemon's notifications and learning what the user did with them.
 #[cfg(target_os = "macos")]
 pub mod notifications;
+
+/// Quartz input: the event tap, the event poster, the cursor and the
+/// displays, and the permissions they need.
+#[cfg(target_os = "macos")]
+pub mod input;

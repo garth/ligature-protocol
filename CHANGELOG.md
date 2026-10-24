@@ -23,6 +23,10 @@ release workflow publishes the section as the release notes with the installers.
   layout`, `status` and `release`, the layout kept in the store, and in-memory backends
   behind `LIGATURE_FAKE_INPUT=1`; no platform captures or injects yet, so no device
   advertises it (LP-142).
+- A Mac captures and injects input (milestone 7): an event tap captures the keyboard and
+  mouse when the cursor reaches a mapped edge, posted events drive the Mac from another
+  device, and the family is offered while Ligature is allowed under Accessibility and Input
+  Monitoring (LP-144).
 - The screen capability (milestone 8): the daemon core that lists a device's displays,
   negotiates a share, chunks frames within the message bound, drops rather than queues
   and recovers with a keyframe, and ends a share on every path; `lpctl screen displays`,

@@ -74,8 +74,15 @@ extra components. What a third-party daemon may offer is bounded by platform per
   files` sends and fetches. Whether a launchd agent writing under `~/Downloads` meets a
   Transparency, Consent and Control prompt on first write is recorded by the milestone 4
   run.
-- **Remote input and displays**: injecting input needs the Accessibility permission and
-  capturing or mirroring the screen needs Screen Recording; both are granted per
+- **Remote input**: posting events and filtering them in an event tap needs the
+  Accessibility permission, and seeing the keyboard needs Input Monitoring; both are
+  granted to the bundle by the user under Privacy and Security, and macOS prompts for each
+  once. The Mac accepts input while Accessibility is held and provides it while both are,
+  so withdrawing either removes the family from every peer's view. macOS has no pointer
+  barriers: the daemon watches the cursor in its tap and starts a drive when the cursor
+  reaches a mapped edge. Secure input, which macOS turns on in a password field, keeps the
+  keyboard from every tap.
+- **Displays**: capturing or mirroring the screen needs Screen Recording, granted per
   application by the user under Transparency, Consent and Control.
 - **Keys**: the Keychain stores the local store's keys; the Secure Enclave holds only
   P-256 keys, so an Ed25519 key is software-held and may be wrapped by one

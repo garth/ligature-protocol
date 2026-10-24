@@ -69,27 +69,25 @@ The daemon runs as a per-user launchd agent that starts at login.
     ./install.sh
     ```
 
-    It copies the binaries to `~/.local/bin`, writes
+    It copies `lpctl` and `lpview` to `~/.local/bin` and the daemon, inside
+    `Ligature.app`, to `~/Applications`, writes
     `~/Library/LaunchAgents/org.ligatureprotocol.ligatured.plist` and loads it. The port is
-    fixed at 47471 here too; if the macOS firewall is on, allow `ligatured` when it asks.
+    fixed at 47471 here too; if the macOS firewall is on, allow Ligature when it asks.
 
-2. The binaries are not signed or notarised. If macOS refuses to run them after a browser
-    download, clear the quarantine flag on the unpacked directory and run the installer
-    again:
+2. The binaries and the bundle are signed ad hoc, not notarised. If macOS refuses to run
+    them after a browser download, clear the quarantine flag on the unpacked directory and
+    run the installer again:
 
     ```sh
     xattr -dr com.apple.quarantine .
     ```
 
 3. To watch another device's screen with `lpview`, install ffmpeg (`brew install ffmpeg`).
-    The Mac does not share its own screen yet: macOS grants screen capture only to an
-    application bundle, and the daemon is not one yet.
+    The Mac does not share its own screen yet.
 
-4. Allow notifications once. The daemon shows your other devices' notifications through
-    AppleScript, which posts as Script Editor, and a Mac where Script Editor has never posted
-    drops them silently. Open Script Editor, run
-    `display notification "Ligature" with title "LP"` once and click **Allow**. From then on
-    the daemon's notifications show, with no restart.
+4. Allow notifications once. When the daemon first starts, macOS asks whether Ligature may
+    send notifications; click **Allow**, and your other devices' notifications show from
+    then on.
 
 5. Check it:
 
@@ -153,7 +151,7 @@ whose checksum file does not verify is not the project's.
 
 | | Linux | macOS | Android |
 | --- | --- | --- | --- |
-| Binaries | `~/.local/bin` | `~/.local/bin` | the app |
+| Binaries | `~/.local/bin` | `~/.local/bin`, the daemon in `~/Applications/Ligature.app` | the app |
 | Keys and store | `~/.local/share/ligature` | `~/Library/Application Support/ligature` | the app's private storage |
 | Control socket | `$XDG_RUNTIME_DIR/ligature` | `$TMPDIR/ligature` | none |
 | Logs | `journalctl --user -u ligatured` | `~/Library/Logs/ligature/ligatured.log` | logcat, tag `ligature` |

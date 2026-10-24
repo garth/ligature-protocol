@@ -124,3 +124,30 @@ entry, since the registry read, changed and wrote its list without holding anyth
 across the change; the phone's manifest then lacked the clipboard one run in three.
 `Registry` now holds a lock across a change and the manifests it sends, so offers and
 withdrawals are serialised and never arrive out of order.
+
+## LP-94: the daemon in its own bundle on macOS
+
+- **One bundle, no helper.** `Ligature.app` holds the same `ligatured` binary with an
+  `Info.plist` naming `org.ligatureprotocol.ligatured`, `LSUIElement` so it has no Dock
+  icon. `packaging/macos-bundle.sh` builds it from the cargo binary and signs it ad hoc, or
+  with the Developer ID named by `LIGATURE_CODESIGN_IDENTITY`; it lives with the other
+  packaging scripts rather than in an `xtask`, since the release tarball and `install.sh`
+  run it. The tarball ships the bundle; from a checkout `install.sh` builds it.
+- **In `~/Applications`, nothing bare in `~/.local/bin`.** A symlink to the bundled binary
+  loses the bundle (the main bundle is resolved from the path the process was started by),
+  so on macOS no `ligatured` stays on the `PATH`; an earlier install's copy is removed.
+- **The centre's code is in `lp-macos`**, beside the pasteboard provider, because the
+  delegate is an Objective-C class. It refuses to start outside a bundle, where
+  `UNUserNotificationCenter` raises an exception that would abort the daemon, and the
+  backend then advertises no display.
+- **Permission asked at start**, not on the first post, so the capability says `displays`
+  only once the user has allowed it, and the directions check that runs every second
+  picks the answer up.
+- **Identifiers are `<origin key>/<id>`**, which replace on a repeated post and are what a
+  dismissal removes; a key holds no `/`. The thread is `<origin key>/<app id>`, so copies
+  group by app and device. The custom dismiss action is requested through a category so
+  the delegate hears a close; a click is treated as a close too, since the centre removes
+  a clicked notification.
+- **Icons as attachments.** Each posting writes a fresh copy of the icon under the
+  temporary directory, since the centre moves the file it is given; `maxIconBytes` is the
+  default 64 KiB once display is allowed.

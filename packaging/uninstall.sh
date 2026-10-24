@@ -1,6 +1,7 @@
 #!/bin/sh
 # Stops the ligatured service, removes it and the binaries install.sh put in
-# ~/.local/bin (LIGATURE_BIN_DIR overrides). The data directory and the logs
+# ~/.local/bin (LIGATURE_BIN_DIR overrides), and on macOS Ligature.app from
+# ~/Applications (LIGATURE_APP_DIR overrides). The data directory and the logs
 # are left in place: delete them by hand for a fresh identity.
 set -eu
 
@@ -19,6 +20,9 @@ Darwin)
     launchctl bootout "gui/$(id -u)/org.ligatureprotocol.ligatured" 2>/dev/null || true
     rm -f "$target"
     echo "removed the ligatured launchd agent"
+    app_dir=${LIGATURE_APP_DIR:-$HOME/Applications}
+    rm -rf "$app_dir/Ligature.app"
+    echo "removed Ligature.app from $app_dir"
     ;;
 esac
 rm -f "$bin_dir/ligatured" "$bin_dir/lpctl" "$bin_dir/lpview"

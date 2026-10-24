@@ -83,7 +83,9 @@ own stream, and a same-person use needs no prompt (chapter 05, ADR 0008, ADR 001
    `osascript -e 'display notification'` and reports `emits: false`. Such a notification
    cannot be dismissed from outside; a dismissal that arrives for it is dropped and
    chapter 08 says so. A signed helper application that can both display and dismiss is
-   LP-94, a later improvement and not a protocol matter.
+   LP-94, a later improvement and not a protocol matter. Replaced by LP-94 on 2026-10-24:
+   the daemon runs from its own bundle and uses the user notification centre, which
+   displays, replaces and dismisses, with no helper.
 9. **Android emits and displays.** A `NotificationListenerService`, enabled by the user
    under notification access, forwards posts and removals and dismisses a phone
    notification when the origin rule asks; received notifications are shown through the
@@ -181,7 +183,7 @@ flowchart LR
 ## 7. After this milestone
 
 Candidates, in no order: replies and actions carried back to the origin (the natural next
-step once the id map exists); the signed macOS helper that displays and dismisses (LP-94); the
-configuration app of LP-88, which this family makes necessary; file transfer (milestone 4,
-LP-87); and the milestone 1 carry-overs (offline master keys, D-Bus for `lpctl`, the
-`share` family, groups, relays).
+step once the id map exists); the macOS display and dismissal through the daemon's own
+bundle (LP-94, done); the configuration app of LP-88, which this family makes necessary;
+file transfer (milestone 4, LP-87); and the milestone 1 carry-overs (offline master keys,
+D-Bus for `lpctl`, the `share` family, groups, relays).

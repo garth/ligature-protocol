@@ -59,8 +59,9 @@ The daemon logs each connection and each refusal with the peer's key at `info`;
 
 ## Notifications do not arrive
 
-- **On the Mac**, allow Script Editor to post once (see [Install](install.md#macos)); until
-  then they are dropped without a trace. The Mac never sends its own.
+- **On the Mac**, Ligature must be allowed under System Settings → Notifications, and the
+  daemon must run from `~/Applications/Ligature.app`, as the installer sets it up; run from
+  anywhere else it displays nothing, and the log says so. The Mac never sends its own.
 - **On the phone**, grant notification access for the phone's notifications to leave it, and
   check the app's switch in the **Notifications** card.
 - **On Linux**, a notification daemon must be running on the session bus for display; for

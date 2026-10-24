@@ -43,8 +43,10 @@ session of its own.
 ## 2b. macOS
 
 A macOS machine is a full peer. The binding daemon runs as a per-user launchd agent
-(installed by the release tarball's `install.sh`, state in `~/Library/Application
-Support/ligature`, control socket in `$TMPDIR/ligature`, the UDP port fixed at 47471) and
+from an application bundle, `~/Applications/Ligature.app` (installed by the release
+tarball's `install.sh`, state in `~/Library/Application Support/ligature`, control socket
+in `$TMPDIR/ligature`, the UDP port fixed at 47471), because macOS grants notifications,
+and later Accessibility and Screen Recording, to a bundle by its identifier, and
 the principal daemon as a launchd daemon, mirroring the Linux split; presence comes from
 the console-user and session state that the system exposes to daemons. Bonjour is the
 native mDNS/DNS-SD implementation and CoreBluetooth the BLE stack, so discovery needs no
@@ -60,15 +62,14 @@ extra components. What a third-party daemon may offer is bounded by platform per
   `~/Library/Caches/org.ligatureprotocol.ligatured/clipboard`, which Finder copies from.
 - **Notifications**: a daemon may post notifications, but may not read other
   applications' notifications, so macOS can display forwarded notifications and cannot
-  forward its own. The reference daemon posts them with AppleScript's
-  `display notification`, since the user notification centre takes posts only from a
-  bundled application; such a notification carries no icon and cannot be updated or
-  closed from outside, so a dismissal from another device is dropped there. Such posts
-  count as Script Editor's, and on a Mac where Script Editor has never posted a
-  notification they are dropped silently, since a command-line `osascript` never triggers
-  the permission prompt: the user runs `display notification` once inside Script Editor
-  and allows it, after which the daemon's posts show without a restart. A Focus mode hides
-  them as it hides any other. A signed helper application would lift all of these limits.
+  forward its own. The user notification centre serves only a process inside an
+  application bundle, which is why the daemon runs from one: it asks for permission once,
+  under the bundle's name, and advertises display only once the user allows it. A copy is
+  posted under an identifier made of the origin's key and its id, so a repeated post
+  replaces it and a dismissal from another device removes it; the icon travels as an
+  image attachment; the user closing or clicking a copy is reported to the origin and the
+  other devices. The same binary run outside the bundle displays nothing. A Focus mode
+  hides the notifications as it hides any other.
 - **Files**: received files land in `~/Downloads` the same way as on Linux, and `lpctl
   files` sends and fetches. Whether a launchd agent writing under `~/Downloads` meets a
   Transparency, Consent and Control prompt on first write is recorded by the milestone 4
@@ -83,8 +84,8 @@ extra components. What a third-party daemon may offer is bounded by platform per
 - **Distribution**: outside the App Store, with notarisation, since a sandboxed App Store
   build could not run the principal daemon.
 
-Open question: whether the binding and principal daemons can share a signed application
-bundle so the user grants permissions once.
+The principal daemon, when it exists, runs from the same bundle, so the user grants each
+permission once.
 
 ## 3. Android
 

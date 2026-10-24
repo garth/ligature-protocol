@@ -20,13 +20,16 @@ the original closes the copies.
 
 ## macOS
 
-The Mac displays only. Its notifications are posted through AppleScript, which means:
+The Mac displays only. The first time the daemon starts, macOS asks whether Ligature may
+send notifications: click **Allow**. After that:
 
-- they carry no icon and cannot be updated or closed from outside, so a dismissal made on
-  another device does not clear them;
-- they post as Script Editor, and show only after you have allowed Script Editor to post
-  once (see [Install](install.md#macos));
+- your other devices' notifications appear under Ligature, with the app and the device
+  they came from and the app's icon beside the text;
+- dismissing one on another device clears it on the Mac, and closing one on the Mac clears
+  it on your other devices;
 - a Focus mode hides them like any other.
+
+If you clicked **Don't Allow**, turn Ligature on under System Settings → Notifications.
 
 Nothing an application posts on the Mac leaves it, because macOS gives no process a view of
 other applications' notifications.

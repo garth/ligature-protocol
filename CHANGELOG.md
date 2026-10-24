@@ -48,6 +48,14 @@ release workflow publishes the section as the release notes with the installers.
 - Android: touch on the touchpad and the Watch screen is sent in coalesced batches, so
   the pointer follows the finger instead of replaying every movement (LP-151).
 
+### Changed
+
+- On macOS the daemon runs from its own application bundle, `~/Applications/Ligature.app`,
+  and shows other devices' notifications through the user notification centre: the
+  permission prompt names Ligature, icons are shown, a dismissal on another device clears
+  the copy, and closing a copy on the Mac clears it everywhere. The Script Editor step is
+  gone, and `ligatured` is no longer installed in `~/.local/bin` on macOS (LP-94).
+
 ### Fixed
 
 - Android: a paste of a promised part or file no longer holds up every other node call

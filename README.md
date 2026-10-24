@@ -164,9 +164,10 @@ the platform would allow is recorded in the
 
 Each [release](https://github.com/garth/ligature-protocol/releases) carries a tarball for
 Linux (x86_64 and aarch64) and macOS (universal) and an APK for Android. On a
-desktop, unpack the tarball and run `./install.sh`: it puts `ligatured` and `lpctl` in
-`~/.local/bin` and runs the daemon as a user service that starts at login, a systemd user
-unit on Linux and a launchd agent on macOS (`./uninstall.sh` reverses it, leaving your
+desktop, unpack the tarball and run `./install.sh`: it puts `lpctl` in `~/.local/bin`
+and the daemon there too on Linux or in `~/Applications/Ligature.app` on macOS, and runs
+the daemon as a user service that starts at login, a systemd user unit on Linux and a
+launchd agent on macOS (`./uninstall.sh` reverses it, leaving your
 identity in place). Then `lpctl init --name "Your Name"` on your first device, or
 `lpctl pair` with the offer shown by a device that already has your keys; `lpctl status`
 shows the daemon. The service fixes the UDP port at 47471, so one firewall rule lets your

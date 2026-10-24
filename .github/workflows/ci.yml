@@ -33,6 +33,12 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: cargo test
         run: cargo test --workspace
+      - name: The macOS app bundle builds, signs and verifies (LP-94)
+        if: runner.os == 'macOS'
+        run: |
+          cargo build -p ligatured
+          ../packaging/macos-bundle.sh target/debug "$RUNNER_TEMP"
+          codesign --verify --strict --verbose "$RUNNER_TEMP/Ligature.app"
 
   msrv:
     name: Builds at the minimum Rust (rust-version)

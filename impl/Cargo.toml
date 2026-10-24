@@ -100,6 +100,10 @@ futures-util = { version = "0.3", default-features = false }
 objc2 = "0.6"
 objc2-foundation = "0.3"
 objc2-app-kit = "0.3"
+# The user notification centre for the macOS notification backend (LP-94), and
+# the blocks its completion handlers take.
+objc2-user-notifications = { version = "0.3", default-features = false, features = ["std", "bitflags", "block2", "UNNotification", "UNNotificationAction", "UNNotificationAttachment", "UNNotificationCategory", "UNNotificationContent", "UNNotificationRequest", "UNNotificationResponse", "UNNotificationTrigger", "UNUserNotificationCenter"] }
+block2 = "0.6"
 
 # The Android library (milestone 2, LP-77). MPL-2.0; see deny.toml.
 uniffi = { version = "0.32", default-features = false }

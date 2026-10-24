@@ -2,9 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   Ligature Protocol user daemon: a launchd agent that runs ligatured from
-  ~/.local/bin at login, without signing or notarisation. install.sh (from a
-  release tarball or packaging/ in a checkout) makes the HOME paths absolute
-  and loads it; README.md next to this file has the steps by hand. State lives
+  ~/Applications/Ligature.app at login, signed ad hoc and not notarised. The
+  daemon runs from the bundle because macOS shows notifications only from a
+  bundled process (LP-94). install.sh (from a release tarball or packaging/ in
+  a checkout) makes the HOME paths absolute and loads it; README.md next to this file has the steps by hand. State lives
   in ~/Library/Application Support/ligature and the control socket in
   $TMPDIR/ligature, which lpctl finds without being told (LP-85). The UDP port
   is fixed so a firewall rule can let peers dial in.
@@ -15,8 +16,10 @@
   <string>org.ligatureprotocol.ligatured</string>
   <key>ProgramArguments</key>
   <array>
-    <string>HOME/.local/bin/ligatured</string>
+    <string>HOME/Applications/Ligature.app/Contents/MacOS/ligatured</string>
   </array>
+  <key>AssociatedBundleIdentifiers</key>
+  <string>org.ligatureprotocol.ligatured</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>LIGATURE_PORT</key>

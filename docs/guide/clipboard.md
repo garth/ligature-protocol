@@ -28,8 +28,10 @@ the moment it is announced rather than when you paste.
 
 ## macOS
 
-The same, through the pasteboard, which the daemon checks four times a second. A copied
-file list arrives as items Finder can paste; the files are fetched into
+The same, through the pasteboard. macOS gives no event when the pasteboard changes, so
+the daemon reads its change counter four times a second, one integer, and reads the
+contents only when it has moved; Linux and Android tell the daemon of a change instead. A
+copied file list arrives as items Finder can paste; the files are fetched into
 `~/Library/Caches/org.ligatureprotocol.ligatured/clipboard` and Finder copies them from
 there. TextEdit pastes the first type it can read of what arrived.
 

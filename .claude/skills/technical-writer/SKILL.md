@@ -57,6 +57,9 @@ note; a milestone close updates the plan's status, the README, CLAUDE.md, chapte
   named only where a reader needs the exact tree (the audit report's header), since the
   GitHub integration links commits to tickets.
 - Documentation describes the current design only.
+- A platform limit is always named, with its cause, where a reader would otherwise take
+  the behaviour for the app's own choice (the Mac polls its pasteboard because macOS gives
+  no change event; the phone sends on a tap because Android lets only a focused app read).
 - Nothing about Claude or the tool shell goes into the repository's documents.
 
 ## Diagrams

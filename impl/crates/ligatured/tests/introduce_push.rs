@@ -2,7 +2,7 @@
 //! new device C. B must learn C's facts at once over the live connection, not
 //! on its next session (LP-80, found with a phone, a Linux machine and a Mac).
 
-use std::net::SocketAddr;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -33,10 +33,13 @@ fn daemon(name: &str, bind: SocketAddr) -> (Arc<Daemon>, tempfile::TempDir) {
 async fn a_peer_already_connected_learns_the_newcomer_at_once() {
     let alice = PersonKeys::generate().unwrap();
     let person = facts::person_fact(&alice, "Alice", 1, at(0)).unwrap();
-    let loopback: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    let (a, _da) = daemon("a", loopback);
-    let (b, _db) = daemon("b", loopback);
-    // C's offer lists its interface addresses, so it listens on all of them.
+    // Every daemon listens on all interfaces, as a real one does. C's offer
+    // lists its interface addresses with loopback last, and A dials them in
+    // order: bound to loopback alone, A could reach none but the last on
+    // macOS, which sends nothing from 127.0.0.1 to the host's other addresses,
+    // and each of the others would cost its 3 s timeout (LP-153).
+    let (a, _da) = daemon("a", default_bind());
+    let (b, _db) = daemon("b", default_bind());
     let (c, _dc) = daemon("c", default_bind());
     for (i, d) in [&a, &b].iter().enumerate() {
         let role = facts::role_fact(
@@ -61,7 +64,10 @@ async fn a_peer_already_connected_learns_the_newcomer_at_once() {
     // A and B are in session before C appears.
     let ab = a
         .manager()
-        .connect(b.manager().endpoint().local_addr().unwrap())
+        .connect(SocketAddr::new(
+            Ipv4Addr::LOCALHOST.into(),
+            b.manager().endpoint().local_addr().unwrap().port(),
+        ))
         .await
         .unwrap();
     assert_eq!(

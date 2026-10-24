@@ -217,21 +217,20 @@ characters, for a controller whose keyboard produces characters rather than keys
 desktop advertises all four; a phone advertises `provides` only, since its platform lets
 an application inject nothing (chapter 08).
 
-A **drive** is one stream with the capability type as its purpose, opened by the
-controller. Its first message is `enter`: the `edge` of the driven screen the pointer
-crosses and `at`, its position along that edge as a fraction from the top or left end, or
-`x` and `y` as fractions of the screen for an absolute entry. The driven device answers
-`ready` with its screen's `width` and `height` in pixels and injects nothing before it
-has. The controller then sends `events`, each message one input frame's worth of events
-in order: `motion` (`dx`, `dy` in the controller's pixels, already accelerated there and
-never again; the driven device scales them by the ratio of the two screens' widths, so a
-sweep across one screen is a sweep across the other), `position` (`x`, `y` fractions, only
-to a device that advertises `absolute`), `button` and `key` (`code`, `pressed`), `scroll`
-(`dx`, `dy` in pixels, or in wheel steps when `discrete`) and `text` (a string, only to a
-device that advertises `text`). Keys and buttons travel as Linux evdev codes, which name
-physical keys as USB HID does: the driven device applies its own keyboard layout, so a
-key typed on one layout into a device with another yields what that device's layout says,
-as a keyboard plugged into it would. An unmapped code is dropped, never guessed.
+A **drive** is one stream with the capability type as its purpose, opened by the controller. Its
+first message is `enter`: the `edge` of the driven screen the pointer crosses and `at`, its position
+along that edge as a fraction from the top or left end, or `x` and `y` as fractions of the screen
+for an absolute entry. The driven device answers `ready` with its screen's `width` and `height` in
+pixels and injects nothing before it has. The controller then sends `events`, each message one input
+frame's worth of events in order: `motion` (`dx`, `dy` in the driven screen's pixels: the controller
+applies its acceleration, then scales by the ratio of the driven width from `ready` to its own, so a
+sweep across one screen is a sweep across the other and nothing is accelerated twice), `position`
+(`x`, `y` fractions, only to a device that advertises `absolute`), `button` and `key` (`code`,
+`pressed`), `scroll` (`dx`, `dy` in pixels, or in wheel steps when `discrete`) and `text` (a string,
+only to a device that advertises `text`). Keys and buttons travel as Linux evdev codes, which name
+physical keys as USB HID does: the driven device applies its own keyboard layout, so a key typed on
+one layout into a device with another yields what that device's layout says, as a keyboard plugged
+into it would. An unmapped code is dropped, never guessed.
 
 The drive ends in one of three ways. The driven device sends `leave` when the pointer
 reaches the edge it entered by, with `at` along it, and the controller takes the pointer

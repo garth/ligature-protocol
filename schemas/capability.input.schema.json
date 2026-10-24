@@ -32,7 +32,12 @@
     },
     "edge": {
       "type": "string",
-      "enum": ["left", "right", "top", "bottom"],
+      "enum": [
+        "left",
+        "right",
+        "top",
+        "bottom"
+      ],
       "description": "An edge of the driven device's screen."
     },
     "fraction": {
@@ -50,7 +55,9 @@
     "enter": {
       "type": "object",
       "description": "The pointer arrives on the driven device: from an edge at a position along it, or, for a device that advertises absolute, at a position on the screen. The first message of a drive.",
-      "required": ["type"],
+      "required": [
+        "type"
+      ],
       "properties": {
         "type": {
           "const": "org.ligatureprotocol.capability.input.enter"
@@ -73,14 +80,28 @@
         }
       },
       "anyOf": [
-        { "required": ["edge", "at"] },
-        { "required": ["x", "y"] }
+        {
+          "required": [
+            "edge",
+            "at"
+          ]
+        },
+        {
+          "required": [
+            "x",
+            "y"
+          ]
+        }
       ]
     },
     "ready": {
       "type": "object",
       "description": "The driven device's answer to enter: its screen's size in pixels, so the controller scales motion by the ratio of the two widths. Events before ready are dropped.",
-      "required": ["type", "width", "height"],
+      "required": [
+        "type",
+        "width",
+        "height"
+      ],
       "properties": {
         "type": {
           "const": "org.ligatureprotocol.capability.input.ready"
@@ -100,42 +121,84 @@
     "event": {
       "type": "object",
       "description": "One input event, told apart by kind.",
-      "required": ["kind"],
+      "required": [
+        "kind"
+      ],
       "oneOf": [
         {
-          "description": "Relative pointer motion in the controller's pixels, already accelerated; the driven device scales it by the ratio of the two screens' widths.",
-          "required": ["kind", "dx", "dy"],
+          "description": "Relative pointer motion in the driven screen's pixels: the controller applies its acceleration and scales by the ratio of the driven width (from ready) to its own, so nothing is accelerated twice.",
+          "required": [
+            "kind",
+            "dx",
+            "dy"
+          ],
           "properties": {
-            "kind": { "const": "motion" },
-            "dx": { "type": "number" },
-            "dy": { "type": "number" }
+            "kind": {
+              "const": "motion"
+            },
+            "dx": {
+              "type": "number"
+            },
+            "dy": {
+              "type": "number"
+            }
           }
         },
         {
           "description": "An absolute pointer position as fractions of the driven screen; only to a device that advertises absolute.",
-          "required": ["kind", "x", "y"],
+          "required": [
+            "kind",
+            "x",
+            "y"
+          ],
           "properties": {
-            "kind": { "const": "position" },
-            "x": { "$ref": "#/$defs/fraction" },
-            "y": { "$ref": "#/$defs/fraction" }
+            "kind": {
+              "const": "position"
+            },
+            "x": {
+              "$ref": "#/$defs/fraction"
+            },
+            "y": {
+              "$ref": "#/$defs/fraction"
+            }
           }
         },
         {
           "description": "A pointer button pressed or released.",
-          "required": ["kind", "code", "pressed"],
+          "required": [
+            "kind",
+            "code",
+            "pressed"
+          ],
           "properties": {
-            "kind": { "const": "button" },
-            "code": { "$ref": "#/$defs/code" },
-            "pressed": { "type": "boolean" }
+            "kind": {
+              "const": "button"
+            },
+            "code": {
+              "$ref": "#/$defs/code"
+            },
+            "pressed": {
+              "type": "boolean"
+            }
           }
         },
         {
           "description": "Scrolling: dx and dy in the controller's pixels, or in wheel steps when discrete.",
-          "required": ["kind", "dx", "dy"],
+          "required": [
+            "kind",
+            "dx",
+            "dy"
+          ],
           "properties": {
-            "kind": { "const": "scroll" },
-            "dx": { "type": "number" },
-            "dy": { "type": "number" },
+            "kind": {
+              "const": "scroll"
+            },
+            "dx": {
+              "type": "number"
+            },
+            "dy": {
+              "type": "number"
+            },
             "discrete": {
               "type": "boolean",
               "default": false,
@@ -145,18 +208,33 @@
         },
         {
           "description": "A key pressed or released, by evdev code.",
-          "required": ["kind", "code", "pressed"],
+          "required": [
+            "kind",
+            "code",
+            "pressed"
+          ],
           "properties": {
-            "kind": { "const": "key" },
-            "code": { "$ref": "#/$defs/code" },
-            "pressed": { "type": "boolean" }
+            "kind": {
+              "const": "key"
+            },
+            "code": {
+              "$ref": "#/$defs/code"
+            },
+            "pressed": {
+              "type": "boolean"
+            }
           }
         },
         {
           "description": "A string to type as characters; only to a device that advertises text.",
-          "required": ["kind", "text"],
+          "required": [
+            "kind",
+            "text"
+          ],
           "properties": {
-            "kind": { "const": "text" },
+            "kind": {
+              "const": "text"
+            },
             "text": {
               "type": "string",
               "minLength": 1,
@@ -169,7 +247,10 @@
     "events": {
       "type": "object",
       "description": "A batch of events, one input frame's worth, injected in order. The controller sets seq on a batch when it wants to know when the batch was injected; the driven device answers that batch with injected.",
-      "required": ["type", "events"],
+      "required": [
+        "type",
+        "events"
+      ],
       "properties": {
         "type": {
           "const": "org.ligatureprotocol.capability.input.events"
@@ -178,7 +259,9 @@
           "type": "array",
           "minItems": 1,
           "maxItems": 256,
-          "items": { "$ref": "#/$defs/event" }
+          "items": {
+            "$ref": "#/$defs/event"
+          }
         },
         "seq": {
           "type": "integer",
@@ -190,7 +273,10 @@
     "injected": {
       "type": "object",
       "description": "The driven device has injected the batch that carried seq. The controller's measure of the round trip; nothing else depends on it.",
-      "required": ["type", "seq"],
+      "required": [
+        "type",
+        "seq"
+      ],
       "properties": {
         "type": {
           "const": "org.ligatureprotocol.capability.input.injected"
@@ -204,19 +290,29 @@
     "leave": {
       "type": "object",
       "description": "From the driven device: the pointer reached the edge it entered by, at a position along it; the controller takes the pointer back there. The driven device lifts everything it holds before sending it.",
-      "required": ["type", "edge", "at"],
+      "required": [
+        "type",
+        "edge",
+        "at"
+      ],
       "properties": {
         "type": {
           "const": "org.ligatureprotocol.capability.input.leave"
         },
-        "edge": { "$ref": "#/$defs/edge" },
-        "at": { "$ref": "#/$defs/fraction" }
+        "edge": {
+          "$ref": "#/$defs/edge"
+        },
+        "at": {
+          "$ref": "#/$defs/fraction"
+        }
       }
     },
     "release": {
       "type": "object",
       "description": "From either side: lift every held key and button and end the drive. The controller sends it on its release chord and when it stops driving without an edge; the driven device acts on it, and acts the same way when the stream ends without one.",
-      "required": ["type"],
+      "required": [
+        "type"
+      ],
       "properties": {
         "type": {
           "const": "org.ligatureprotocol.capability.input.release"
@@ -225,11 +321,23 @@
     }
   },
   "oneOf": [
-    { "$ref": "#/$defs/enter" },
-    { "$ref": "#/$defs/ready" },
-    { "$ref": "#/$defs/events" },
-    { "$ref": "#/$defs/injected" },
-    { "$ref": "#/$defs/leave" },
-    { "$ref": "#/$defs/release" }
+    {
+      "$ref": "#/$defs/enter"
+    },
+    {
+      "$ref": "#/$defs/ready"
+    },
+    {
+      "$ref": "#/$defs/events"
+    },
+    {
+      "$ref": "#/$defs/injected"
+    },
+    {
+      "$ref": "#/$defs/leave"
+    },
+    {
+      "$ref": "#/$defs/release"
+    }
   ]
 }

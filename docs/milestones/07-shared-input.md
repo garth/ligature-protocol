@@ -87,7 +87,10 @@ What this milestone pins:
    captured event to the injected one on the LAN; the plan expects a few milliseconds
    over the QUIC stream. If loss on wireless shows the stream's head-of-line blocking,
    the remedy is QUIC datagrams for `events`, which would be **ADR 0041** beside ADR
-   0036; this milestone records the measurement and does not write that ADR.
+   0036; this milestone records the measurement and does not write that ADR. The
+   measurement has a hook on the wire (LP-141): the controller may set `seq` on an
+   `events` batch and the driven device answers `injected` with it once the batch is
+   in its input system.
 6. **Text as well as keys.** The phone's keyboard produces characters, not key codes, and
    a character may not exist on the controlled device's layout. A `text` event carries a
    string, and the controlled device types it: on macOS as a keyboard event with the

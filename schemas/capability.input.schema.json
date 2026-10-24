@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ligatureprotocol.org/schemas/capability.input.schema.json",
+  "title": "org.ligatureprotocol.capability.input",
+  "description": "DRAFT. The input capability (spec chapter 05 section 3g): device-scoped, the keyboard and mouse of one device driving another. The descriptor's params say whether the device accepts what it is sent, provides its own input, takes absolute positions and types text. A drive is one stream (purpose org.ligatureprotocol.capability.input, ADR 0036) opened by the controller: enter, then ready from the driven device, then events batches, until leave from the driven device or release from either; the stream's end lifts everything still held. Keys and buttons are Linux evdev codes and name physical keys; the driven device applies its own layout. Positions along an edge and on the screen are fractions.",
+  "$defs": {
+    "params": {
+      "type": "object",
+      "description": "The descriptor's params for this capability.",
+      "properties": {
+        "accepts": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether this device injects the events it is sent. False while the platform has not granted the daemon injection."
+        },
+        "provides": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether this device captures its own keyboard and mouse and sends them. False while the platform has not granted the daemon capture."
+        },
+        "absolute": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether this device accepts an enter at a position and position events, both as fractions of its screen, beside relative motion. What a touchpad and a remote-desktop viewer send."
+        },
+        "text": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether this device types a text event's string, for a controller whose keyboard produces characters rather than key codes."
+        }
+      }
+    },
+    "edge": {
+      "type": "string",
+      "enum": ["left", "right", "top", "bottom"],
+      "description": "An edge of the driven device's screen."
+    },
+    "fraction": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "A position as a fraction: along an edge from its top or left end, or across the screen from its top-left corner."
+    },
+    "code": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535,
+      "description": "A Linux evdev key or button code (input-event-codes.h): KEY_A is 30, BTN_LEFT is 272. Names a physical key; the driven device's layout decides what it types."
+    },
+    "enter": {
+      "type": "object",
+      "description": "The pointer arrives on the driven device: from an edge at a position along it, or, for a device that advertises absolute, at a position on the screen. The first message of a drive.",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.input.enter"
+        },
+        "edge": {
+          "$ref": "#/$defs/edge",
+          "description": "The edge of the driven screen the pointer crosses, the one it will leave by."
+        },
+        "at": {
+          "$ref": "#/$defs/fraction",
+          "description": "Where along that edge, from its top or left end."
+        },
+        "x": {
+          "$ref": "#/$defs/fraction",
+          "description": "An absolute entry: across the screen from its left."
+        },
+        "y": {
+          "$ref": "#/$defs/fraction",
+          "description": "An absolute entry: down the screen from its top."
+        }
+      },
+      "anyOf": [
+        { "required": ["edge", "at"] },
+        { "required": ["x", "y"] }
+      ]
+    },
+    "ready": {
+      "type": "object",
+      "description": "The driven device's answer to enter: its screen's size in pixels, so the controller scales motion by the ratio of the two widths. Events before ready are dropped.",
+      "required": ["type", "width", "height"],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.input.ready"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The driven screen's width in pixels."
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The driven screen's height in pixels."
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "description": "One input event, told apart by kind.",
+      "required": ["kind"],
+      "oneOf": [
+        {
+          "description": "Relative pointer motion in the controller's pixels, already accelerated; the driven device scales it by the ratio of the two screens' widths.",
+          "required": ["kind", "dx", "dy"],
+          "properties": {
+            "kind": { "const": "motion" },
+            "dx": { "type": "number" },
+            "dy": { "type": "number" }
+          }
+        },
+        {
+          "description": "An absolute pointer position as fractions of the driven screen; only to a device that advertises absolute.",
+          "required": ["kind", "x", "y"],
+          "properties": {
+            "kind": { "const": "position" },
+            "x": { "$ref": "#/$defs/fraction" },
+            "y": { "$ref": "#/$defs/fraction" }
+          }
+        },
+        {
+          "description": "A pointer button pressed or released.",
+          "required": ["kind", "code", "pressed"],
+          "properties": {
+            "kind": { "const": "button" },
+            "code": { "$ref": "#/$defs/code" },
+            "pressed": { "type": "boolean" }
+          }
+        },
+        {
+          "description": "Scrolling: dx and dy in the controller's pixels, or in wheel steps when discrete.",
+          "required": ["kind", "dx", "dy"],
+          "properties": {
+            "kind": { "const": "scroll" },
+            "dx": { "type": "number" },
+            "dy": { "type": "number" },
+            "discrete": {
+              "type": "boolean",
+              "default": false,
+              "description": "Whether dx and dy count wheel steps rather than pixels."
+            }
+          }
+        },
+        {
+          "description": "A key pressed or released, by evdev code.",
+          "required": ["kind", "code", "pressed"],
+          "properties": {
+            "kind": { "const": "key" },
+            "code": { "$ref": "#/$defs/code" },
+            "pressed": { "type": "boolean" }
+          }
+        },
+        {
+          "description": "A string to type as characters; only to a device that advertises text.",
+          "required": ["kind", "text"],
+          "properties": {
+            "kind": { "const": "text" },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          }
+        }
+      ]
+    },
+    "events": {
+      "type": "object",
+      "description": "A batch of events, one input frame's worth, injected in order. The controller sets seq on a batch when it wants to know when the batch was injected; the driven device answers that batch with injected.",
+      "required": ["type", "events"],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.input.events"
+        },
+        "events": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/event" }
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Present when the controller measures the round trip of this batch."
+        }
+      }
+    },
+    "injected": {
+      "type": "object",
+      "description": "The driven device has injected the batch that carried seq. The controller's measure of the round trip; nothing else depends on it.",
+      "required": ["type", "seq"],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.input.injected"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "leave": {
+      "type": "object",
+      "description": "From the driven device: the pointer reached the edge it entered by, at a position along it; the controller takes the pointer back there. The driven device lifts everything it holds before sending it.",
+      "required": ["type", "edge", "at"],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.input.leave"
+        },
+        "edge": { "$ref": "#/$defs/edge" },
+        "at": { "$ref": "#/$defs/fraction" }
+      }
+    },
+    "release": {
+      "type": "object",
+      "description": "From either side: lift every held key and button and end the drive. The controller sends it on its release chord and when it stops driving without an edge; the driven device acts on it, and acts the same way when the stream ends without one.",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.input.release"
+        }
+      }
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/enter" },
+    { "$ref": "#/$defs/ready" },
+    { "$ref": "#/$defs/events" },
+    { "$ref": "#/$defs/injected" },
+    { "$ref": "#/$defs/leave" },
+    { "$ref": "#/$defs/release" }
+  ]
+}

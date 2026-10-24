@@ -66,9 +66,13 @@ Every capability descriptor carries a scope (see
 | `user` | A user-device binding | Clipboard, notifications, personal files, sharing, telephony on a personal phone | The person whose capability it is |
 | `device` | The device principal | Display, speakers and media playback, sensors, physical keyboard and mouse, power, a lamp's switch | The person present on the device; otherwise the device's policy |
 
-Some families appear in both scopes (media control of a user's own player is `user`;
-playback through the device's speakers is `device`). Open question: whether scope is fixed
-per capability type or chosen per descriptor by the offering device.
+On a device with one account and no principal service, the account's daemon offers the device-scoped
+families in its own manifest, marked by their `scope` alone, and a peer treats them as a
+principal's; when the principal service exists it offers the same descriptors and the binding stops
+([ADR 0040](../adr/0040-binding-stands-in-for-principal.md)). Some families appear in both scopes
+(media control of a user's own player is `user`; playback through the device's speakers is
+`device`). Open question: whether scope is fixed per capability type or chosen per descriptor by the
+offering device.
 
 ## 4. Groups
 

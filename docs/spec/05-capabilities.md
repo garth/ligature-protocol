@@ -18,13 +18,13 @@ chapter 10), and type-specific parameters. The principal that offers it is the s
 the manifest it arrives in. See
 [`org.ligatureprotocol.capability`](../../schemas/capability.schema.json).
 
-A family with two directions declares in its `params` which of them the device offers:
-`emits` and `displays` for notifications (section 3c), `send` and `receive` for files
-(section 3d), and the same shape for media control (control, be controlled) when it is
-specified. A device advertises the family if it offers either direction; the peer reads the
-flags to know what it may send and what it will receive. One stream per session carries
-both directions for the clipboard and notifications; files, whose payloads are large, use
-a stream per transfer and per file (section 3d).
+A family with two directions declares in its `params` which of them the device offers: `emits` and
+`displays` for notifications (section 3c), `send` and `receive` for files (section 3d), `accepts`
+and `provides` for input (section 3g), and the same shape for media control (control, be controlled)
+when it is specified. A device advertises the family if it offers either direction; the peer reads
+the flags to know what it may send and what it will receive. One stream per session carries both
+directions for the clipboard and notifications; files, whose payloads are large, use a stream per
+transfer and per file (section 3d).
 
 ## 2a. Manifests and the live registry
 
@@ -58,8 +58,8 @@ flowchart LR
 
 The first families are: notifications, clipboard, files, share, remote input, media
 control, telephony/SMS, displays, sensors. Each will become its own spec section with its
-own schema; share (section 3a), clipboard (section 3b), notifications (section 3c) and
-files (section 3d) are specified so far.
+own schema; share (section 3a), clipboard (section 3b), notifications (section 3c), files
+(section 3d) and input (section 3g) are specified so far.
 
 ## 3a. Sharing between people
 
@@ -197,6 +197,62 @@ overwrites an existing file. A sender keeps what it offers in memory, by id, and
 an id when the content is gone; a `request` for a withdrawn id is declined as `gone`.
 Nothing about a transfer is stored beyond the received file itself (chapter 09). Open
 question: resumption of an interrupted file by an offset in `begin`, and folders.
+
+## 3g. Input
+
+`org.ligatureprotocol.capability.input`
+([schema](../../schemas/capability.input.schema.json)) lets the keyboard and mouse of one
+device drive another: the pointer crosses the edge of one screen onto the next, as a
+software KVM does, or a phone's screen is a touchpad for a desktop. It is the first
+device-scoped family (chapter 10 section 3): a keyboard and mouse belong to the device, not
+to an account on it, and a request to drive a device is answered by the person present on
+it. Between one person's own devices that is implicit, as for user-scoped use (section 4);
+across people it is the grant of chapter 10 section 6. On a device with one account the
+account's daemon offers the family in its own manifest, standing in for the principal
+([ADR 0040](../adr/0040-binding-stands-in-for-principal.md)). The descriptor's `params` say
+`accepts` (this device injects what it is sent), `provides` (it captures its own keyboard
+and mouse and sends them), `absolute` (it takes an entry and positions as fractions of its
+screen, what a touchpad or a remote-desktop viewer sends) and `text` (it types a string of
+characters, for a controller whose keyboard produces characters rather than keys). A
+desktop advertises all four; a phone advertises `provides` only, since its platform lets
+an application inject nothing (chapter 08).
+
+A **drive** is one stream with the capability type as its purpose, opened by the
+controller. Its first message is `enter`: the `edge` of the driven screen the pointer
+crosses and `at`, its position along that edge as a fraction from the top or left end, or
+`x` and `y` as fractions of the screen for an absolute entry. The driven device answers
+`ready` with its screen's `width` and `height` in pixels and injects nothing before it
+has. The controller then sends `events`, each message one input frame's worth of events
+in order: `motion` (`dx`, `dy` in the controller's pixels, already accelerated there and
+never again; the driven device scales them by the ratio of the two screens' widths, so a
+sweep across one screen is a sweep across the other), `position` (`x`, `y` fractions, only
+to a device that advertises `absolute`), `button` and `key` (`code`, `pressed`), `scroll`
+(`dx`, `dy` in pixels, or in wheel steps when `discrete`) and `text` (a string, only to a
+device that advertises `text`). Keys and buttons travel as Linux evdev codes, which name
+physical keys as USB HID does: the driven device applies its own keyboard layout, so a
+key typed on one layout into a device with another yields what that device's layout says,
+as a keyboard plugged into it would. An unmapped code is dropped, never guessed.
+
+The drive ends in one of three ways. The driven device sends `leave` when the pointer
+reaches the edge it entered by, with `at` along it, and the controller takes the pointer
+back there; a driven device never follows its own layout while driven, so two devices
+need one mapping each and nothing cycles. Either side sends `release`: the controller on
+its release chord or when it stops driving without an edge (a touchpad's user leaving the
+screen), the driven device when it wants its input back. Or the stream ends, by reset or
+by the session's end, which the driven device treats as `release`. In every case the
+driven device lifts every key and button still held before anything else, so nothing
+stays pressed; the controller releases its capture at once. Which edge of which screen
+leads to which device is the controller's own setting, kept in its store and never on the
+wire (chapter 06).
+
+A controller that wants to know the round trip sets `seq` on an `events` message, and the
+driven device answers `injected` with that `seq` once the batch has gone into its input
+system; nothing else depends on it. Events are small and ordered, so a lost packet holds
+back the events behind it on the stream; the reference implementation measures the round
+trip, and QUIC datagrams for `events` are the remedy named if it calls for one, under an
+ADR of their own beside [ADR 0036](../adr/0036-stream-framing-and-message-typing.md).
+Nothing about a drive is stored (chapter 09). Open question: a layout shared across a
+person's devices as a signed fact, so one device configures the whole set.
 
 ## 4. Requests and grants
 

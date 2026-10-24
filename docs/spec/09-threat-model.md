@@ -114,6 +114,22 @@ value lives in a cache it clears when its clipboard moves on (section 3b). Open 
 device's bare public key, seen by anyone who connects, is itself an identifier worth hiding
 behind a per-epoch value.
 
+### 4.4 Capabilities that act on a device
+
+Input (chapter 05 section 3g) is the first capability by which a peer acts on a device
+rather than reads from or shows on it: a paired device of the same person can move the
+pointer and type. That is the design, since a paired device carries the person's
+authority (chapter 10 section 5.1), and the family is offered to no one else. A device
+that is lost or stolen can therefore drive the person's desktop until it is revoked, which
+is why revocation is a gossiped fact that takes effect at the next session start and ends
+a live session ([ADR 0039](../adr/0039-revocation-scope-and-live-session-close.md),
+chapter 06 section 3), and why the person revokes a lost device first. A driven device
+shows nothing while driven beyond the pointer moving, and lifts every key and button it
+holds when the drive ends however it ends, so a dropped connection leaves nothing
+pressed. What this family cannot defend against is a compromised peer of the same person:
+it is the person, as far as the protocol can tell, and the remedy is the rebuild of
+chapter 07.
+
 ### 4.5 No remote trust
 
 Nothing a stranger can do over the network makes any device recognise them. A `person`

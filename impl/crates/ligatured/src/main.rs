@@ -49,6 +49,9 @@ enum Command {
     /// The Wayland clipboard helper the daemon starts for itself (Linux).
     #[command(hide = true)]
     ClipboardHelper,
+    /// The Wayland input helper the daemon starts for itself (Linux).
+    #[command(hide = true)]
+    InputHelper,
 }
 
 fn main() {
@@ -65,6 +68,21 @@ fn main() {
         #[cfg(not(target_os = "linux"))]
         {
             eprintln!("clipboard helper is Linux only");
+            std::process::exit(1);
+        }
+    }
+    if let Some(Command::InputHelper) = options.command {
+        #[cfg(target_os = "linux")]
+        {
+            if let Err(e) = ligatured::input_linux::run_helper() {
+                eprintln!("input helper: {e}");
+                std::process::exit(1);
+            }
+            return;
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            eprintln!("input helper is Linux only");
             std::process::exit(1);
         }
     }
@@ -95,9 +113,11 @@ fn main() {
 /// The daemon proper, once the runtime is up.
 async fn daemon(options: Options) {
     tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+            // The portal wrapper's proxies have no properties to cache,
+            // which zbus reports at warn level on every request object.
+            EnvFilter::new("info,zbus::proxy=error")
+        }))
         .with_writer(std::io::stderr)
         .init();
     let locations = Locations::resolve(options.data_dir.as_deref(), options.runtime_dir.as_deref());

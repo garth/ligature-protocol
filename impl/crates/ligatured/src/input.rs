@@ -58,6 +58,9 @@ pub enum CaptureEvent {
     },
     /// An event while captured, in this screen's pixels.
     Input(InputEvent),
+    /// The platform took the input back itself (the compositor ended the
+    /// capture): the drive ends as if the user had released it.
+    Lost,
 }
 
 /// The controller's own keyboard and mouse.
@@ -728,6 +731,12 @@ impl InputSync {
                                     }
                                 }
                                 Err(e) => tracing::debug!(%peer, %e, "edge hit but no drive"),
+                            }
+                        }
+                        Ok(CaptureEvent::Lost) => {
+                            if self.is_driving() {
+                                tracing::info!("the platform took the input back; ending the drive");
+                                self.release_local(None).await;
                             }
                         }
                         Ok(CaptureEvent::Input(event)) => {

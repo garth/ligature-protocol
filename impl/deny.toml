@@ -9,6 +9,13 @@ ignore = [
     # basic-toml, unmaintained: a dependency of uniffi's binding generator, which
     # runs on the host under the `bindgen` feature and is never in a library (LP-77).
     "RUSTSEC-2026-0374",
+    # zbus 5's split crates (zbus_names, zvariant, zvariant_derive), folded into
+    # zbus 6 upstream: still pulled by ashpd, the portal wrapper the Linux input
+    # capture uses (LP-143), until ashpd releases on zbus 6; the daemon's own
+    # bus code is on zbus 6 already.
+    "RUSTSEC-2026-0370",
+    "RUSTSEC-2026-0371",
+    "RUSTSEC-2026-0372",
 ]
 
 [licenses]

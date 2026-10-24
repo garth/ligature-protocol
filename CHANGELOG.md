@@ -28,6 +28,10 @@ release workflow publishes the section as the release notes with the installers.
   and recovers with a keyframe, and ends a share on every path; `lpctl screen displays`,
   `start` (the encoded stream to a file), `stop` and `status`; a synthetic capture behind
   `LIGATURE_FAKE_SCREEN=1`; no platform captures or views yet (LP-148).
+- Linux: the keyboard and mouse are captured through the InputCapture portal and libei
+  when the pointer crosses a mapped screen edge, and injected through the virtual pointer
+  and virtual keyboard protocols by a helper, with text typed through a keyboard of its
+  own; a Linux daemon now advertises `input` (LP-143).
 
 ### Fixed
 

@@ -132,8 +132,17 @@ pub async fn run(
             Some(crate::input::FakeInject::new(1920, 1080)),
         );
     }
-    // The platform capture and injector arrive with LP-143 (Linux) and
-    // LP-144 (macOS); until then a daemon without the fake offers no input.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os(FAKE_INPUT_ENV).is_none() {
+        // The InputCapture portal and libei for capture, the virtual pointer
+        // and keyboard in a helper for injection (LP-143).
+        daemon.attach_input(
+            Some(crate::input_linux::LinuxCapture::start()),
+            Some(crate::input_linux::LinuxInject::start()),
+        );
+    }
+    // The macOS capture and injector arrive with LP-144; until then a Mac
+    // without the fake offers no input.
     if std::env::var_os(FAKE_SCREEN_ENV).is_some_and(|v| v == "1") {
         tracing::warn!("using the synthetic screen capture ({FAKE_SCREEN_ENV}=1)");
         daemon.attach_screen(

@@ -15,6 +15,7 @@ pub mod files;
 pub mod files_sync;
 pub mod gossip;
 pub mod grants;
+pub mod input;
 pub mod notification_sync;
 pub mod notifications;
 #[cfg(target_os = "linux")]

@@ -46,11 +46,17 @@ fn control_messages_validate() {
         types::FILES_WITHDRAW,
         types::FILES_CANCEL,
         types::FILES_TRANSFERS,
+        types::INPUT_LAYOUT,
+        types::INPUT_LAYOUT_SET,
+        types::INPUT_LAYOUT_UNSET,
+        types::INPUT_STATUS,
+        types::INPUT_RELEASE,
     ] {
         let mut r = Request::new(t, 7);
         r.name = Some("Alice".to_owned());
         r.text = Some("hi".to_owned());
         r.pairing = Some(3);
+        r.edge = Some("right".to_owned());
         check(&v, &r);
     }
     check(&v, &Response::ok(1, &Empty {}).unwrap());

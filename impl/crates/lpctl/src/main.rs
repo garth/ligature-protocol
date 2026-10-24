@@ -10,12 +10,13 @@ use clap::{Parser, Subcommand};
 use std::sync::{Arc, Mutex};
 
 use ligatured::control::{
-    Caps, Client, ClipboardPasted, ClipboardText, Devices, Empty, Event, InitResult, Offers,
-    Request, Transfers, types,
+    Caps, Client, ClipboardPasted, ClipboardText, Devices, Empty, Event, InitResult, InputLayout,
+    Offers, Request, Transfers, types,
 };
 use ligatured::daemon::Status;
 use ligatured::files_sync::{FileState, TransferEnd, TransferProgress};
 use ligatured::grants::Grants;
+use ligatured::input::InputStatus;
 use lp_core::paths::{DATA_DIR_ENV, Locations, RUNTIME_DIR_ENV};
 use lp_core::{Error, PublicKey};
 
@@ -103,6 +104,43 @@ enum Command {
     Files {
         #[command(subcommand)]
         action: FilesAction,
+    },
+    /// One keyboard and mouse across this person's desktops: which edge of
+    /// this screen leads to which device, and the drive in progress.
+    Input {
+        #[command(subcommand)]
+        action: InputAction,
+    },
+}
+
+/// `lpctl input` actions.
+#[derive(Debug, Subcommand)]
+enum InputAction {
+    /// Show which edges lead where, or change one.
+    Layout {
+        #[command(subcommand)]
+        action: Option<LayoutAction>,
+    },
+    /// What this device advertises, drives and is driven by, with the round trip.
+    Status,
+    /// Give the input back: end the drive this device runs.
+    Release,
+}
+
+/// `lpctl input layout` actions.
+#[derive(Debug, Subcommand)]
+enum LayoutAction {
+    /// Make an edge of this screen lead to a device.
+    Set {
+        /// left, right, top or bottom.
+        edge: String,
+        /// The device: its name, or a prefix of its key or fingerprint.
+        device: String,
+    },
+    /// Make an edge lead nowhere.
+    Unset {
+        /// left, right, top or bottom.
+        edge: String,
     },
 }
 
@@ -404,6 +442,7 @@ async fn run(options: &Options, locations: &Locations) -> Result<(), Error> {
             println!("posted.");
         }
         Command::Files { action } => files(&mut client, locations, action).await?,
+        Command::Input { action } => input(&mut client, action).await?,
         Command::Caps => {
             let caps: Caps = client.request(Request::new(types::CAPS, 0)).await?;
             println!("this device offers:");
@@ -435,6 +474,96 @@ async fn run(options: &Options, locations: &Locations) -> Result<(), Error> {
                     );
                 }
             }
+        }
+    }
+    Ok(())
+}
+
+/// `lpctl input`.
+async fn input(client: &mut Client, action: &InputAction) -> Result<(), Error> {
+    match action {
+        InputAction::Layout { action: None } => {
+            let layout: InputLayout = client.request(Request::new(types::INPUT_LAYOUT, 0)).await?;
+            if layout.layout.is_empty() {
+                println!("no edge leads anywhere; lpctl input layout set right <device>");
+            }
+            let known: Devices = client.request(Request::new(types::DEVICES, 1)).await?;
+            for entry in layout.layout {
+                let name = known
+                    .devices
+                    .iter()
+                    .find(|d| d.key == entry.device)
+                    .and_then(|d| d.display_name.clone())
+                    .unwrap_or_else(|| "?".to_owned());
+                println!(
+                    "{:<7} {:<20} {}…  {}",
+                    entry.edge,
+                    name,
+                    entry.device.fingerprint(),
+                    entry.device
+                );
+            }
+        }
+        InputAction::Layout {
+            action: Some(LayoutAction::Set { edge, device }),
+        } => {
+            let key = resolve_device(client, device).await?;
+            let mut req = Request::new(types::INPUT_LAYOUT_SET, 0);
+            req.edge = Some(edge.clone());
+            req.key = Some(key);
+            let _: Empty = client.request(req).await?;
+            println!("the {edge} edge leads to {key}");
+        }
+        InputAction::Layout {
+            action: Some(LayoutAction::Unset { edge }),
+        } => {
+            let mut req = Request::new(types::INPUT_LAYOUT_UNSET, 0);
+            req.edge = Some(edge.clone());
+            let _: Empty = client.request(req).await?;
+            println!("the {edge} edge leads nowhere");
+        }
+        InputAction::Status => {
+            let s: InputStatus = client.request(Request::new(types::INPUT_STATUS, 0)).await?;
+            println!("accepts:   {}", s.accepts);
+            println!("provides:  {}", s.provides);
+            match s.driving {
+                Some(d) => println!(
+                    "driving:   {} ({}…) {}x{}, {} batches{}",
+                    d.peer,
+                    d.peer.fingerprint(),
+                    d.width,
+                    d.height,
+                    d.batches,
+                    d.edge
+                        .map(|e| format!(", by the {e} edge"))
+                        .unwrap_or_default()
+                ),
+                None => println!("driving:   nothing"),
+            }
+            match s.driven_by {
+                Some(p) => println!("driven by: {} ({}…)", p, p.fingerprint()),
+                None => println!("driven by: nobody"),
+            }
+            if let Some(rt) = s.round_trip {
+                println!(
+                    "round trip: {:.1} ms median, {:.1} ms worst, {} samples",
+                    rt.median_ms, rt.max_ms, rt.samples
+                );
+            }
+            for entry in s.layout {
+                println!(
+                    "{:<7} -> {}…  {}",
+                    entry.edge,
+                    entry.device.fingerprint(),
+                    entry.device
+                );
+            }
+        }
+        InputAction::Release => {
+            let _: Empty = client
+                .request(Request::new(types::INPUT_RELEASE, 0))
+                .await?;
+            println!("released.");
         }
     }
     Ok(())
@@ -767,6 +896,12 @@ fn directions(d: &lp_core::capability::Descriptor) -> String {
             p.max_bytes,
             p.mime_types.join(","),
             p.fetch
+        );
+    }
+    if let Some(p) = lp_core::input::InputParams::from_descriptor(d) {
+        return format!(
+            "  accepts={} provides={} absolute={} text={}",
+            p.accepts, p.provides, p.absolute, p.text
         );
     }
     String::new()

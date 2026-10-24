@@ -6,7 +6,7 @@
   "$defs": {
     "publicKey": {
       "type": "string",
-      "description": "A public key as a multibase string with a multicodec prefix (an Ed25519 key renders as z6Mk…).",
+      "description": "A public key as a multibase string with a multicodec prefix (an Ed25519 key renders as z6Mk\u2026).",
       "pattern": "^z[1-9A-HJ-NP-Za-km-z]+$"
     },
     "id": {
@@ -38,7 +38,12 @@
         "org.ligatureprotocol.control.files.offers",
         "org.ligatureprotocol.control.files.withdraw",
         "org.ligatureprotocol.control.files.cancel",
-        "org.ligatureprotocol.control.files.transfers"
+        "org.ligatureprotocol.control.files.transfers",
+        "org.ligatureprotocol.control.input.layout",
+        "org.ligatureprotocol.control.input.layout.set",
+        "org.ligatureprotocol.control.input.layout.unset",
+        "org.ligatureprotocol.control.input.status",
+        "org.ligatureprotocol.control.input.release"
       ]
     },
     "eventType": {
@@ -125,6 +130,16 @@
         "transfer": {
           "type": "string",
           "description": "files.cancel: the id of the transfer in flight."
+        },
+        "edge": {
+          "type": "string",
+          "enum": [
+            "left",
+            "right",
+            "top",
+            "bottom"
+          ],
+          "description": "input.layout.set, input.layout.unset: the edge of this device's screen."
         }
       }
     },

@@ -14,6 +14,7 @@ pub mod facts;
 pub mod files;
 pub mod frame;
 pub mod identity;
+pub mod input;
 pub mod key;
 pub mod paths;
 pub mod wire;

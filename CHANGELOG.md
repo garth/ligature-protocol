@@ -18,6 +18,11 @@ release workflow publishes the section as the release notes with the installers.
   --check` only reports, and every other `lpctl` command run on a terminal says once a
   day when a newer release exists (`LIGATURE_NO_UPDATE_CHECK=1` switches the check off)
   (LP-140).
+- The input capability (milestone 7): the daemon core that lets one device's keyboard and
+  mouse drive another across a configured screen edge or from a touchpad, `lpctl input
+  layout`, `status` and `release`, the layout kept in the store, and in-memory backends
+  behind `LIGATURE_FAKE_INPUT=1`; no platform captures or injects yet, so no device
+  advertises it (LP-142).
 
 ### Fixed
 

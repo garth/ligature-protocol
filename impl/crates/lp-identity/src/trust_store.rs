@@ -30,7 +30,7 @@ use crate::facts;
 /// The schema version this daemon writes. Step 2 rewrote `created_at` in
 /// the fixed-width form of [`Timestamp::to_rfc3339_fixed`], so the column
 /// sorts as time.
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 /// The persistent local store of signed facts.
 pub struct TrustStore {
@@ -160,7 +160,75 @@ impl TrustStore {
                 .map_err(store_err)?;
             tx.commit().map_err(store_err)?;
         }
+        if version < 3 {
+            // The input layout (milestone 7, LP-142): which edge of this
+            // device's screen leads to which device, a setting local to the
+            // device and never gossiped.
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS input_layout (
+                    edge    TEXT PRIMARY KEY,
+                    device  TEXT NOT NULL
+                );
+                PRAGMA user_version = 3;",
+            )
+            .map_err(store_err)?;
+        }
         Ok(())
+    }
+
+    /// The input layout: each edge of this device's screen that leads to
+    /// another device, with that device's key, in no particular order.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Store`] on a database error.
+    pub fn input_layout(&self) -> Result<Vec<(String, PublicKey)>, Error> {
+        let conn = self.conn();
+        let mut stmt = conn
+            .prepare("SELECT edge, device FROM input_layout ORDER BY edge")
+            .map_err(store_err)?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+            .map_err(store_err)?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (edge, device) = row.map_err(store_err)?;
+            match device.parse::<PublicKey>() {
+                Ok(key) => out.push((edge, key)),
+                Err(e) => {
+                    tracing::warn!(edge, %e, "skipping an input layout row whose key does not read")
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Makes `edge` lead to `device`, replacing what it led to.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Store`] on a database error.
+    pub fn set_input_edge(&self, edge: &str, device: &PublicKey) -> Result<(), Error> {
+        self.conn()
+            .execute(
+                "INSERT INTO input_layout (edge, device) VALUES (?1, ?2)
+                 ON CONFLICT(edge) DO UPDATE SET device = excluded.device",
+                params![edge, device.to_string()],
+            )
+            .map(|_| ())
+            .map_err(store_err)
+    }
+
+    /// Makes `edge` lead nowhere. Returns whether it led somewhere.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Store`] on a database error.
+    pub fn unset_input_edge(&self, edge: &str) -> Result<bool, Error> {
+        self.conn()
+            .execute("DELETE FROM input_layout WHERE edge = ?1", params![edge])
+            .map(|n| n > 0)
+            .map_err(store_err)
     }
 
     fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
@@ -599,6 +667,27 @@ mod tests {
 
     fn locations(dir: &Path) -> Locations {
         Locations::resolve(Some(dir), None)
+    }
+
+    #[test]
+    fn the_input_layout_is_rows_the_store_keeps() {
+        let store = TrustStore::in_memory().unwrap();
+        assert!(store.input_layout().unwrap().is_empty());
+        let a = lp_crypto::signing::SigningKey::generate().unwrap();
+        let b = lp_crypto::signing::SigningKey::generate().unwrap();
+        store.set_input_edge("right", a.public()).unwrap();
+        store.set_input_edge("left", b.public()).unwrap();
+        store.set_input_edge("right", b.public()).unwrap();
+        assert_eq!(
+            store.input_layout().unwrap(),
+            vec![
+                ("left".to_owned(), *b.public()),
+                ("right".to_owned(), *b.public())
+            ]
+        );
+        assert!(store.unset_input_edge("left").unwrap());
+        assert!(!store.unset_input_edge("left").unwrap());
+        assert_eq!(store.input_layout().unwrap().len(), 1);
     }
 
     #[test]

@@ -77,6 +77,16 @@ pub mod types {
     /// Event: a transfer's progress, before the response to `files.send` or
     /// `files.get`.
     pub const FILES_PROGRESS: &str = "org.ligatureprotocol.control.files.progress";
+    /// `input.layout`: list the layout.
+    pub const INPUT_LAYOUT: &str = "org.ligatureprotocol.control.input.layout";
+    /// `input.layout.set`: make an edge lead to a device (`edge`, `key`).
+    pub const INPUT_LAYOUT_SET: &str = "org.ligatureprotocol.control.input.layout.set";
+    /// `input.layout.unset`: make an edge lead nowhere (`edge`).
+    pub const INPUT_LAYOUT_UNSET: &str = "org.ligatureprotocol.control.input.layout.unset";
+    /// `input.status`: what this device advertises, drives and is driven by.
+    pub const INPUT_STATUS: &str = "org.ligatureprotocol.control.input.status";
+    /// `input.release`: end the drive this device runs.
+    pub const INPUT_RELEASE: &str = "org.ligatureprotocol.control.input.release";
 }
 
 /// A request from `lpctl`.
@@ -131,6 +141,9 @@ pub struct Request {
     /// `files.cancel`: the transfer id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transfer: Option<String>,
+    /// `input.layout.set`, `input.layout.unset`: the edge.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edge: Option<String>,
 }
 
 impl Request {
@@ -836,6 +849,9 @@ pub async fn handle(
         t if t.starts_with(types::PREFIX) && t.contains(".files.") => {
             return handle_files(daemon, request, out);
         }
+        t if t.starts_with(types::PREFIX) && t.contains(".input.") => {
+            return Some(handle_input(daemon, request).await);
+        }
         other => Ok(Response::error(
             id,
             ErrorBody::new("unknown-type", format!("unknown request type {other}")),
@@ -845,6 +861,80 @@ pub async fn handle(
         Ok(r) => r,
         Err(e) => Response::error(id, ErrorBody::from_error(&e)),
     })
+}
+
+/// Handles an `input.*` request (milestone 7).
+async fn handle_input(daemon: &Arc<Daemon>, request: Request) -> Response {
+    let id = request.id;
+    let Some(input) = daemon.input_sync() else {
+        return Response::error(
+            id,
+            ErrorBody::new("not-found", "no input capability on this daemon"),
+        );
+    };
+    let bad = |message: &str| Response::error(id, ErrorBody::new("bad-request", message));
+    let edge = || -> Result<lp_core::input::Edge, Error> {
+        request
+            .edge
+            .as_deref()
+            .ok_or_else(|| Error::Decode("an edge is needed".to_owned()))?
+            .parse()
+    };
+    let result: Result<Response, Error> = match request.request_type.as_str() {
+        types::INPUT_LAYOUT => Response::ok(
+            id,
+            &InputLayout {
+                layout: input.layout(),
+            },
+        ),
+        types::INPUT_LAYOUT_SET => match (edge(), request.key) {
+            (Ok(edge), Some(key)) => input
+                .set_edge(edge, key)
+                .and_then(|()| Response::ok(id, &Empty {})),
+            (Err(e), _) => Err(e),
+            (_, None) => return bad("input.layout.set needs a key"),
+        },
+        types::INPUT_LAYOUT_UNSET => match edge() {
+            Ok(edge) => input.unset_edge(edge).and_then(|was| {
+                if was {
+                    Response::ok(id, &Empty {})
+                } else {
+                    Ok(Response::error(
+                        id,
+                        ErrorBody::new("not-found", format!("the {edge} edge led nowhere")),
+                    ))
+                }
+            }),
+            Err(e) => Err(e),
+        },
+        types::INPUT_STATUS => Response::ok(id, &input.status()),
+        types::INPUT_RELEASE => {
+            if input.is_driving() {
+                input.release_local(None).await;
+                Response::ok(id, &Empty {})
+            } else {
+                Ok(Response::error(
+                    id,
+                    ErrorBody::new("not-found", "this device is not driving another"),
+                ))
+            }
+        }
+        other => Ok(Response::error(
+            id,
+            ErrorBody::new("unknown-type", format!("unknown request type {other}")),
+        )),
+    };
+    match result {
+        Ok(r) => r,
+        Err(e) => Response::error(id, ErrorBody::from_error(&e)),
+    }
+}
+
+/// The `input.layout` result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InputLayout {
+    /// Each edge that leads somewhere.
+    pub layout: Vec<crate::input::LayoutEntry>,
 }
 
 /// Handles a `files.*` request. A send or a get is answered by a task that

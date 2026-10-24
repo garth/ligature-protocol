@@ -81,6 +81,7 @@ pub struct Daemon {
     notifications: Mutex<Option<Arc<crate::notification_sync::NotificationSync>>>,
     notifications_impl: Mutex<Option<Arc<dyn crate::notifications::Notifications>>>,
     files: Mutex<Option<Arc<crate::files_sync::FilesSync>>>,
+    input: Mutex<Option<Arc<crate::input::InputSync>>>,
     ceremonies: Arc<std::sync::atomic::AtomicUsize>,
 }
 
@@ -215,6 +216,7 @@ impl Daemon {
             notifications: Mutex::new(None),
             notifications_impl: Mutex::new(None),
             files: Mutex::new(None),
+            input: Mutex::new(None),
             ceremonies: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         });
         crate::gossip::register(&daemon);
@@ -668,6 +670,9 @@ impl Daemon {
         if let Some(sync) = self.files_sync() {
             sync.detach(peer);
         }
+        if let Some(sync) = self.input_sync() {
+            sync.detach(peer);
+        }
     }
 
     /// Starts carrying notifications through the given backend. Called once
@@ -711,6 +716,30 @@ impl Daemon {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(sync.clone());
         sync
+    }
+    /// Starts the input family (milestone 7) with whichever sides the
+    /// platform has: a capture (this device's own keyboard and mouse), an
+    /// injector (its input system), or both. Called once at startup.
+    pub fn attach_input(
+        self: &Arc<Self>,
+        capture: Option<Arc<dyn crate::input::Capture>>,
+        inject: Option<Arc<dyn crate::input::Inject>>,
+    ) -> Arc<crate::input::InputSync> {
+        let sync = crate::input::InputSync::start(self.clone(), capture, inject);
+        *self
+            .input
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(sync.clone());
+        sync
+    }
+
+    /// The input synchroniser, if input is attached.
+    #[must_use]
+    pub fn input_sync(&self) -> Option<Arc<crate::input::InputSync>> {
+        self.input
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 
     /// The file synchroniser, if files were attached.

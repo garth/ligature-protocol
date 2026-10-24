@@ -20,6 +20,9 @@ pub const FAKE_CLIPBOARD_ENV: &str = "LIGATURE_FAKE_CLIPBOARD";
 /// Set to `1` to use the in-memory fake notification backend instead of the
 /// platform's: for the loopback end-to-end run.
 pub const FAKE_NOTIFICATIONS_ENV: &str = "LIGATURE_FAKE_NOTIFICATIONS";
+/// Set to `1` to attach the in-memory input capture and injector (milestone
+/// 7), so `lpctl input` can be driven without a platform backend.
+pub const FAKE_INPUT_ENV: &str = "LIGATURE_FAKE_INPUT";
 
 /// The platform's notification backend, if this platform has one; icons it
 /// writes for the platform go under `locations`.
@@ -117,6 +120,16 @@ pub async fn run(
         }
         None => tracing::warn!("no home directory: the files capability is not offered"),
     }
+
+    if std::env::var_os(FAKE_INPUT_ENV).is_some_and(|v| v == "1") {
+        tracing::warn!("using the in-memory fake input capture and injector ({FAKE_INPUT_ENV}=1)");
+        daemon.attach_input(
+            Some(crate::input::FakeCapture::new(1920, 1080)),
+            Some(crate::input::FakeInject::new(1920, 1080)),
+        );
+    }
+    // The platform capture and injector arrive with LP-143 (Linux) and
+    // LP-144 (macOS); until then a daemon without the fake offers no input.
 
     spawn_connection_events(daemon.clone(), events);
     spawn_discovery(daemon.clone());

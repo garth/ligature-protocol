@@ -245,10 +245,10 @@ every access unit started with a delimiter and every keyframe carried both sets.
 has no working VideoToolbox encoder, `libx264` is used, and without ffmpeg the Mac does not
 share.
 
-**A pacer repeats the newest frame.** ScreenCaptureKit delivers a frame only when the
-display changed. A thread writes the newest frame into ffmpeg at the agreed rate, the same
-one again while the screen is still, so the encoder's keyframe every second reaches a viewer
-who joins late, as `pipewiresrc`'s keepalive does on Linux.
+**A pacer writes each new frame.** ScreenCaptureKit delivers a frame only when the display
+changed. A thread writes each new frame into ffmpeg, at most at the agreed rate, and the last
+one again once a second while the screen is still, so the encoder's keyframe every second
+still comes, as `pipewiresrc`'s keepalive does on Linux.
 
 **Consent is Screen Recording, applied on the next start.** A share asked for without the
 permission asks macOS for it and is refused for `consent`; macOS applies the permission to

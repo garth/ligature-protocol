@@ -3,10 +3,12 @@
 //!
 //! ScreenCaptureKit hands the daemon BGRA frames of the share's size, the
 //! cursor drawn in, but only when something on the display changed. A pacer
-//! thread writes the newest frame into ffmpeg's stdin at the agreed rate, so
-//! a still screen keeps its stream going and a viewer who joins late gets a
-//! keyframe within a second. The encoder's output goes through the same
-//! split into frames as on Linux ([`crate::screen::encode`]).
+//! thread writes each new frame into ffmpeg's stdin, at most at the agreed
+//! rate, and the last one again once a second while the screen is still, so
+//! the stream keeps going and a keyframe comes every second without the
+//! viewer decoding the full rate of an unchanged screen. The encoder's
+//! output goes through the same split into frames as on Linux
+//! ([`crate::screen::encode`]).
 //!
 //! ScreenCaptureKit serves only a process with the Screen Recording
 //! permission, which macOS grants to `Ligature.app` (LP-94). The first share
@@ -33,6 +35,8 @@ use crate::screen::{Capture, Captured, Settings, Share, ShareControl};
 /// How often ffmpeg's encoders are looked at again, for an ffmpeg
 /// installed while the daemon runs.
 const PROBE_EVERY: Duration = Duration::from_secs(60);
+/// How often the pacer writes the last frame again while the screen is still.
+const STILL_REPEAT: Duration = Duration::from_secs(1);
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -178,14 +182,17 @@ impl Capture for MacScreen {
         let (control, mut control_rx) = mpsc::unbounded_channel::<ShareControl>();
         let stopping = Arc::new(AtomicBool::new(false));
         let latest: Arc<Mutex<Option<Vec<u8>>>> = Arc::new(Mutex::new(None));
+        // A picture has come since the pacer last wrote one.
+        let fresh = Arc::new(AtomicBool::new(false));
         let frame_bytes = settings.width as usize * settings.height as usize * 4;
 
         let on_frame = {
-            let latest = latest.clone();
+            let (latest, fresh) = (latest.clone(), fresh.clone());
             let (w, h) = (settings.width, settings.height);
             Box::new(move |pixels: &[u8], width: u32, height: u32| {
                 if (width, height) == (w, h) {
                     *lock(&latest) = Some(pixels.to_vec());
+                    fresh.store(true, Ordering::SeqCst);
                 }
             }) as sck::OnFrame
         };
@@ -241,8 +248,9 @@ impl Capture for MacScreen {
             return Err(RefuseReason::NoEncoder);
         }
 
-        // The pacer: the newest frame into the encoder at the agreed rate,
-        // the same frame again while the screen is still.
+        // The pacer: a new picture into the encoder at most at the agreed
+        // rate, and the last one again once a second while the screen is
+        // still, so the encoder's keyframe a second still comes.
         {
             let stopping = stopping.clone();
             let latest = latest.clone();
@@ -251,12 +259,16 @@ impl Capture for MacScreen {
                 .name("screen-pacer".into())
                 .spawn(move || {
                     let mut next = Instant::now();
+                    let mut written: Option<Instant> = None;
                     while !stopping.load(Ordering::SeqCst) {
-                        let frame = lock(&latest).clone();
-                        if let Some(frame) = frame.filter(|f| f.len() == frame_bytes)
-                            && raw.write_all(&frame).is_err()
-                        {
-                            break;
+                        let due = fresh.swap(false, Ordering::SeqCst)
+                            || written.is_none_or(|at| at.elapsed() >= STILL_REPEAT);
+                        let frame = if due { lock(&latest).clone() } else { None };
+                        if let Some(frame) = frame.filter(|f| f.len() == frame_bytes) {
+                            if raw.write_all(&frame).is_err() {
+                                break;
+                            }
+                            written = Some(Instant::now());
                         }
                         next += period;
                         let now = Instant::now();

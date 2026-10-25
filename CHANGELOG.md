@@ -70,6 +70,8 @@ release workflow publishes the section as the release notes with the installers.
 
 ### Fixed
 
+- A Mac's share writes a frame when the screen changes and the last one again once a second,
+  instead of the full frame rate of a still screen (LP-150).
 - Watching a still screen no longer costs the viewer the full frame rate: a Linux share sends
   a frame when the screen changes and the last one again once a second, with a keyframe every
   second by the clock, and `lpview` skips a repeated picture and works out its scaling once

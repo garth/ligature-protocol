@@ -292,8 +292,9 @@ whether it is a `key` frame, whether this chunk is the `last`, and up to 256 KiB
 the bound of [ADR 0036](../adr/0036-stream-framing-and-message-typing.md) and the bound
 stands as it is. The sharer paces frames to the agreed rate and, when the stream's flow
 control holds it back, drops frames rather than queues them, so the picture stays current
-rather than complete; it sends a keyframe every few seconds and whenever the viewer sends
-`keyframe`, after a loss or a late start. `stop` from either side, with a reason (`viewer`,
+rather than complete; it sends a keyframe at the start, whenever the viewer sends
+`keyframe`, after a loss or a late start, and after frames it dropped, and need send no
+other, since a keyframe codes again what did not change. `stop` from either side, with a reason (`viewer`,
 `sharer`, `consent`, `error`), ends the share and then the stream; a stream that ends
 without one is a stop too, and either way the sharer ends its capture at once.
 

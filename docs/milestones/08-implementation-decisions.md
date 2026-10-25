@@ -74,16 +74,48 @@ code, and scaling to the agreed size; its raw BGRx output feeds ffmpeg. How ofte
 goes is a decision below. VA-API is used when a two-frame test encode on the render node
 succeeds, which it does not on this machine, so `libx264` is what was measured.
 
-**x264 holds a quality, under a cap with room for a keyframe.** The first settings aimed at
-0.08 bits per pixel per frame on the `ultrafast` preset, capped at that rate with half a
-second of buffer, and the owner found the picture's quality very low. A keyframe of a screen
-of text needs more than that buffer holds, so every keyframe came out blurred. On a 1440x900
-screen of text with a keyframe each second, the worst frame measured 31.6 dB PSNR. x264 now
-encodes at CRF 18 on `superfast` with `zerolatency`, which measured 47.4 dB at the worst frame
-in a smaller stream, at the same encoding speed. Every encoder is capped at four times that
-old rate with a buffer of a second; VA-API and VideoToolbox, which take no CRF, still aim at
-the old rate. A still screen costs next to nothing either way, since a frame goes only when it
-changes.
+**x264 holds its quantiser.** The first settings aimed at 0.08 bits per pixel per frame on
+the `ultrafast` preset, capped at that rate with half a second of buffer, and the owner found
+the picture's quality very low: a keyframe of a screen of text needs more than that buffer
+holds, so every keyframe came out blurred (31.6 dB PSNR at the worst frame of a 1440x900 screen
+of text). CRF 18 on `superfast` with `zerolatency` brought the worst frame to 47.4 dB, and the
+owner then saw the picture shift every second as its artifacts changed. Under rate control
+x264 moves the quantiser from frame to frame, so it codes unchanged text again with new
+artifacts: on a screen of text with a ticking clock, the part that never changed differed
+from the frame before in 16 of 79 frames. At a constant quantiser (`-qp 18`) an unchanged
+block is copied from the frame before, and between keyframes that part never changed; the
+worst frame measured 55 dB, in a stream smaller than CRF 18's, and a busy moving picture cost
+about the same (11 Mbit/s at 1440x900 and 30 frames a second, against 10.4 at CRF 18). x264
+takes no cap, which would move the quantiser again; VA-API and VideoToolbox still aim at 0.08
+bits per pixel per frame under a cap of four times that with a buffer of a second.
+
+**Keyframes are asked for, not timed.** A keyframe codes the whole picture again, so a
+keyframe a second redrew every second whatever had not changed. The share now has one at its
+start and whenever one is asked for: by the viewer, which joins late or lost its decoder,
+by the sync after it dropped frames, and by the watchdog's restart; ffmpeg's `-g` keeps one
+every 10,000 frames as a safety net. This is what the other screen-sharing encoders do:
+neatvnc, wayvnc's H.264 encoder, sets an endless group of pictures and forces a keyframe for
+a new client, a request or a new capture, and Chrome Remote Desktop's VP8 and VP9 encoders
+set a keyframe distance of 10,000 frames, since the transport is reliable, and force one on
+request. A child ffmpeg cannot be asked for a keyframe, and a new one begins with one, so a
+request starts the encoder again on the last picture (`LiveEncoder`): the daemon now copies
+the raw frames into ffmpeg a whole picture at a time, rather than piping GStreamer or the
+helper straight into it, so it can swap the encoder between pictures. Requests that come
+while it starts are answered by that keyframe. In the nested compositor the keyframe came
+about 100 ms after it was asked for.
+
+**The last picture of a change is given again.** Once frames came only when the screen
+changed, a change showed only with the frame after it: the daemon cuts the stream at the
+delimiter before each frame, so it knows a frame has ended only when the next begins, and the
+ffmpeg command line in `lpview` holds a decoded picture back until the next packet too (the
+library alone does not: `ffprobe` on the same stream decoded each frame as it came). Fed a
+frame every second and a half, the command-line decoder gave each picture out with the
+second frame after it, so the last picture of a change waited for the once-a-second repeat
+or longer. The encoder is now given the last picture of a change again when nothing newer
+came within one and a half frames of the share's rate, and never sooner than 50 ms; that copy
+pushes the held frame out at both ends, and since nothing changed at a constant quantiser it
+codes to almost nothing and draws nothing new. A picture the same as the last, such as the
+keepalive, is encoded but not given again.
 
 **A stalled capture is started again.** On the owner's machine a share froze about 25 seconds
 in: `pipewiresrc` held the stream's buffers and waited for one that never came, while
@@ -100,10 +132,7 @@ expects the frames to resume with a keyframe, which they did after five seconds.
 **Frames are split at access unit delimiters.** ffmpeg writes an Annex B byte stream with a
 delimiter before every frame (`aud=1`, or `-aud 1` on VA-API) and the parameter sets before
 every keyframe (`repeat-headers=1`, or the `dump_extra` filter), and the daemon cuts the
-stream at the delimiters; a unit with an IDR slice is a keyframe. A keyframe comes every
-second by wall time (`-force_key_frames` on frames stamped with the time they arrived)
-because a child process cannot be asked for one: the sync's keyframe request is logged and
-answered by the next periodic one, so a dropped frame costs at most a second of picture.
+stream at the delimiters; a unit with an IDR slice is a keyframe.
 
 **A frame goes when the screen changes, and once a second while it is still.** Streaming a
 still screen at the full rate made the viewer decode and draw 30 pictures a second of nothing:
@@ -113,12 +142,11 @@ of 150 decoded pictures of one still image differed from the one before. So the 
 padding. On Linux the compositor sends a frame when the screen changes, `videorate` with
 `drop-only` and `max-rate` drops any beyond the share's rate and adds none, and
 `keepalive-time` sends the last frame again once a second; on the Mac the pacer does the same
-(below). ffmpeg stamps each frame with its arrival (`-use_wallclock_as_timestamps`), encodes it
-once (`-fps_mode passthrough`) and forces a keyframe a second or more after the last, with a
-cap of twice the rate in frames should a forced one not come. A unit test feeds frames at
-uneven times and expects one frame out for each and keyframes a second apart; GStreamer, fed
-60 frames in two seconds, passed 20 at a cap of 10. The screencopy helper still copies at the
-agreed rate.
+(below). ffmpeg stamps each frame with its arrival (`-use_wallclock_as_timestamps`) and
+encodes it once (`-fps_mode passthrough`). GStreamer, fed 60 frames in two seconds, passed 20
+at a cap of 10. The screencopy helper still copies at the agreed rate. Stamping by arrival
+rounds to the share's rate, so two frames in one frame's time get the same stamp and ffmpeg
+logs "non monotonically increasing dts"; the frames are still written and decode.
 
 **`wlr-screencopy` is the fallback, and the way the share is tested.** Where the portal or
 GStreamer's PipeWire element is missing, or `LIGATURE_SCREEN_CAPTURE=screencopy` is set,

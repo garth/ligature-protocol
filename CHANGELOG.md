@@ -70,14 +70,18 @@ release workflow publishes the section as the release notes with the installers.
 
 ### Fixed
 
-- A shared screen's text is sharp: x264 encodes at a constant quality instead of a low fixed
-  rate, and every encoder has room for a keyframe, which had been blurred each second (LP-149).
+- A shared screen's text is sharp and stays still: x264 encodes at a constant quantiser
+  instead of a low fixed rate, so what did not change is not coded again, and a keyframe comes
+  at the start and when one is asked for rather than every second, which had redrawn the
+  picture with new artifacts each time (LP-149).
+- A change on a shared Linux screen shows at once: the last picture of a change is encoded
+  again after a frame and a half, which pushes out the frame the daemon and `lpview`'s
+  decoder had held until the next one, up to a second later (LP-149).
 - A Mac's share writes a frame when the screen changes and the last one again once a second,
   instead of the full frame rate of a still screen (LP-150).
 - Watching a still screen no longer costs the viewer the full frame rate: a Linux share sends
-  a frame when the screen changes and the last one again once a second, with a keyframe every
-  second by the clock, and `lpview` skips a repeated picture and works out its scaling once
-  per redraw (LP-149).
+  a frame when the screen changes and the last one again once a second, and `lpview` skips a
+  repeated picture and works out its scaling once per redraw (LP-149).
 - `lpview` no longer prints ffmpeg's "Broken pipe" errors when its window closes or it is
   stopped with Ctrl+C, which now closes it as the window's close button does (LP-150).
 - Linux: a screen share whose capture stalls (seen as PipeWire's stream running out of buffers)

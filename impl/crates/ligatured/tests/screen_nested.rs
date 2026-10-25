@@ -180,7 +180,8 @@ async fn a_nested_compositor_s_output_is_shared_encoded_and_decodes() {
         (640, expect_h)
     );
 
-    // Two seconds of frames: the first is a keyframe, keyframes recur.
+    // Two seconds of frames: the first is a keyframe, and no other comes
+    // unasked.
     let mut stream = Vec::new();
     let (mut frames, mut keys) = (0, 0);
     let started = Instant::now();
@@ -206,7 +207,29 @@ async fn a_nested_compositor_s_output_is_shared_encoded_and_decodes() {
         stream.len()
     );
     assert!(frames >= 20, "{frames} frames in time");
-    assert!(keys >= 2, "a keyframe every second");
+    assert_eq!(keys, 1, "keyframes are asked for, not timed");
+
+    // A keyframe asked for comes from the encoder started again, and the
+    // stream goes on from it.
+    watching.control.send(ShareControl::Keyframe).unwrap();
+    let asked = Instant::now();
+    loop {
+        match tokio::time::timeout(Duration::from_secs(5), watching.frames.recv()).await {
+            Ok(Some(Viewed::Frame { key, bytes, .. })) => {
+                frames += 1;
+                stream.extend_from_slice(&bytes);
+                if key {
+                    break;
+                }
+            }
+            other => panic!("expected the keyframe, got {other:?}"),
+        }
+    }
+    eprintln!("keyframe {:?} after it was asked for", asked.elapsed());
+    assert!(
+        asked.elapsed() < Duration::from_secs(1),
+        "the keyframe came soon"
+    );
 
     // The stream decodes as the agreed picture.
     let dir = tempfile::tempdir().unwrap();

@@ -1,34 +1,53 @@
 //! H.264 encoding by ffmpeg, the same on every desktop (milestone 8): the
 //! encoder this machine has, the arguments that turn raw frames on stdin into
 //! an Annex B stream on stdout with a delimiter before every frame and the
-//! parameter sets before every keyframe, and the split of that stream into
-//! frames. Linux feeds it from the portal or the screencopy helper (LP-149),
-//! the Mac from ScreenCaptureKit (LP-150).
+//! parameter sets before every keyframe, the split of that stream into
+//! frames, and the [`LiveEncoder`] that feeds it and starts it again for a
+//! keyframe. Linux feeds it from the portal or the screencopy helper
+//! (LP-149), the Mac from ScreenCaptureKit (LP-150).
 
-use std::io::Read;
+use std::io::{Read, Write as _};
 use std::path::Path;
-use std::process::{Command, Stdio};
-use std::sync::Arc;
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
 
-use lp_core::screen::StopReason;
+use lp_core::screen::{RefuseReason, StopReason};
 use tokio::sync::mpsc;
 
 use crate::screen::{Captured, EncodedFrame, Settings};
 
 /// Bits per pixel per frame a hardware encoder aims for.
 const BITS_PER_PIXEL: f64 = 0.08;
-/// The most any encoder may send, as a multiple of [`bit_rate`], over a
-/// buffer of one second: room for a sharp keyframe of a screen of text.
+/// The most a hardware encoder may send, as a multiple of [`bit_rate`],
+/// over a buffer of one second: room for a sharp keyframe of a screen of
+/// text.
 const CAP_FACTOR: u64 = 4;
-/// x264's constant quality: it keeps text sharp, and a still screen costs
-/// next to nothing since frames come only when it changes.
-pub const X264_CRF: &str = "18";
+/// x264's constant quantiser. Held constant, a part of the screen that did
+/// not change is copied from the frame before and never coded again, so
+/// settled text keeps the same pixels; a quality held by rate control
+/// instead moves the quantiser from frame to frame and redraws the text with
+/// new artifacts.
+pub const X264_QP: &str = "18";
+/// The most frames between keyframes, as a safety net: keyframes come at
+/// the start of an encoder and when one is asked for ([`LiveEncoder`]).
+pub const KEYFRAME_BACKSTOP: u32 = 10_000;
+/// The least time after a new picture before the encoder is given it again
+/// when nothing newer came, and never under one and a half frames of the
+/// share's rate, so the copy has a timestamp of its own. The daemon knows a
+/// frame has ended only when the next one begins, and ffmpeg's decoder in
+/// `lpview` holds a picture back until the next one too, so the last
+/// picture of a change would otherwise wait for the next change or the
+/// repeat a second later.
+pub const SETTLE: Duration = Duration::from_millis(50);
 
-/// ffmpeg's expression for a keyframe at the first frame and then at the
-/// first frame a second or more after the last keyframe, by wall time: the
-/// frames come only when the screen changes, so a count of frames is no clock.
-pub const KEYFRAME_EVERY_SECOND: &str = "expr:isnan(prev_forced_t)+gte(t-prev_forced_t,1)";
+/// How long [`LiveEncoder`] waits to settle a picture at `rate` frames a
+/// second.
+#[must_use]
+pub fn settle_after(rate: u32) -> Duration {
+    (Duration::from_secs(1) * 3 / (2 * rate.max(1))).max(SETTLE)
+}
 
 /// The H.264 encoder ffmpeg offers here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,9 +81,11 @@ pub struct RawInput {
 
 /// The arguments of the ffmpeg that encodes raw frames on stdin into an
 /// H.264 byte stream on stdout, scaled to the share's size. Frames come as
-/// the screen changes, at most at the share's rate and at least once a
-/// second: each is stamped with the wall time it arrived and encoded once,
-/// never repeated to fill the rate, and a keyframe comes every second.
+/// the screen changes, at most at the share's rate: each is stamped with the
+/// wall time it arrived and encoded once, never repeated to fill the rate.
+/// The first frame is a keyframe, and the next only after
+/// [`KEYFRAME_BACKSTOP`] frames, since a new encoder makes one when it is
+/// asked for.
 #[must_use]
 pub fn encoder_args(encoder: Encoder, input: &RawInput, settings: &Settings) -> Vec<String> {
     let rate = settings.frame_rate.max(1);
@@ -137,8 +158,8 @@ pub fn encoder_args(encoder: Encoder, input: &RawInput, settings: &Settings) -> 
                 "superfast",
                 "-tune",
                 "zerolatency",
-                "-crf",
-                X264_CRF,
+                "-qp",
+                X264_QP,
                 "-pix_fmt",
                 "yuv420p",
                 "-x264-params",
@@ -147,27 +168,23 @@ pub fn encoder_args(encoder: Encoder, input: &RawInput, settings: &Settings) -> 
             .map(str::to_owned),
         ),
     }
-    // The hardware encoders aim for a rate; x264 holds a quality instead.
+    // The hardware encoders aim for a rate under a cap; x264 holds its
+    // quantiser instead, which a cap would move.
     if encoder != Encoder::X264 {
-        args.extend(["-b:v".to_owned(), br.to_string()]);
+        let cap = (br * CAP_FACTOR).to_string();
+        args.extend(
+            ["-b:v", &br.to_string(), "-maxrate", &cap, "-bufsize", &cap].map(str::to_owned),
+        );
     }
-    let cap = (br * CAP_FACTOR).to_string();
-    // The longest run without a keyframe, should the forced ones not come.
-    let gop = (rate * 2).to_string();
+    let gop = KEYFRAME_BACKSTOP.to_string();
     args.extend(
         [
-            "-force_key_frames",
-            KEYFRAME_EVERY_SECOND,
             "-g",
             &gop,
             "-bf",
             "0",
             "-fps_mode",
             "passthrough",
-            "-maxrate",
-            &cap,
-            "-bufsize",
-            &cap,
             "-flush_packets",
             "1",
             "-f",
@@ -362,6 +379,287 @@ pub fn read_frames(
         .map(|_| ())
 }
 
+/// A reader that notes when it last read anything, for a share's watchdog.
+pub struct Noting<R> {
+    inner: R,
+    last: Arc<Mutex<Instant>>,
+}
+
+impl<R> Noting<R> {
+    /// Notes the reads of `inner` in `last`.
+    pub fn new(inner: R, last: Arc<Mutex<Instant>>) -> Self {
+        Self { inner, last }
+    }
+}
+
+impl<R: Read> Read for Noting<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        if n > 0 {
+            *lock(&self.last) = Instant::now();
+        }
+        Ok(n)
+    }
+}
+
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// What goes into the running encoder.
+struct Feed {
+    stdin: Option<ChildStdin>,
+    input: RawInput,
+    /// The last picture written, given again to settle it and to a new
+    /// encoder.
+    last: Vec<u8>,
+    /// Counts pictures that differ from the one before.
+    changed: u64,
+    /// The count when the last picture was settled.
+    settled: u64,
+    /// A keyframe was asked for and the encoder is not yet started again.
+    want_key: bool,
+}
+
+/// The running ffmpeg, and the flag that keeps its end from being taken for
+/// a failure once it is replaced or stopped.
+struct Process {
+    child: Option<Child>,
+    generation: Arc<AtomicBool>,
+}
+
+/// A share's ffmpeg, fed one raw picture at a time. ffmpeg cannot be asked
+/// for a keyframe once it runs, and a new encoder begins with one, so a
+/// keyframe request starts it again on the last picture; requests that come
+/// while it starts are answered by that keyframe. A thread of its own does
+/// the restarts and gives the encoder the last picture of a change again
+/// after [`settle_after`], so that picture is not held back at either end.
+pub struct LiveEncoder {
+    encoder: Encoder,
+    settings: Settings,
+    frames: mpsc::UnboundedSender<Captured>,
+    output: Arc<Mutex<Instant>>,
+    stopped: AtomicBool,
+    feed: Mutex<Feed>,
+    fed: Condvar,
+    process: Mutex<Process>,
+}
+
+impl std::fmt::Debug for LiveEncoder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("LiveEncoder")
+    }
+}
+
+impl LiveEncoder {
+    /// Starts the encoder for pictures of `input`, its frames sent to
+    /// `frames`, and notes in `output` when it last wrote anything.
+    ///
+    /// # Errors
+    ///
+    /// `NoEncoder` when ffmpeg or the threads cannot be started.
+    pub fn start(
+        encoder: Encoder,
+        input: RawInput,
+        settings: &Settings,
+        frames: mpsc::UnboundedSender<Captured>,
+        output: Arc<Mutex<Instant>>,
+    ) -> Result<Arc<Self>, RefuseReason> {
+        let this = Arc::new(Self {
+            encoder,
+            settings: settings.clone(),
+            frames,
+            output,
+            stopped: AtomicBool::new(false),
+            feed: Mutex::new(Feed {
+                stdin: None,
+                input,
+                last: Vec::new(),
+                changed: 0,
+                settled: 0,
+                want_key: false,
+            }),
+            fed: Condvar::new(),
+            process: Mutex::new(Process {
+                child: None,
+                generation: Arc::new(AtomicBool::new(true)),
+            }),
+        });
+        {
+            let mut feed = lock(&this.feed);
+            let input = feed.input.clone();
+            feed.stdin = Some(this.spawn(&input)?);
+        }
+        let worker = this.clone();
+        std::thread::Builder::new()
+            .name("screen-feeder".into())
+            .spawn(move || worker.work())
+            .map_err(|e| {
+                tracing::warn!(%e, "cannot start the screen feeder");
+                this.stop();
+                RefuseReason::NoEncoder
+            })?;
+        Ok(this)
+    }
+
+    /// Starts an ffmpeg for `input` in place of the running one, which is
+    /// let go first, so the end of its stream is not taken for a failure;
+    /// returns its stdin.
+    fn spawn(&self, input: &RawInput) -> Result<ChildStdin, RefuseReason> {
+        let mut process = lock(&self.process);
+        if self.stopped.load(Ordering::SeqCst) {
+            return Err(RefuseReason::NoEncoder);
+        }
+        process.generation.store(true, Ordering::SeqCst);
+        if let Some(mut old) = process.child.take() {
+            let _ = old.kill();
+            let _ = old.wait();
+        }
+        let mut child = Command::new("ffmpeg")
+            .args(encoder_args(self.encoder, input, &self.settings))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .map_err(|e| {
+                tracing::warn!(%e, "cannot start ffmpeg");
+                RefuseReason::NoEncoder
+            })?;
+        let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(RefuseReason::NoEncoder);
+        };
+        let generation = Arc::new(AtomicBool::new(false));
+        if let Err(e) = read_frames(
+            Noting::new(stdout, self.output.clone()),
+            self.frames.clone(),
+            generation.clone(),
+        ) {
+            tracing::warn!(%e, "cannot read the encoder");
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(RefuseReason::NoEncoder);
+        }
+        process.child = Some(child);
+        process.generation = generation;
+        Ok(stdin)
+    }
+
+    /// Writes a picture of the input's size into the encoder.
+    ///
+    /// # Errors
+    ///
+    /// The write's error, once the encoder is gone.
+    pub fn write(&self, picture: &[u8]) -> std::io::Result<()> {
+        let mut feed = lock(&self.feed);
+        let stdin = feed
+            .stdin
+            .as_mut()
+            .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::BrokenPipe))?;
+        stdin.write_all(picture)?;
+        if feed.last != picture {
+            feed.last.clear();
+            feed.last.extend_from_slice(picture);
+            feed.changed += 1;
+            self.fed.notify_all();
+        }
+        Ok(())
+    }
+
+    /// Asks for a keyframe: the encoder is started again on the last picture
+    /// by the feeder thread.
+    pub fn keyframe(&self) {
+        lock(&self.feed).want_key = true;
+        self.fed.notify_all();
+    }
+
+    /// Starts the encoder again for pictures of `input`, with a keyframe;
+    /// the next pictures come in through [`Self::write`]. Blocks while
+    /// ffmpeg starts.
+    ///
+    /// # Errors
+    ///
+    /// `NoEncoder` when ffmpeg cannot be started.
+    pub fn restart(&self, input: RawInput) -> Result<(), RefuseReason> {
+        let mut feed = lock(&self.feed);
+        if feed.input != input {
+            feed.last.clear();
+        }
+        feed.stdin = Some(self.spawn(&input)?);
+        feed.input = input;
+        Ok(())
+    }
+
+    /// Stops the encoder for good; its end is not taken for a failure.
+    pub fn stop(&self) {
+        self.stopped.store(true, Ordering::SeqCst);
+        self.fed.notify_all();
+        let mut process = lock(&self.process);
+        process.generation.store(true, Ordering::SeqCst);
+        if let Some(mut child) = process.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+
+    /// The feeder thread: restarts for keyframes and settles the last
+    /// picture of a change.
+    fn work(&self) {
+        let mut feed = lock(&self.feed);
+        loop {
+            if self.stopped.load(Ordering::SeqCst) {
+                return;
+            }
+            if feed.want_key {
+                feed.want_key = false;
+                // A new encoder whose first picture is the last one: a
+                // keyframe of the screen as it is, then settled as any.
+                let input = feed.input.clone();
+                match self.spawn(&input) {
+                    Ok(mut stdin) => {
+                        tracing::debug!("encoder started again for a keyframe");
+                        if !feed.last.is_empty() && stdin.write_all(&feed.last).is_ok() {
+                            feed.changed += 1;
+                        }
+                        feed.stdin = Some(stdin);
+                    }
+                    Err(_) => {
+                        if !self.stopped.load(Ordering::SeqCst) {
+                            let _ = self.frames.send(Captured::Ended(StopReason::Error));
+                        }
+                        return;
+                    }
+                }
+                continue;
+            }
+            if feed.changed != feed.settled {
+                let seen = feed.changed;
+                feed = self
+                    .fed
+                    .wait_timeout_while(feed, settle_after(self.settings.frame_rate), |f| {
+                        f.changed == seen && !f.want_key && !self.stopped.load(Ordering::SeqCst)
+                    })
+                    .map_or_else(|e| e.into_inner().0, |(g, _)| g);
+                if feed.changed == seen && !feed.want_key && !self.stopped.load(Ordering::SeqCst) {
+                    let Feed { stdin, last, .. } = &mut *feed;
+                    if let Some(stdin) = stdin.as_mut() {
+                        let _ = stdin.write_all(last);
+                    }
+                    feed.settled = seen;
+                }
+                continue;
+            }
+            feed = self
+                .fed
+                .wait_while(feed, |f| {
+                    f.changed == f.settled && !f.want_key && !self.stopped.load(Ordering::SeqCst)
+                })
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -389,17 +687,28 @@ mod tests {
         ));
         assert!(args.contains("-vf scale=1440:900,format=nv12 -c:v h264_videotoolbox"));
         assert!(args.contains("-bsf:v dump_extra=freq=keyframe,h264_metadata=aud=insert"));
-        assert!(args.contains("-g 60"));
+        assert!(args.contains(&format!("-g {KEYFRAME_BACKSTOP}")));
+        assert!(args.contains("-b:v 3110400 -maxrate 12441600 -bufsize 12441600"));
         assert!(args.contains("-bf 0"));
         assert!(args.ends_with("-f h264 pipe:1"));
     }
 
-    /// Frames fed at uneven times, as a screen that changes now and then
-    /// gives them: each comes out once, none is added, and keyframes come at
-    /// the start and then a second or more apart by wall time.
     #[test]
-    fn frames_are_encoded_as_they_come_with_a_keyframe_every_second() {
-        use std::io::Write as _;
+    fn a_picture_settles_after_a_frame_and_a_half_and_never_sooner_than_50_ms() {
+        assert_eq!(settle_after(30), Duration::from_millis(50));
+        assert_eq!(settle_after(60), Duration::from_millis(50));
+        assert_eq!(settle_after(15), Duration::from_millis(100));
+        assert_eq!(settle_after(0), Duration::from_millis(1500));
+    }
+
+    /// Pictures fed now and then, as a screen that changes gives them: each
+    /// change comes out within [`SETTLE`] and a little, rather than waiting
+    /// for the next picture; a picture the same as the last is not given
+    /// again; the only keyframes are the first and the one asked for, which
+    /// starts the encoder again on the last picture; and the stop is not taken
+    /// for a failure.
+    #[test]
+    fn a_live_encoder_settles_each_change_and_makes_a_keyframe_when_asked() {
         if probe_encoder().is_none() {
             eprintln!("skipped: ffmpeg has no H.264 encoder here");
             return;
@@ -418,44 +727,55 @@ mod tests {
             frame_rate: 30,
             viewer: "test".to_owned(),
         };
-        let mut child = Command::new("ffmpeg")
-            .args(encoder_args(Encoder::X264, &input, &settings))
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("ffmpeg runs");
-        let mut stdin = child.stdin.take().unwrap();
-        let mut stdout = child.stdout.take().unwrap();
-        let reader = std::thread::spawn(move || {
-            let mut out = Vec::new();
-            let _ = stdout.read_to_end(&mut out);
-            out
-        });
-        // Seconds from the start at which a frame arrives.
-        let times = [0.0, 0.05, 0.1, 0.6, 1.2, 1.25, 2.4];
-        let start = std::time::Instant::now();
-        for (i, t) in times.iter().enumerate() {
-            let due = std::time::Duration::from_secs_f64(*t);
-            if let Some(wait) = due.checked_sub(start.elapsed()) {
-                std::thread::sleep(wait);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let output = Arc::new(Mutex::new(Instant::now()));
+        let live = LiveEncoder::start(Encoder::X264, input, &settings, tx, output)
+            .expect("the encoder starts");
+        let picture = |shade: u8| vec![shade; (w * h * 4) as usize];
+        let mut keys = Vec::new();
+        // Waits until `n` frames have come in all, then a little more to see
+        // that no more come.
+        let mut until = |n: usize, keys: &mut Vec<bool>| {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while keys.len() < n && Instant::now() < deadline {
+                match rx.try_recv() {
+                    Ok(Captured::Frame(f)) => keys.push(f.key),
+                    Ok(Captured::Ended(r)) => panic!("the share ended: {r:?}"),
+                    Err(_) => std::thread::sleep(Duration::from_millis(5)),
+                }
             }
-            let shade = u8::try_from(i * 30).unwrap();
-            stdin.write_all(&vec![shade; (w * h * 4) as usize]).unwrap();
-        }
-        drop(stdin);
-        let stream = reader.join().unwrap();
-        let _ = child.wait();
-        let mut units = AccessUnits::default();
-        let mut frames = units.push(&stream);
-        frames.extend(units.finish());
-        let keys: Vec<f64> = frames
-            .iter()
-            .zip(times)
-            .filter(|(f, _)| is_keyframe(f))
-            .map(|(_, t)| t)
-            .collect();
-        assert_eq!(frames.len(), times.len(), "one frame out for each in");
-        assert_eq!(keys, [0.0, 1.2, 2.4], "keyframes a second apart");
+            std::thread::sleep(SETTLE * 3);
+            while let Ok(c) = rx.try_recv() {
+                match c {
+                    Captured::Frame(f) => keys.push(f.key),
+                    Captured::Ended(r) => panic!("the share ended: {r:?}"),
+                }
+            }
+        };
+        // The first picture comes out once its settling copy follows it.
+        live.write(&picture(0)).unwrap();
+        until(1, &mut keys);
+        assert_eq!(keys, [true]);
+        // A change: the settling copy of the first, then the change.
+        live.write(&picture(90)).unwrap();
+        until(3, &mut keys);
+        assert_eq!(keys, [true, false, false]);
+        // The same picture again is encoded but not settled: its frame waits.
+        live.write(&picture(90)).unwrap();
+        until(4, &mut keys);
+        assert_eq!(keys, [true, false, false, false]);
+        // A keyframe asked for: a new encoder on the last picture.
+        live.keyframe();
+        until(5, &mut keys);
+        assert_eq!(keys, [true, false, false, false, true]);
+        live.write(&picture(180)).unwrap();
+        until(7, &mut keys);
+        assert_eq!(keys, [true, false, false, false, true, false, false]);
+        live.stop();
+        std::thread::sleep(SETTLE * 4);
+        assert!(
+            !matches!(rx.try_recv(), Ok(Captured::Ended(_))),
+            "a stop is no failure"
+        );
     }
 }

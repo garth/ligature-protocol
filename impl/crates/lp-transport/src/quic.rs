@@ -171,6 +171,12 @@ impl Endpoint {
     pub fn close(&self) {
         self.inner.close(0u32.into(), b"closed");
     }
+
+    /// Waits until every connection has finished closing, so the peers have
+    /// been told before the process goes.
+    pub async fn wait_idle(&self) {
+        self.inner.wait_idle().await;
+    }
 }
 
 /// An authenticated QUIC connection to one peer device.
@@ -178,6 +184,7 @@ impl Endpoint {
 pub struct Connection {
     inner: quinn::Connection,
     peer: PublicKey,
+    established: std::time::Instant,
 }
 
 impl Connection {
@@ -190,7 +197,17 @@ impl Connection {
             .map_err(|_| Error::Transport("peer identity is not a certificate list".to_owned()))?;
         let peer = peer_key(&certs)?;
         tracing::debug!(peer = %peer, remote = %inner.remote_address(), "connection authenticated");
-        Ok(Self { inner, peer })
+        Ok(Self {
+            inner,
+            peer,
+            established: std::time::Instant::now(),
+        })
+    }
+
+    /// How long ago the handshake completed.
+    #[must_use]
+    pub fn age(&self) -> std::time::Duration {
+        self.established.elapsed()
     }
 
     /// The peer's device key, as authenticated by the handshake.

@@ -119,6 +119,16 @@ by the lower binding key wins. The dialler and the acceptor compute the same ans
 both close the same connection. Discovery no longer dials an instance whose key is
 already connected, which removes most repeat dials at the source.
 
+**Amended (LP-158).** Dials cross only when both are made at once, so the tie-break applies
+only while the connection already held is under three seconds old. A dial from the other
+side against an older connection means that side no longer has it: after the Mac's
+daemon restarted, the Linux machine held its own earlier dial, which still looked alive,
+and with the lower key the tie-break dropped every redial from the Mac until the old
+connection timed out, up to 75 s. Such a dial now replaces the old connection. A daemon
+asked to stop (SIGTERM or SIGINT, as systemd and launchd stop it) also closes its
+connections and waits up to a second for the close to go out, so its peers drop them at
+once and redial.
+
 **Also found.** Two capabilities offered at the same moment could lose each other's
 entry, since the registry read, changed and wrote its list without holding anything
 across the change; the phone's manifest then lacked the clipboard one run in three.

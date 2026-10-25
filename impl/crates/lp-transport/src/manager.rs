@@ -12,6 +12,7 @@ use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use lp_core::frame::{MALFORMED_CODE, NOT_ADMITTED_CODE, StreamHeader, UNKNOWN_PURPOSE_CODE};
 use lp_core::{Error, PublicKey};
@@ -19,6 +20,11 @@ use tokio::sync::mpsc;
 
 use crate::quic::{Connection, Endpoint};
 use crate::stream::FramedStream;
+
+/// How young the connection already held to a peer must be for a new one
+/// from the other side to count as a dial that crossed it, and be settled by
+/// the tie-break; against an older one the new connection wins (LP-158).
+const CROSS_WINDOW: Duration = Duration::from_secs(3);
 
 /// A handler for incoming streams of one purpose.
 pub type StreamHandler =
@@ -127,7 +133,11 @@ impl Manager {
         let conn = self.endpoint.connect(addr).await?;
         if let Some(existing) = self.lock().peers.get(conn.peer()).cloned() {
             let alive = existing.raw().close_reason().is_none();
-            if alive && !existing.dialled_by_us() && !self.we_keep_our_dial(conn.peer()) {
+            if alive
+                && !existing.dialled_by_us()
+                && existing.age() < CROSS_WINDOW
+                && !self.we_keep_our_dial(conn.peer())
+            {
                 // Both sides dialled at once and the tie-break keeps theirs.
                 tracing::debug!(peer = %conn.peer(), "already connected; dropping duplicate dial");
                 conn.close();
@@ -300,7 +310,12 @@ impl Manager {
                     return;
                 }
                 let old_alive = old.raw().close_reason().is_none();
-                let cross = conn.dialled_by_us() != old.dialled_by_us();
+                // Dials cross only when both were made at once, so the
+                // connection already held is moments old. A dial from the
+                // other side against an older one means the peer no longer
+                // has it (it restarted, or lost it silently), even though it
+                // looks alive here until it times out (LP-158).
+                let cross = conn.dialled_by_us() != old.dialled_by_us() && old.age() < CROSS_WINDOW;
                 // The same side dialled again: it lost the earlier one (a
                 // restart, a silent drop) or is proving the peer is there, so
                 // the new one wins on both sides. Dials that crossed are

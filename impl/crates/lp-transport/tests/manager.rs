@@ -155,6 +155,100 @@ async fn a_restarted_peer_replaces_the_connection_we_still_hold() {
     assert_eq!(a.peers(), vec![*b_key.public()]);
 }
 
+/// The same restart the other way round (LP-158): we dialled the peer, and
+/// our key is the lower, so the crossed-dial tie-break would keep our dial.
+/// The peer restarts without a close and dials us; our old connection still
+/// looks alive until it times out, yet the peer's dial is not a crossing,
+/// since ours is long established: the new one must replace it at once, or
+/// every redial is dropped until the idle timeout.
+#[tokio::test]
+async fn a_restarted_peer_replaces_our_dial_to_it_even_when_our_key_is_lower() {
+    let (mut a_ep, mut a_key) = endpoint();
+    let (mut b_ep, mut b_key) = endpoint();
+    if a_key.public() > b_key.public() {
+        std::mem::swap(&mut a_ep, &mut b_ep);
+        std::mem::swap(&mut a_key, &mut b_key);
+    }
+    let a_addr = a_ep.local_addr().unwrap();
+    let b_addr = b_ep.local_addr().unwrap();
+    let (a, mut a_events) = Manager::start(a_ep);
+    let (b, _b_events) = Manager::start(b_ep);
+
+    // A dials B; A holds its own dial.
+    let ours = a.connect(b_addr).await.unwrap();
+    match tokio::time::timeout(Duration::from_secs(5), a_events.recv()).await {
+        Ok(Some(Event::Connected(c))) => assert_eq!(c.peer(), b_key.public()),
+        other => panic!("expected Connected, got {other:?}"),
+    }
+    assert!(ours.dialled_by_us());
+    // Long enough that a new dial cannot be one that crossed ours.
+    tokio::time::sleep(Duration::from_secs(4)).await;
+
+    // B restarts without a close and dials A.
+    std::mem::forget(b);
+    let b2_ep = Endpoint::bind("127.0.0.1:0".parse().unwrap(), &b_key).unwrap();
+    let (b2, _b2_events) = Manager::start(b2_ep);
+    let second = b2.connect(a_addr).await.unwrap();
+    assert_eq!(second.peer(), a.endpoint().public());
+
+    match tokio::time::timeout(Duration::from_secs(5), a_events.recv()).await {
+        Ok(Some(Event::Connected(c))) => assert_eq!(c.peer(), b_key.public()),
+        other => panic!("expected Connected for the restarted peer's dial, got {other:?}"),
+    }
+    let now_held = a.peer(b_key.public()).unwrap();
+    assert!(
+        !now_held.dialled_by_us(),
+        "A holds the restarted peer's dial"
+    );
+    // And the connection works: a stream from A reaches B2.
+    let (got_tx, mut got_rx) = mpsc::channel::<GossipHave>(1);
+    b2.on_stream(
+        StreamHeader::GOSSIP,
+        Arc::new(move |_conn, mut stream| {
+            let got_tx = got_tx.clone();
+            Box::pin(async move {
+                let msg: GossipHave = stream.recv().await.unwrap().unwrap();
+                got_tx.send(msg).await.unwrap();
+            })
+        }),
+    );
+    let mut gossip = a.open(b_key.public(), StreamHeader::GOSSIP).await.unwrap();
+    gossip.send(&GossipHave::new(vec![])).await.unwrap();
+    gossip.finish();
+    tokio::time::timeout(Duration::from_secs(5), got_rx.recv())
+        .await
+        .expect("in time")
+        .expect("reached the restarted peer");
+    assert!(b2.peer(a.endpoint().public()).is_some(), "B2 kept its dial");
+    drop(ours);
+}
+
+/// A manager that shuts down tells its peers: they see the connection go at
+/// once instead of holding it for the idle timeout (60 s), so a restarted
+/// daemon is redialled straight away (LP-158).
+#[tokio::test]
+async fn a_shutdown_reaches_the_peer_at_once() {
+    let (a_ep, _a_key) = endpoint();
+    let (b_ep, b_key) = endpoint();
+    let a_addr = a_ep.local_addr().unwrap();
+    let (a, mut a_events) = Manager::start(a_ep);
+    let (b, _b_events) = Manager::start(b_ep);
+    b.connect(a_addr).await.unwrap();
+    match tokio::time::timeout(Duration::from_secs(5), a_events.recv()).await {
+        Ok(Some(Event::Connected(c))) => assert_eq!(c.peer(), b_key.public()),
+        other => panic!("expected Connected, got {other:?}"),
+    }
+    b.shutdown();
+    tokio::time::timeout(Duration::from_secs(1), b.endpoint().wait_idle())
+        .await
+        .expect("the close went out");
+    match tokio::time::timeout(Duration::from_secs(2), a_events.recv()).await {
+        Ok(Some(Event::Disconnected(peer))) => assert_eq!(&peer, b_key.public()),
+        other => panic!("expected Disconnected within 2 s, got {other:?}"),
+    }
+    assert!(a.peers().is_empty());
+}
+
 /// Both sides dial each other at once. Whichever dial lands first, the
 /// connection dialled by the side with the lower key is the one both sides
 /// keep (`we_keep_our_dial`), the other is closed, each side holds one

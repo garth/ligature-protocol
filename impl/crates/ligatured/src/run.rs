@@ -183,11 +183,51 @@ pub async fn run(
     spawn_connection_events(daemon.clone(), events);
     spawn_discovery(daemon.clone());
 
-    control
-        .await
-        .map_err(|e| Error::Io(format!("control task: {e}")))?;
+    let mut control = control;
+    tokio::select! {
+        ended = &mut control => {
+            ended.map_err(|e| Error::Io(format!("control task: {e}")))?;
+        }
+        () = stop_signal() => {
+            tracing::info!("stopping: closing the connections so the peers know at once");
+        }
+    }
+    // A peer told that the connection closed redials at once; one that is
+    // not keeps the dead connection until it times out (LP-158).
     daemon.shutdown();
+    let _ = tokio::time::timeout(STOP_FLUSH, daemon.manager().endpoint().wait_idle()).await;
     Ok(())
+}
+
+/// How long a stopping daemon waits for its close frames to go out.
+const STOP_FLUSH: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Resolves when the service manager or the terminal asks the daemon to stop:
+/// SIGTERM (systemd and launchd stop with it) or SIGINT.
+async fn stop_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        match (
+            signal(SignalKind::terminate()),
+            signal(SignalKind::interrupt()),
+        ) {
+            (Ok(mut term), Ok(mut int)) => {
+                tokio::select! {
+                    _ = term.recv() => {}
+                    _ = int.recv() => {}
+                }
+            }
+            _ => {
+                tracing::warn!("cannot watch for stop signals; the daemon stops without closing");
+                std::future::pending::<()>().await;
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
 }
 
 /// Handles connection events for `daemon` in a task: a recognised peer gets

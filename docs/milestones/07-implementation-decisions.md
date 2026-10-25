@@ -212,7 +212,9 @@ Caps Lock reports only its new state, so it travels as a press and a release eac
 codes do, so the table pairs them one to one; Print Screen, Scroll Lock and Pause, which a
 Mac lacks, are typed as F13 to F15, as macOS does with a PC keyboard; anything else
 unmapped is dropped and logged at debug. Apple's ISO keyboards report the key left of 1 and
-the key beside left Shift swapped relative to a PC's, which the table does not correct.
+the key beside left Shift swapped relative to a PC's; the Mac reads each key event's keyboard
+type (`KBGetLayoutType`) and swaps the two on an ISO keyboard both ways, as Linux's
+`hid-apple` does (LP-160).
 
 **Injection posts tagged events.** Events are posted at the HID level from an event source
 whose user data is a fixed tag, and the tap passes tagged events without looking, so the

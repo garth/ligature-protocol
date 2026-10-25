@@ -157,6 +157,25 @@ pub fn mac_of(evdev: u16) -> Option<u16> {
         .or_else(|| PC_ONLY.iter().find(|(e, _)| *e == evdev).map(|(_, m)| *m))
 }
 
+/// The virtual key codes of the key under Escape and the key beside left
+/// Shift as macOS reports them for an ANSI keyboard.
+const ANSI_GRAVE: u16 = 0x32;
+const ISO_SECTION: u16 = 0x0A;
+
+/// A virtual key code read the way the table pairs it: on an ISO keyboard
+/// macOS reports the key under Escape as the section key and the key beside
+/// left Shift as the grave, the reverse of their positions, so the two are
+/// swapped (as Linux's `hid-apple` does with `iso_layout`). The swap is its
+/// own inverse, so it serves both ways.
+#[must_use]
+pub fn iso_swap(mac: u16, iso: bool) -> u16 {
+    match (iso, mac) {
+        (true, ANSI_GRAVE) => ISO_SECTION,
+        (true, ISO_SECTION) => ANSI_GRAVE,
+        _ => mac,
+    }
+}
+
 /// The Quartz button number of an evdev button code.
 #[must_use]
 pub fn mac_button(evdev: u16) -> Option<u32> {
@@ -491,6 +510,20 @@ mod tests {
         assert_eq!(mac_of(99), Some(0x69), "Print Screen types F13");
         assert_eq!(evdev_of(0x34), None, "an unused code is dropped");
         assert_eq!(mac_of(240), None);
+    }
+
+    #[test]
+    fn an_iso_keyboard_s_two_swapped_keys_land_on_their_positions() {
+        // The key under Escape on an ISO Mac reads as the section key; its
+        // position is evdev's grave, and the key beside left Shift is 102ND.
+        assert_eq!(evdev_of(iso_swap(0x0A, true)), Some(41));
+        assert_eq!(evdev_of(iso_swap(0x32, true)), Some(86));
+        // An ANSI keyboard is read as it is.
+        assert_eq!(evdev_of(iso_swap(0x32, false)), Some(41));
+        // Driven the other way: the grave position is typed as the code the
+        // ISO keyboard has there.
+        assert_eq!(mac_of(41).map(|m| iso_swap(m, true)), Some(0x0A));
+        assert_eq!(iso_swap(0x00, true), 0x00, "other keys are untouched");
     }
 
     #[test]

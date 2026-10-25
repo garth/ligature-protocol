@@ -36,8 +36,8 @@ use tokio::sync::broadcast;
 
 use crate::input::geometry::{EdgeWatch, Zone, back_position, clamp_to_zones, point_at, size};
 use crate::input::mac::{
-    ClickCounter, ModifierCapture, ModifierInject, ScrollUnits, evdev_button, evdev_of, mac_button,
-    mac_of, wire_scroll,
+    ClickCounter, ModifierCapture, ModifierInject, ScrollUnits, evdev_button, evdev_of, iso_swap,
+    mac_button, mac_of, wire_scroll,
 };
 use crate::input::{Capture, CaptureEvent, Inject};
 
@@ -258,7 +258,9 @@ fn capturer(
                 scroll => vec![scroll],
             },
             TapEvent::Key { repeat: true, .. } => Vec::new(),
-            TapEvent::Key { code, pressed, .. } => match evdev_of(code) {
+            TapEvent::Key {
+                code, pressed, iso, ..
+            } => match evdev_of(iso_swap(code, iso)) {
                 Some(code) => vec![InputEvent::Key { code, pressed }],
                 None => {
                     tracing::debug!(code, "a key with no evdev code, dropped");
@@ -478,7 +480,9 @@ impl Inject for MacInject {
                 poster.scroll(*discrete, vertical, horizontal, s.modifiers.flags());
             }
             InputEvent::Key { code, pressed } => {
-                let Some(mac) = mac_of(*code) else {
+                let Some(mac) =
+                    mac_of(*code).map(|m| iso_swap(m, quartz::current_keyboard_is_iso()))
+                else {
                     tracing::debug!(code, "a key the Mac has no code for, dropped");
                     return Ok(());
                 };

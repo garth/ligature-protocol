@@ -106,6 +106,12 @@ unsafe extern "C" {
     fn AXIsProcessTrusted() -> u8;
 }
 
+#[link(name = "Carbon", kind = "framework")]
+unsafe extern "C" {
+    fn LMGetKbdType() -> u8;
+    fn KBGetLayoutType(keyboard_type: i16) -> u32;
+}
+
 #[link(name = "IOKit", kind = "framework")]
 unsafe extern "C" {
     fn IOHIDCheckAccess(request: u32) -> u32;
@@ -162,6 +168,10 @@ const MOUSE_DELTA_X: u32 = 4;
 const MOUSE_DELTA_Y: u32 = 5;
 const KEYBOARD_AUTOREPEAT: u32 = 8;
 const KEYBOARD_KEYCODE: u32 = 9;
+const KEYBOARD_TYPE: u32 = 10;
+/// `kKeyboardISO`, the physical layout `KBGetLayoutType` reports for an ISO
+/// keyboard: `'ISO '`.
+const KEYBOARD_ISO: u32 = 0x4953_4F20;
 const SCROLL_DELTA_AXIS_1: u32 = 11;
 const SCROLL_DELTA_AXIS_2: u32 = 12;
 const SCROLL_IS_CONTINUOUS: u32 = 88;
@@ -220,6 +230,25 @@ pub fn accessibility_live() -> bool {
 pub fn listen_access_live() -> bool {
     // SAFETY: a plain query with a request type.
     unsafe { IOHIDCheckAccess(HID_REQUEST_LISTEN) == HID_ACCESS_GRANTED }
+}
+
+/// Whether a keyboard type (`kCGKeyboardEventKeyboardType`, `LMGetKbdType`)
+/// is an ISO keyboard, on which macOS reports the key under Escape and the
+/// key beside left Shift the other way round from their positions.
+fn keyboard_type_is_iso(keyboard_type: i64) -> bool {
+    let Ok(t) = i16::try_from(keyboard_type) else {
+        return false;
+    };
+    // SAFETY: a plain query with a keyboard type.
+    unsafe { KBGetLayoutType(t) == KEYBOARD_ISO }
+}
+
+/// Whether the keyboard the user last typed on is an ISO keyboard, for the
+/// keys this Mac is sent.
+#[must_use]
+pub fn current_keyboard_is_iso() -> bool {
+    // SAFETY: a plain query with no arguments.
+    keyboard_type_is_iso(i64::from(unsafe { LMGetKbdType() }))
 }
 
 /// Asks for whichever of the two permissions is missing: macOS shows its
@@ -403,6 +432,8 @@ pub enum TapEvent {
         pressed: bool,
         /// A repeat the system made while the key is held.
         repeat: bool,
+        /// The key came from an ISO keyboard.
+        iso: bool,
     },
     /// A modifier key changed: its virtual key code and the flags after.
     Flags {
@@ -628,6 +659,7 @@ unsafe fn decode(kind: u32, event: CGEventRef) -> Option<TapEvent> {
                 code: u16::try_from(int(KEYBOARD_KEYCODE)).unwrap_or(u16::MAX),
                 pressed: kind == KEY_DOWN,
                 repeat: int(KEYBOARD_AUTOREPEAT) != 0,
+                iso: keyboard_type_is_iso(int(KEYBOARD_TYPE)),
             },
             FLAGS_CHANGED => TapEvent::Flags {
                 code: u16::try_from(int(KEYBOARD_KEYCODE)).unwrap_or(u16::MAX),

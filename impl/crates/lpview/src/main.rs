@@ -299,6 +299,45 @@ fn decoder(started: &Started) -> std::io::Result<std::process::Child> {
         .spawn()
 }
 
+/// Draws a picture of `pw` by `ph` pixels into a window buffer of `ww` by
+/// `wh`, scaled to fit with its shape kept and centred, the margins black.
+/// Returns where it lies: left, top, width and height in window pixels.
+fn blit(
+    pixels: &[u32],
+    (pw, ph): (u32, u32),
+    buffer: &mut [u32],
+    (ww, wh): (u32, u32),
+) -> (f64, f64, f64, f64) {
+    let (fw, fh) = (f64::from(ww), f64::from(wh));
+    let scale = (fw / f64::from(pw)).min(fh / f64::from(ph));
+    let (dw, dh) = (f64::from(pw) * scale, f64::from(ph) * scale);
+    let (dx, dy) = ((fw - dw) / 2.0, (fh - dh) / 2.0);
+    let (x0, y0) = (dx as usize, dy as usize);
+    let (x1, y1) = (
+        ((dx + dw) as usize).min(ww as usize),
+        ((dy + dh) as usize).min(wh as usize),
+    );
+    let (row, pw, ph) = (ww as usize, pw as usize, ph as usize);
+    // Which source column each window column shows, worked out once.
+    let columns: Vec<usize> = (x0..x1)
+        .map(|x| (((x - x0) as f64 / scale) as usize).min(pw - 1))
+        .collect();
+    for (y, dst) in buffer.chunks_exact_mut(row).take(wh as usize).enumerate() {
+        if y < y0 || y >= y1 {
+            dst.fill(0);
+            continue;
+        }
+        dst[..x0].fill(0);
+        dst[x1..].fill(0);
+        let sy = (((y - y0) as f64 / scale) as usize).min(ph - 1);
+        let src = &pixels[sy * pw..(sy + 1) * pw];
+        for (out, &sx) in dst[x0..x1].iter_mut().zip(&columns) {
+            *out = src[sx];
+        }
+    }
+    (dx, dy, dw, dh)
+}
+
 /// Waits for Ctrl+C or SIGTERM; false if neither can be watched.
 async fn stop_signal() -> bool {
     use tokio::signal::unix::{SignalKind, signal};
@@ -422,8 +461,16 @@ async fn network(
                             std::thread::spawn(move || {
                                 let size = w as usize * h as usize * 4;
                                 let mut raw = vec![0u8; size];
+                                let mut last: Vec<u8> = Vec::new();
                                 while out.read_exact(&mut raw).is_ok() {
-                                    let pixels: Vec<u32> = raw
+                                    // A still screen still comes at the agreed
+                                    // rate: the same picture again is not
+                                    // drawn again.
+                                    if raw == last {
+                                        continue;
+                                    }
+                                    std::mem::swap(&mut raw, &mut last);
+                                    let pixels: Vec<u32> = last
                                         .as_chunks::<4>()
                                         .0
                                         .iter()
@@ -552,32 +599,15 @@ impl App {
         let Ok(mut buffer) = surface.buffer_mut() else {
             return;
         };
-        buffer.fill(0);
         let guard = self
             .picture
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some((pw, ph, pixels)) = guard.as_ref() {
-            let (ww, wh) = (size.width as f64, size.height as f64);
-            let scale = (ww / f64::from(*pw)).min(wh / f64::from(*ph));
-            let (dw, dh) = (f64::from(*pw) * scale, f64::from(*ph) * scale);
-            let (dx, dy) = ((ww - dw) / 2.0, (wh - dh) / 2.0);
-            self.target = (dx, dy, dw, dh);
-            let (x0, y0) = (dx as usize, dy as usize);
-            let (x1, y1) = (
-                ((dx + dw) as usize).min(size.width as usize),
-                ((dy + dh) as usize).min(size.height as usize),
-            );
-            let row = size.width as usize;
-            for y in y0..y1 {
-                let sy = (((y - y0) as f64 / scale) as usize).min(*ph as usize - 1);
-                let src = &pixels[sy * *pw as usize..(sy + 1) * *pw as usize];
-                let dst = &mut buffer[y * row..(y + 1) * row];
-                for (x, out) in dst.iter_mut().enumerate().take(x1).skip(x0) {
-                    let sx = (((x - x0) as f64 / scale) as usize).min(*pw as usize - 1);
-                    *out = src[sx];
-                }
+        match guard.as_ref() {
+            Some((pw, ph, pixels)) => {
+                self.target = blit(pixels, (*pw, *ph), &mut buffer, (size.width, size.height));
             }
+            None => buffer.fill(0),
         }
         drop(guard);
         let _ = buffer.present();
@@ -1024,6 +1054,25 @@ fn evdev_code(key: KeyCode) -> Option<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_picture_is_scaled_to_fit_centred_with_black_margins() {
+        // Two pixels, A and B, into a 4 by 4 window: twice the size, centred
+        // vertically, black above and below.
+        let (a, b) = (0x00_aa_aa_aa, 0x00_bb_bb_bb);
+        let mut buffer = vec![7u32; 16];
+        let target = blit(&[a, b], (2, 1), &mut buffer, (4, 4));
+        assert_eq!(target, (0.0, 1.0, 4.0, 2.0));
+        assert_eq!(
+            buffer,
+            [0, 0, 0, 0, a, a, b, b, a, a, b, b, 0, 0, 0, 0],
+            "rows of the picture, black margins, nothing left over"
+        );
+        // Narrower than the window: black at the sides.
+        let mut buffer = vec![7u32; 8];
+        blit(&[a], (1, 1), &mut buffer, (4, 2));
+        assert_eq!(buffer, [0, a, a, 0, 0, a, a, 0]);
+    }
 
     /// Encodes `frames` pictures of a test pattern at 30 a second, a
     /// keyframe each second, as an Annex B stream; `None` without ffmpeg's

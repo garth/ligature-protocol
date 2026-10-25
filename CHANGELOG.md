@@ -70,6 +70,8 @@ release workflow publishes the section as the release notes with the installers.
 
 ### Fixed
 
+- `lpview` skips a picture identical to the last and works out its scaling once per redraw, so
+  watching a still screen takes about 1% of a core instead of over half of one (LP-149).
 - `lpview` no longer prints ffmpeg's "Broken pipe" errors when its window closes or it is
   stopped with Ctrl+C, which now closes it as the window's close button does (LP-150).
 - Linux: a screen share whose capture stalls (seen as PipeWire's stream running out of buffers)

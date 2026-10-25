@@ -253,7 +253,14 @@ cargo test -p lp-core capability::         # tests whose path matches
 cargo fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
 cargo doc --workspace --no-deps      # no rustdoc warnings
+../scripts/coverage.sh               # line coverage, failing below its floors (LP-163)
 ```
+
+`scripts/coverage.sh` needs `cargo-llvm-cov` and the `llvm-tools-preview` component; it
+fails below 68% of the workspace's lines or 85% of its logic (everything but the platform
+glue, the entry points, `lpctl` and `lpview`), as the CI job does. The Android app's JVM unit
+tests run with `./gradlew testDebugUnitTest` from `impl/android`, and `./gradlew
+kotlinCoverage` reports their coverage.
 
 The daemon and CLI default to the platform locations (`~/.local/share/ligature` and
 `$XDG_RUNTIME_DIR/ligature` on Linux, `~/Library/Application Support/ligature` and

@@ -8,6 +8,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    jacoco
 }
 
 val cargo: String = (project.findProperty("rust.cargo") as String?) ?: "cargo"
@@ -69,6 +70,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            // The JVM unit tests record coverage (LP-163); `kotlinCoverage`
+            // reports it.
+            enableUnitTestCoverage = true
+        }
         release {
             // Signed with the keystore LIGATURE_ANDROID_KEYSTORE names (the release
             // workflow), otherwise unsigned: sign afterwards with apksigner and
@@ -82,6 +88,13 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    testOptions {
+        // The JVM tests run against android.jar's stubs; a stub returns its
+        // type's default rather than throwing, for code that touches one in
+        // passing (a log line).
+        unitTests.isReturnDefaultValues = true
     }
 
     compileOptions {
@@ -162,4 +175,30 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation("${libs.jna.get()}@aar")
     implementation(libs.zxing.core)
+    testImplementation(libs.junit)
+}
+
+// Line coverage of the app's own Kotlin by the JVM unit tests, as XML and HTML
+// under build/reports/coverage/kotlin: the generated UniFFI bindings and the
+// classes Compose generates are left out, since they are not the app's code.
+val kotlinCoverage by tasks.registering(JacocoReport::class) {
+    group = "verification"
+    description = "Reports the JVM unit tests' coverage of the app's Kotlin"
+    dependsOn("testDebugUnitTest")
+    classDirectories.setFrom(
+        fileTree(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) {
+            include("org/ligatureprotocol/android/**")
+            exclude("**/ComposableSingletons*")
+        },
+    )
+    sourceDirectories.setFrom(files("src/main/kotlin"))
+    executionData.setFrom(
+        fileTree(layout.buildDirectory) { include("outputs/unit_test_code_coverage/debugUnitTest/*.exec") },
+    )
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+        html.outputLocation.set(layout.buildDirectory.dir("reports/coverage/kotlin"))
+        xml.outputLocation.set(layout.buildDirectory.file("reports/coverage/kotlin/report.xml"))
+    }
 }

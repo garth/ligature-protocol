@@ -24,7 +24,7 @@ internal const val KEY_ENTER: UShort = 28u
  * so the keyboard's delete has something to remove, which an empty field
  * would not, and no keyboard sends a delete it cannot see take effect.
  */
-private const val SENTINEL = "​"
+internal const val SENTINEL = "​"
 
 /** A key pressed and released. */
 internal fun press(code: UShort): List<TouchEvent> =

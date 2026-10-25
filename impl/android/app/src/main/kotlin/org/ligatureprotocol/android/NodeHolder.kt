@@ -286,7 +286,7 @@ object NodeHolder : Host {
                     touchFlushing = false
                     return
                 }
-                val drained = coalesce(touchQueue)
+                val drained = coalesceTouch(touchQueue)
                 touchQueue.clear()
                 drained
             }
@@ -306,20 +306,6 @@ object NodeHolder : Host {
             }
             runCatching { n.inputSend(batch) }.onFailure { Log.d(TAG, "touch events dropped: ${it.message}") }
         }
-    }
-
-    private fun coalesce(events: List<TouchEvent>): List<TouchEvent> {
-        val out = ArrayList<TouchEvent>(events.size)
-        for (e in events) {
-            val last = out.lastOrNull()
-            when {
-                e is TouchEvent.Position && last is TouchEvent.Position -> out[out.size - 1] = e
-                e is TouchEvent.Motion && last is TouchEvent.Motion ->
-                    out[out.size - 1] = TouchEvent.Motion(last.dx + e.dx, last.dy + e.dy)
-                else -> out.add(e)
-            }
-        }
-        return out
     }
 
     fun createPerson(name: String) = async { call { it.init(name) } }

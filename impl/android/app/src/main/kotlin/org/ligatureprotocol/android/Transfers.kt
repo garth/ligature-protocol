@@ -84,8 +84,7 @@ object Transfers {
      * resolve, with its own numbering.
      */
     private fun freeName(resolver: ContentResolver, name: String): String {
-        val dot = name.lastIndexOf('.')
-        val (stem, ext) = if (dot > 0) name.substring(0, dot) to name.substring(dot) else name to ""
+        val stem = splitName(name).first
         val taken = HashSet<String>()
         runCatching {
             resolver.query(
@@ -96,7 +95,19 @@ object Transfers {
                 null,
             )?.use { while (it.moveToNext()) it.getString(0)?.let(taken::add) }
         }.onFailure { Log.w(TAG, "cannot list Downloads for the name rule", it) }
+        return freeName(name, taken)
+    }
+
+    /** A name's stem and its extension with the dot; a leading dot is no extension. */
+    internal fun splitName(name: String): Pair<String, String> {
+        val dot = name.lastIndexOf('.')
+        return if (dot > 0) name.substring(0, dot) to name.substring(dot) else name to ""
+    }
+
+    /** `name`, or `stem (2).ext`, `stem (3).ext`… the first not in `taken`. */
+    internal fun freeName(name: String, taken: Set<String>): String {
         if (name !in taken) return name
+        val (stem, ext) = splitName(name)
         var n = 2
         while ("$stem ($n)$ext" in taken) n++
         return "$stem ($n)$ext"

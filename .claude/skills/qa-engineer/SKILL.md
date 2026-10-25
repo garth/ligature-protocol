@@ -57,6 +57,18 @@ recorded on the epic. Before calling a feature done:
 What a platform cannot do (the Mac cannot read its own notifications, the phone reads the
 clipboard only when focused) is recorded in chapter 08, not worked around.
 
+## Coverage
+
+`scripts/coverage.sh` measures the Rust workspace's line coverage with `cargo-llvm-cov` and
+fails below two floors: 68% of the whole workspace and 85% of its logic, which leaves out
+the platform glue (the `_linux` and `_macos` modules, `lp-macos`), the entry points, `lpctl`
+and `lpview`, since those are checked by the runs with the real devices (LP-163). The CI
+`coverage` job runs it and keeps the HTML report. When a change adds tests, raise a floor
+to just under the new figure rather than let the gain go unguarded. The Android app's JVM
+tests run in CI with `./gradlew kotlinCoverage`; the app is mostly services and Compose
+screens, so its figure is low and has no floor yet. macOS code is measured nowhere: CI
+covers it only with the Rust job's tests on the macOS runner.
+
 ## CI is the second machine
 
 CI runs the Rust checks on Ubuntu and macOS, builds the Android library and APK, cargo-deny,

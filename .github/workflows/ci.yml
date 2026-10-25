@@ -43,6 +43,28 @@ jobs:
           ../packaging/macos-bundle.sh target/debug "$RUNNER_TEMP"
           codesign --verify --strict --verbose "$RUNNER_TEMP/Ligature.app"
 
+  coverage:
+    name: Rust coverage, with its floors (LP-163)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: xkbcommon, which the daemon links on Linux (ADR 0043)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxkbcommon-dev xkb-data
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: impl
+      - name: cargo-llvm-cov
+        run: cargo install cargo-llvm-cov@0.9.1 --locked
+      - name: The tests under coverage, failing below the floors
+        run: scripts/coverage.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rust-coverage
+          path: impl/target/llvm-cov/html
+
   msrv:
     name: Builds at the minimum Rust (rust-version)
     runs-on: ubuntu-latest
@@ -93,7 +115,7 @@ jobs:
             --no-format --out-dir target/kotlin
 
   android-app:
-    name: Android app (assembleDebug)
+    name: Android app (assembleDebug, unit tests)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -121,10 +143,16 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
       - name: Assemble the debug APK (builds the Rust library and the bindings on the way)
         run: ./gradlew assembleDebug --no-daemon
+      - name: The Kotlin unit tests and their coverage (LP-163)
+        run: ./gradlew kotlinCoverage --no-daemon
       - uses: actions/upload-artifact@v7
         with:
           name: ligature-debug-apk
           path: impl/android/app/build/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v7
+        with:
+          name: kotlin-coverage
+          path: impl/android/app/build/reports/coverage/kotlin
 
   deny:
     name: cargo-deny (licences, advisories, bans)

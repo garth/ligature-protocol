@@ -22,6 +22,7 @@ rustup target add aarch64-linux-android x86_64-linux-android
 cargo install cargo-ndk --locked
 echo "sdk.dir=$HOME/Android/Sdk" > local.properties   # where the SDK is
 ./gradlew assembleDebug
+./gradlew testDebugUnitTest        # the JVM unit tests; kotlinCoverage reports their coverage
 ```
 
 Gradle runs `cargo ndk` for `arm64-v8a` and `x86_64` (release profile) and then

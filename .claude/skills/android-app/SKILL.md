@@ -93,6 +93,13 @@ password are set (the release workflow does), and unsigned otherwise.
 ## Tests
 
 `cargo test -p ligature-android --test two_nodes` runs the node end to end with a
-`FakeHost` on real sockets; it is the regression test for anything in `node.rs`. The
-Kotlin has no unit tests yet; a change to the app is checked on the phone and recorded on
-the ticket.
+`FakeHost` on real sockets; it is the regression test for anything in `node.rs`.
+
+The Kotlin's JVM unit tests live in `app/src/test/kotlin` (JUnit 4, against android.jar's
+stubs, which return defaults rather than throw): `./gradlew testDebugUnitTest`, and
+`./gradlew kotlinCoverage` for the line coverage of the app's own Kotlin (the UniFFI bindings
+and Compose's generated classes left out) under `app/build/reports/coverage/kotlin`. Logic
+worth a test is kept out of Android classes so a JVM test reaches it: `coalesceTouch` in
+`Touch.kt`, `Transfers.freeName`, the encoder's settings in `ScreenShareService`'s companion,
+`remoteEdit`. Most of the app is services and Compose screens a JVM test cannot drive, so a
+change there is still checked on the phone and recorded on the ticket.

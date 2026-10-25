@@ -83,6 +83,7 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --no-fail-fast
 cargo deny check            # when a dependency or deny.toml changed
+../scripts/coverage.sh      # when tests or tested code changed: the coverage floors
 ```
 
 and on the Markdown, from the repository root, the same globs CI uses:

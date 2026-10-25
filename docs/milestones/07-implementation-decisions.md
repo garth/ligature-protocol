@@ -204,7 +204,8 @@ Monitoring. A permission it has seen held and then sees gone is a withdrawal: th
 listening tap stops, a drive's filtering tap goes with it, and the drive ends as a lost
 capture. The supervisor starts the listening tap once both are granted and re-reads the
 displays every two seconds. The family `provides` while the listening tap runs and
-`accepts` while Accessibility is held; the manifest re-reads both every second. On the
+`accepts` while Accessibility is held, read live in the same way, since posted events are
+dropped without it; the manifest re-reads both every second. On the
 owner's Mac the switch sat in Privacy & Security under "Device Control and Data Access",
 not under Accessibility.
 

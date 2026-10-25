@@ -341,6 +341,9 @@ struct InjectState {
 pub struct MacInject {
     poster: Option<quartz::Poster>,
     state: Mutex<InjectState>,
+    /// The live Accessibility check has been seen to hold: its going away
+    /// is a withdrawal, which the cached check would not show.
+    seen_trusted: AtomicBool,
 }
 
 impl std::fmt::Debug for MacInject {
@@ -359,6 +362,7 @@ impl MacInject {
         }
         Arc::new(Self {
             poster,
+            seen_trusted: AtomicBool::new(false),
             state: Mutex::new(InjectState {
                 pos: quartz::cursor(),
                 zones: zones(),
@@ -397,7 +401,14 @@ impl MacInject {
 
 impl Inject for MacInject {
     fn params(&self) -> InputParams {
-        let accepts = self.poster.is_some() && quartz::post_access();
+        // Posted events are dropped without Accessibility, so the family is
+        // offered only while it holds: read live, as the capture does.
+        let trusted = quartz::accessibility_live();
+        if trusted {
+            self.seen_trusted.store(true, Ordering::SeqCst);
+        }
+        let withdrawn = self.seen_trusted.load(Ordering::SeqCst) && !trusted;
+        let accepts = self.poster.is_some() && !withdrawn && (quartz::post_access() || trusted);
         InputParams {
             accepts,
             provides: false,

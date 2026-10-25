@@ -70,7 +70,8 @@ release workflow publishes the section as the release notes with the installers.
 
 ### Fixed
 
-- `lpview` no longer prints ffmpeg's "Broken pipe" errors when its window closes (LP-150).
+- `lpview` no longer prints ffmpeg's "Broken pipe" errors when its window closes or it is
+  stopped with Ctrl+C, which now closes it as the window's close button does (LP-150).
 - Linux: a screen share whose capture stalls (seen as PipeWire's stream running out of buffers)
   is started again on the same portal session after four seconds without a frame, so the
   viewer's picture recovers instead of freezing; three stalls in a row end the share (LP-149).

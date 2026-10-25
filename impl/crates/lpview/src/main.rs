@@ -122,6 +122,14 @@ fn main() {
                 .enable_all()
                 .build()
                 .expect("a runtime for lpview");
+            // Ctrl+C in the terminal, or a SIGTERM, closes the window as its
+            // close button does, so `main` stops the decoder before exiting.
+            let stop_proxy = proxy.clone();
+            runtime.spawn(async move {
+                if stop_signal().await {
+                    let _ = stop_proxy.send_event(UserEvent::Ended("stopped".to_owned()));
+                }
+            });
             let ended = runtime.block_on(network(
                 options,
                 locations,
@@ -278,12 +286,29 @@ fn decoder_args(started: &Started) -> Vec<String> {
 /// size, as fast as they come. Not `-fflags nobuffer`: it throws away the
 /// packets read while probing, so nothing decodes until the next keyframe.
 fn decoder(started: &Started) -> std::io::Result<std::process::Child> {
+    use std::os::unix::process::CommandExt as _;
     Command::new("ffmpeg")
         .args(decoder_args(started))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
+        // A group of its own, so the terminal's Ctrl+C reaches `lpview`
+        // alone; ffmpeg would otherwise finish on its own and report each
+        // write into the pipe of an `lpview` already gone.
+        .process_group(0)
         .spawn()
+}
+
+/// Waits for Ctrl+C or SIGTERM; false if neither can be watched.
+async fn stop_signal() -> bool {
+    use tokio::signal::unix::{SignalKind, signal};
+    let Ok(mut term) = signal(SignalKind::terminate()) else {
+        return tokio::signal::ctrl_c().await.is_ok();
+    };
+    tokio::select! {
+        interrupted = tokio::signal::ctrl_c() => interrupted.is_ok(),
+        _ = term.recv() => true,
+    }
 }
 
 /// Runs the share and the drive until the share ends; returns why it ended.

@@ -86,6 +86,16 @@ can bring the two together. Its request and session proxies have no properties, 
 warns on each that it could not fill their cache, so the daemon's log filter sets
 `zbus::proxy` to `error` whatever `RUST_LOG` says, unless `RUST_LOG` names zbus itself.
 
+**The portal waits for the session.** The daemon starts with the user's systemd manager,
+before the graphical session, and any call to the desktop portal starts
+`xdg-desktop-portal`. Started then, the portal has no `XDG_CURRENT_DESKTOP` or
+`WAYLAND_DISPLAY`, settles on fallbacks for the whole login, and offers no InputCapture or
+ScreenCast to any application; after a restart of the owner's machine that is what happened
+(LP-157). So the daemon reads the manager's environment from systemd, which starts nothing,
+and touches no portal until it names a desktop and a Wayland display; input capture then
+tries the portal again every half minute while it is missing, and the screen backend probes
+it again every minute.
+
 **Injection is a helper, as the clipboard is.** `ligatured input-helper` binds a
 `zwlr_virtual_pointer_v1` and, on the first key, a `zwp_virtual_keyboard_v1` with the seat's
 own keymap (read from `wl_keyboard`, or the US layout by `include` when the seat has none),

@@ -45,6 +45,8 @@ use crate::input::{Capture, CaptureEvent, Inject};
 const HELPER_MAX_FRAME: usize = 64 * 1024;
 /// How often a missing helper is retried.
 const RETRY: Duration = Duration::from_secs(3);
+/// How often the InputCapture portal is tried again while it is missing.
+const PORTAL_RETRY: Duration = Duration::from_secs(30);
 /// libei scroll in units of a wheel detent.
 const EI_DETENT: f64 = 120.0;
 /// Units per wheel step on a `wl_pointer` axis, as libinput reports them.
@@ -897,8 +899,20 @@ impl LinuxCapture {
         });
         let starter = this.clone();
         this.handle.spawn(async move {
-            if let Err(e) = starter.connect().await {
-                tracing::warn!(%e, "input capture is not available (no InputCapture portal?)");
+            // Not before the session: an early call would start the portal
+            // without the session's environment (LP-157).
+            crate::portal_gate::wait_for_session().await;
+            let mut told = false;
+            loop {
+                match starter.connect().await {
+                    Ok(()) => return,
+                    Err(e) if !told => {
+                        tracing::warn!(%e, "input capture is not available (no InputCapture portal?); trying again every half minute");
+                        told = true;
+                    }
+                    Err(e) => tracing::debug!(%e, "input capture still not available"),
+                }
+                tokio::time::sleep(PORTAL_RETRY).await;
             }
         });
         this

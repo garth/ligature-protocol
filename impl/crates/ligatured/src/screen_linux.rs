@@ -54,6 +54,9 @@ pub const RESTORE_TOKEN_KEY: &str = "screen.restore_token";
 pub const CAPTURE_ENV: &str = "LIGATURE_SCREEN_CAPTURE";
 /// How often the displays and the tools are looked at again.
 const PROBE_EVERY: Duration = Duration::from_secs(5);
+/// The screen-cast portal is probed again every so many rounds while it is
+/// missing.
+const PORTAL_REPROBE_ROUNDS: u32 = 12;
 /// The largest frame between the daemon and its screen helper's listing.
 const HELPER_MAX_FRAME: usize = 64 * 1024;
 
@@ -295,14 +298,22 @@ impl LinuxScreen {
             .stderr(Stdio::null())
             .status()
             .is_ok_and(|s| s.success());
-        let portal = !self.force_screencopy
-            && self
-                .handle
-                .block_on(async {
-                    let proxy = ashpd::desktop::screencast::Screencast::new().await?;
-                    proxy.available_source_types().await
-                })
-                .is_ok_and(|types| types.contains(ashpd::desktop::screencast::SourceType::Monitor));
+        let probe_portal = || {
+            !self.force_screencopy
+                && self
+                    .handle
+                    .block_on(async {
+                        // Not before the session: an early call would start
+                        // the portal without its environment (LP-157).
+                        crate::portal_gate::wait_for_session().await;
+                        let proxy = ashpd::desktop::screencast::Screencast::new().await?;
+                        proxy.available_source_types().await
+                    })
+                    .is_ok_and(|types| {
+                        types.contains(ashpd::desktop::screencast::SourceType::Monitor)
+                    })
+        };
+        let mut portal = probe_portal();
         tracing::info!(
             ?encoder,
             decoder,
@@ -310,7 +321,17 @@ impl LinuxScreen {
             portal,
             "screen sharing tools probed"
         );
+        let mut round: u32 = 0;
         loop {
+            // A portal that was missing (or started without the session) is
+            // looked at again every minute, so a repaired one is found.
+            round = round.wrapping_add(1);
+            if !portal && !self.force_screencopy && round.is_multiple_of(PORTAL_REPROBE_ROUNDS) {
+                portal = probe_portal();
+                if portal {
+                    tracing::info!("the screen-cast portal is available now");
+                }
+            }
             let list = self.list_now();
             {
                 let mut probe = lock(&self.probe);

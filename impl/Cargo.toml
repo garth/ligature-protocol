@@ -95,6 +95,9 @@ winit = { version = "0.30", default-features = false, features = ["rwh_06", "x11
 softbuffer = "0.4"
 rustix = { version = "1", features = ["fs", "event", "pipe"] }
 # Linux notifications over the session bus (milestone 3, LP-91).
+# Keymaps on Linux: what a captured key means and which key types a meaning
+# (ADR 0043). Links libxkbcommon, which every Wayland desktop has.
+xkbcommon = { version = "0.9", default-features = false }
 zbus = { version = "6", default-features = false, features = ["tokio", "proxy"] }
 futures-util = { version = "0.3", default-features = false }
 objc2 = "0.6"

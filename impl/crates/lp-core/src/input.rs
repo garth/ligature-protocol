@@ -14,6 +14,8 @@ use serde::{Deserialize, Serialize};
 use crate::Error;
 use crate::capability::{Descriptor, Scope};
 
+pub mod keyid;
+
 /// Type name of the input capability, and the purpose of its streams.
 pub const INPUT_TYPE: &str = "org.ligatureprotocol.capability.input";
 
@@ -226,18 +228,40 @@ pub enum InputEvent {
         #[serde(default)]
         discrete: bool,
     },
-    /// A key.
+    /// A key: where it is, and on a press what it means (ADR 0043).
     Key {
-        /// The evdev key code.
+        /// The evdev code of the physical key; a release is matched to its
+        /// press by it.
         code: u16,
         /// Pressed or released.
         pressed: bool,
+        /// What the key means on the controller's layout, as a Synergy key
+        /// ID ([`keyid`]); without it the driven device places the key by
+        /// `code`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<keyid::KeyId>,
+        /// The controller's modifier mask at the event ([`keyid::mask`]).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mods: Option<u32>,
     },
     /// A string to type as characters.
     Text {
         /// The characters.
         text: String,
     },
+}
+
+impl InputEvent {
+    /// A key by position alone, as a controller without a layout sends it.
+    #[must_use]
+    pub const fn key(code: u16, pressed: bool) -> Self {
+        Self::Key {
+            code,
+            pressed,
+            id: None,
+            mods: None,
+        }
+    }
 }
 
 /// The pointer arrives on the driven device.
@@ -398,10 +422,7 @@ mod tests {
                         dy: -1.0,
                         discrete: true,
                     },
-                    InputEvent::Key {
-                        code: 30,
-                        pressed: false,
-                    },
+                    InputEvent::key(30, false),
                     InputEvent::Text {
                         text: "héllo".to_owned(),
                     },
@@ -445,13 +466,7 @@ mod tests {
         assert_eq!(json["dx"], 1.0);
         let key: InputEvent =
             serde_json::from_str(r#"{"kind":"key","code":30,"pressed":true}"#).unwrap();
-        assert_eq!(
-            key,
-            InputEvent::Key {
-                code: 30,
-                pressed: true
-            }
-        );
+        assert_eq!(key, InputEvent::key(30, true));
     }
 
     #[test]

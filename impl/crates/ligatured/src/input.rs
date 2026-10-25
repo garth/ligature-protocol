@@ -522,7 +522,12 @@ impl InputSync {
                         dx: dx * scale,
                         dy: dy * scale,
                     },
-                    InputEvent::Key { code, pressed } => {
+                    InputEvent::Key {
+                        code,
+                        pressed,
+                        id,
+                        mods,
+                    } => {
                         if pressed {
                             drive.held.insert(code);
                         } else {
@@ -532,7 +537,12 @@ impl InputSync {
                         {
                             chord = true;
                         }
-                        InputEvent::Key { code, pressed }
+                        InputEvent::Key {
+                            code,
+                            pressed,
+                            id,
+                            mods,
+                        }
                     }
                     InputEvent::Button { code, pressed } => {
                         if pressed {
@@ -935,13 +945,10 @@ impl InputSync {
                                 continue;
                             }
                             InputEvent::Text { .. } if !params.text => continue,
-                            InputEvent::Key { code, pressed }
+                            InputEvent::Key { code, pressed, .. }
                             | InputEvent::Button { code, pressed } => {
                                 let lifted = match &event {
-                                    InputEvent::Key { .. } => InputEvent::Key {
-                                        code: *code,
-                                        pressed: false,
-                                    },
+                                    InputEvent::Key { .. } => InputEvent::key(*code, false),
                                     _ => InputEvent::Button {
                                         code: *code,
                                         pressed: false,

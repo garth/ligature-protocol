@@ -452,6 +452,19 @@ impl ModState {
         Some((self.depressed(), self.locked))
     }
 
+    /// Toggles a lock (Caps Lock's or Num Lock's bits), for a lock key sent
+    /// by its meaning: the depressed and locked masks to report.
+    pub fn toggle(&mut self, bits: u32) -> (u32, u32) {
+        self.locked ^= bits;
+        (self.depressed(), self.locked)
+    }
+
+    /// The locked bits.
+    #[must_use]
+    pub const fn locked(&self) -> u32 {
+        self.locked
+    }
+
     /// The bits of the modifier keys held.
     #[must_use]
     pub fn depressed(&self) -> u32 {
@@ -463,6 +476,289 @@ impl ModState {
             })
             .fold(0, |a, b| a | b)
     }
+}
+
+/// Which key of a keymap types a keysym, and with which modifiers: the
+/// driven side of ADR 0043, after Synergy's key map (`KeyMap::findBestKey`
+/// in Input Leap), which picks the entry needing the fewest modifiers.
+pub struct KeyFinder {
+    keymap: xkbcommon::xkb::Keymap,
+    lock_bit: u32,
+    found: HashMap<u32, Option<(u16, u32)>>,
+}
+
+impl std::fmt::Debug for KeyFinder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("KeyFinder")
+    }
+}
+
+impl KeyFinder {
+    /// The finder for a keymap's text, `None` if it does not compile.
+    #[must_use]
+    pub fn new(keymap: &str) -> Option<Self> {
+        use xkbcommon::xkb;
+        let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+        let keymap = xkb::Keymap::new_from_string(
+            &context,
+            keymap.trim_end_matches('\0').to_owned(),
+            xkb::KEYMAP_FORMAT_TEXT_V1,
+            xkb::KEYMAP_COMPILE_NO_FLAGS,
+        )?;
+        Some(Self::from_keymap(keymap))
+    }
+
+    fn from_keymap(keymap: xkbcommon::xkb::Keymap) -> Self {
+        let lock = keymap.mod_get_index(xkbcommon::xkb::MOD_NAME_CAPS);
+        let lock_bit = 1u32.checked_shl(lock).unwrap_or(0);
+        Self {
+            keymap,
+            lock_bit,
+            found: HashMap::new(),
+        }
+    }
+
+    /// The key (evdev code) and modifier mask that type `keysym` on the first
+    /// layout: the one needing the fewest modifiers, Shift before any other,
+    /// never Caps Lock.
+    pub fn find(&mut self, keysym: u32) -> Option<(u16, u32)> {
+        if let Some(found) = self.found.get(&keysym) {
+            return *found;
+        }
+        let found = self.search(keysym);
+        self.found.insert(keysym, found);
+        found
+    }
+
+    fn search(&self, keysym: u32) -> Option<(u16, u32)> {
+        use xkbcommon::xkb::Keycode;
+        let mut best: Option<(u32, u16, u32)> = None;
+        let (min, max) = (
+            self.keymap.min_keycode().raw(),
+            self.keymap.max_keycode().raw(),
+        );
+        for raw in min..=max {
+            let key = Keycode::new(raw);
+            let Ok(evdev) = u16::try_from(raw.saturating_sub(8)) else {
+                continue;
+            };
+            if raw < 8 {
+                continue;
+            }
+            for level in 0..self.keymap.num_levels_for_key(key, 0) {
+                let syms = self.keymap.key_get_syms_by_level(key, 0, level);
+                if !syms.iter().any(|s| s.raw() == keysym) {
+                    continue;
+                }
+                let mut masks = [0u32; 16];
+                let n = self
+                    .keymap
+                    .key_get_mods_for_level(key, 0, level, &mut masks);
+                for mask in masks
+                    .iter()
+                    .take(n)
+                    .copied()
+                    .filter(|m| m & self.lock_bit == 0)
+                {
+                    // Shift is the ordinary second level; any other modifier
+                    // (AltGr) counts double, so `@` on a British layout is
+                    // Shift and the quote key, not AltGr and Q.
+                    let cost = (mask & 1) + 2 * (mask & !1).count_ones();
+                    if best.is_none_or(|(c, _, _)| cost < c) {
+                        best = Some((cost, evdev, mask));
+                    }
+                }
+            }
+        }
+        best.map(|(_, evdev, mask)| (evdev, mask))
+    }
+}
+
+/// The X11 keysym a key ID stands for: a character's, or a named key's.
+#[must_use]
+pub fn keysym_of(id: lp_core::input::keyid::KeyId) -> Option<u32> {
+    use lp_core::input::keyid;
+    if let Some(c) = keyid::character(id) {
+        let sym = xkbcommon::xkb::utf32_to_keysym(u32::from(c)).raw();
+        return (sym != 0).then_some(sym);
+    }
+    keyid::keysym_of_named(id)
+}
+
+/// What the keys of the capture's keyboard mean, for a controller on Linux
+/// (ADR 0043): the keymap libei hands the capture, its modifier state, and
+/// the locale's compose table, so a dead key is composed here and the key
+/// that completes it carries the composed character.
+pub struct KeyMeaning {
+    keymap: xkbcommon::xkb::Keymap,
+    state: xkbcommon::xkb::State,
+    compose: Option<xkbcommon::xkb::compose::State>,
+    /// The modifier indices of the mask bits, in [`keyid::mask`] order.
+    mods: Vec<(xkbcommon::xkb::ModIndex, u32)>,
+    /// Modifiers that do not choose a character: Control, Alt, Super, Meta.
+    command: u32,
+}
+
+impl std::fmt::Debug for KeyMeaning {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("KeyMeaning")
+    }
+}
+
+/// What a captured key press means: `None` for a dead key's press, which
+/// sends nothing, else the ID (if any) and the modifier mask.
+pub type Meaning = Option<(Option<lp_core::input::keyid::KeyId>, u32)>;
+
+impl KeyMeaning {
+    /// The meanings of a keymap's text, composed with `locale`'s table when
+    /// it has one; `None` if the keymap does not compile.
+    #[must_use]
+    pub fn new(keymap: &str, locale: Option<&str>) -> Option<Self> {
+        use lp_core::input::keyid::mask;
+        use xkbcommon::xkb;
+        let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+        let keymap = xkb::Keymap::new_from_string(
+            &context,
+            keymap.trim_end_matches('\0').to_owned(),
+            xkb::KEYMAP_FORMAT_TEXT_V1,
+            xkb::KEYMAP_COMPILE_NO_FLAGS,
+        )?;
+        let compose = locale.and_then(|locale| {
+            let table = xkb::compose::Table::new_from_locale(
+                &context,
+                std::ffi::OsStr::new(locale),
+                xkb::compose::COMPILE_NO_FLAGS,
+            )
+            .ok()?;
+            Some(xkb::compose::State::new(
+                &table,
+                xkb::compose::STATE_NO_FLAGS,
+            ))
+        });
+        let mods: Vec<_> = [
+            (xkb::MOD_NAME_SHIFT, mask::SHIFT),
+            (xkb::MOD_NAME_CTRL, mask::CONTROL),
+            (xkb::MOD_NAME_ALT, mask::ALT),
+            (xkb::MOD_NAME_LOGO, mask::SUPER),
+            ("Mod5", mask::ALT_GR),
+            (xkb::MOD_NAME_CAPS, mask::CAPS_LOCK),
+            (xkb::MOD_NAME_NUM, mask::NUM_LOCK),
+        ]
+        .into_iter()
+        .map(|(name, bit)| (keymap.mod_get_index(name), bit))
+        .filter(|(index, _)| *index != xkb::MOD_INVALID)
+        .collect();
+        let command = mods
+            .iter()
+            .filter(|(_, bit)| bit & mask::COMMAND != 0)
+            .fold(0, |a, (index, _)| a | (1 << index));
+        let state = xkb::State::new(&keymap);
+        Some(Self {
+            keymap,
+            state,
+            compose,
+            mods,
+            command,
+        })
+    }
+
+    /// Takes the modifier state the compositor reports.
+    pub fn set_mods(&mut self, depressed: u32, latched: u32, locked: u32, group: u32) {
+        self.state
+            .update_mask(depressed, latched, locked, 0, 0, group);
+    }
+
+    /// The meaning of a key event by evdev code, and the state moved on by it.
+    /// A release carries no ID (ADR 0043 decision 1).
+    pub fn key(&mut self, code: u16, pressed: bool) -> Meaning {
+        use lp_core::input::keyid;
+        use xkbcommon::xkb::{self, Keycode, compose::Status};
+        let key = Keycode::new(u32::from(code) + 8);
+        let held = self.mask();
+        if !pressed {
+            self.state.update_key(key, xkb::KeyDirection::Up);
+            return Some((None, self.mask()));
+        }
+        // What the key types with Shift, Caps Lock and AltGr, without the
+        // modifiers that choose a shortcut rather than a character.
+        let (d, l, k, g) = (
+            self.state.serialize_mods(xkb::STATE_MODS_DEPRESSED),
+            self.state.serialize_mods(xkb::STATE_MODS_LATCHED),
+            self.state.serialize_mods(xkb::STATE_MODS_LOCKED),
+            self.state.serialize_layout(xkb::STATE_LAYOUT_EFFECTIVE),
+        );
+        let c = !self.command;
+        let mut plain = xkb::State::new(&self.keymap);
+        plain.update_mask(d & c, l & c, k & c, 0, 0, g);
+        let sym = plain.key_get_one_sym(key);
+        let shortcut = held & keyid::mask::COMMAND != 0;
+        let mut composed = None;
+        if let Some(compose) = self.compose.as_mut().filter(|_| !shortcut)
+            && compose.feed(sym) == xkb::compose::FeedResult::Accepted
+        {
+            match compose.status() {
+                Status::Composing | Status::Cancelled => {
+                    if compose.status() == Status::Cancelled {
+                        compose.reset();
+                    }
+                    self.state.update_key(key, xkb::KeyDirection::Down);
+                    return None;
+                }
+                Status::Composed => {
+                    let text = compose.utf8().unwrap_or_default();
+                    let mut chars = text.chars();
+                    if let (Some(c), None) = (chars.next(), chars.next()) {
+                        composed = Some(u32::from(c));
+                    }
+                    compose.reset();
+                }
+                Status::Nothing => {}
+            }
+        }
+        let id = composed
+            .or_else(|| keyid::named_from_keysym(sym.raw()))
+            .or_else(|| {
+                char::from_u32(plain.key_get_utf32(key))
+                    .filter(|c| !c.is_control())
+                    .map(u32::from)
+            });
+        self.state.update_key(key, xkb::KeyDirection::Down);
+        Some((id, held))
+    }
+
+    /// The controller's modifier mask (ADR 0043) from the xkb state.
+    fn mask(&self) -> u32 {
+        use xkbcommon::xkb;
+        self.mods
+            .iter()
+            .filter(|(index, _)| {
+                self.state
+                    .mod_index_is_active(*index, xkb::STATE_MODS_EFFECTIVE)
+            })
+            .fold(0, |a, (_, bit)| a | bit)
+    }
+}
+
+/// The text of a keymap libei handed over, if it is an XKB one.
+fn read_keymap(keymap: &reis::event::Keymap) -> Option<String> {
+    use std::os::unix::fs::FileExt as _;
+    if keymap.type_ != reis::ei::keyboard::KeymapType::Xkb {
+        return None;
+    }
+    let file = std::fs::File::from(keymap.fd.try_clone().ok()?);
+    let mut bytes = vec![0; usize::try_from(keymap.size).ok()?];
+    file.read_exact_at(&mut bytes, 0).ok()?;
+    String::from_utf8(bytes).ok()
+}
+
+/// The locale whose compose table composes dead keys, as the environment
+/// names it, else `C`.
+fn locale() -> String {
+    ["LC_ALL", "LC_CTYPE", "LANG"]
+        .into_iter()
+        .filter_map(|name| std::env::var(name).ok())
+        .find(|v| !v.is_empty())
+        .unwrap_or_else(|| "C".to_owned())
 }
 
 /// The keymap text that types `text`: one key per distinct character, the
@@ -522,6 +818,7 @@ mod helper {
 
     use lp_core::Error;
     use lp_core::input::InputEvent;
+    use lp_core::input::keyid;
     use wayland_client::globals::{GlobalListContents, registry_queue_init};
     use wayland_client::protocol::wl_keyboard::{self, WlKeyboard};
     use wayland_client::protocol::wl_output::{self, WlOutput};
@@ -537,8 +834,8 @@ mod helper {
     use wayland_protocols_wlr::virtual_pointer::v1::client::zwlr_virtual_pointer_v1::ZwlrVirtualPointerV1;
 
     use super::{
-        HelperMessage, ModState, US_KEYMAP, WHEEL_STEP, modifier_roles, read_frame, text_keymap,
-        types, write_frame,
+        HelperMessage, KeyFinder, ModState, US_KEYMAP, WHEEL_STEP, keysym_of, mod_bits,
+        modifier_roles, read_frame, text_keymap, types, write_frame,
     };
 
     /// The extent absolute motion is expressed against: fractions times this.
@@ -563,6 +860,11 @@ mod helper {
         keyboard: Option<ZwpVirtualKeyboardV1>,
         /// The virtual keyboard's modifier state, which it reports itself.
         mods: ModState,
+        /// Which key of the seat keymap types a meaning (ADR 0043).
+        finder: Option<KeyFinder>,
+        /// The local key each physical key's press used, by the controller's
+        /// code, so its release lifts it; `None` for a press typed as text.
+        pressed_as: HashMap<u16, Option<u16>>,
         /// The seat's keymap, as `wl_keyboard` delivered it, or the US one.
         seat_keymap: Option<Vec<u8>>,
         outputs: HashMap<u32, Output>,
@@ -598,7 +900,12 @@ mod helper {
                     .clone()
                     .unwrap_or_else(|| US_KEYMAP.as_bytes().to_vec());
                 set_keymap(&kb, &keymap);
-                self.mods = ModState::new(modifier_roles(&String::from_utf8_lossy(&keymap)));
+                let text = String::from_utf8_lossy(&keymap);
+                self.mods = ModState::new(modifier_roles(&text));
+                self.finder = KeyFinder::new(&text);
+                if self.finder.is_none() {
+                    tracing::warn!("the seat keymap does not compile; keys go by position");
+                }
                 self.keyboard = Some(kb);
             }
             self.keyboard.as_ref().expect("just created")
@@ -662,47 +969,127 @@ mod helper {
                     }
                     self.pointer.frame();
                 }
-                InputEvent::Key { code, pressed } => {
+                InputEvent::Key {
+                    code,
+                    pressed,
+                    id,
+                    mods,
+                } => {
                     let kb = self.ensure_keyboard(qh).clone();
-                    kb.key(t, u32::from(*code), u32::from(*pressed));
-                    // The compositor takes a virtual keyboard's modifiers
-                    // from this message alone, never from its keys: without
-                    // it Shift shifts nothing, and with
-                    // `shift:both_capslock_cancel` a Shift can lock Caps.
-                    if let Some((depressed, locked)) = self.mods.key(*code, *pressed) {
-                        kb.modifiers(depressed, 0, locked, 0);
+                    let handled = if *pressed {
+                        id.is_some_and(|id| {
+                            self.press_meaning(qh, &kb, t, *code, id, mods.unwrap_or(0))
+                        })
+                    } else if let Some(local) = self.pressed_as.remove(code) {
+                        if let Some(local) = local {
+                            self.key_local(&kb, t, local, false);
+                        }
+                        true
+                    } else {
+                        false
+                    };
+                    if !handled {
+                        // By position: the controller sent no meaning, or
+                        // this keymap has nothing for it.
+                        self.key_local(&kb, t, *code, *pressed);
                     }
                     self.note_held(event);
                 }
-                InputEvent::Text { text } => {
-                    // A keyboard of its own for the text, as `wtype` does: the
-                    // compositor reads a virtual keyboard's keymap once, when
-                    // it is set, so the seat-keymap keyboard stays as it is
-                    // and this one lives for the string.
-                    let kb = self
-                        .keyboard_manager
-                        .create_virtual_keyboard(&self.seat, qh, ());
-                    let (keymap, codes) = text_keymap(text);
-                    set_keymap(&kb, keymap.as_bytes());
-                    for c in text.chars() {
-                        let Some(code) = codes.get(&c) else { continue };
-                        kb.key(t, *code, 1);
-                        kb.key(t, *code, 0);
-                    }
-                    kb.destroy();
-                }
+                InputEvent::Text { text } => self.type_text(qh, t, text),
             }
+        }
+
+        /// A key of the seat keymap, by evdev code, with the modifier state
+        /// reported after it. The compositor takes a virtual keyboard's
+        /// modifiers from that report alone, never from its keys: without it
+        /// Shift shifts nothing, and with `shift:both_capslock_cancel` a
+        /// Shift can lock Caps.
+        fn key_local(&mut self, kb: &ZwpVirtualKeyboardV1, t: u32, code: u16, pressed: bool) {
+            kb.key(t, u32::from(code), u32::from(pressed));
+            if let Some((depressed, locked)) = self.mods.key(code, pressed) {
+                kb.modifiers(depressed, 0, locked, 0);
+            }
+        }
+
+        /// A press by its meaning (ADR 0043): returns whether it was placed.
+        fn press_meaning(
+            &mut self,
+            qh: &QueueHandle<Self>,
+            kb: &ZwpVirtualKeyboardV1,
+            t: u32,
+            code: u16,
+            id: keyid::KeyId,
+            mods: u32,
+        ) -> bool {
+            if keyid::is_lock(id) {
+                // A lock toggles this keyboard's lock; no key is pressed.
+                let bits = match id {
+                    keyid::CAPS_LOCK => mod_bits::LOCK,
+                    keyid::NUM_LOCK => mod_bits::MOD2,
+                    _ => 0,
+                };
+                if bits != 0 {
+                    let (depressed, locked) = self.mods.toggle(bits);
+                    kb.modifiers(depressed, 0, locked, 0);
+                }
+                self.pressed_as.insert(code, None);
+                return true;
+            }
+            let Some(keysym) = keysym_of(id) else {
+                return false;
+            };
+            match self.finder.as_mut().and_then(|f| f.find(keysym)) {
+                Some((local, level_mods)) => {
+                    let command = mods & keyid::mask::COMMAND != 0;
+                    if keyid::is_named(id) || command {
+                        // A modifier, a named key or a shortcut: the key
+                        // itself, under the modifiers held ("the right button
+                        // not the right character", Synergy's mapCommandKey).
+                        self.key_local(kb, t, local, true);
+                    } else {
+                        // A character: exactly the modifiers its level needs,
+                        // no locks, for this press, then back.
+                        kb.modifiers(level_mods, 0, 0, 0);
+                        kb.key(t, u32::from(local), 1);
+                        kb.modifiers(self.mods.depressed(), 0, self.mods.locked(), 0);
+                    }
+                    self.pressed_as.insert(code, Some(local));
+                    true
+                }
+                None => match keyid::character(id) {
+                    Some(c) => {
+                        // A character this layout lacks, typed through a
+                        // keymap of its own.
+                        self.type_text(qh, t, &c.to_string());
+                        self.pressed_as.insert(code, None);
+                        true
+                    }
+                    None => false,
+                },
+            }
+        }
+
+        /// Types a string through a keyboard of its own, as `wtype` does: the
+        /// compositor reads a virtual keyboard's keymap once, when it is set,
+        /// so the seat-keymap keyboard stays as it is and this one lives for
+        /// the string.
+        fn type_text(&mut self, qh: &QueueHandle<Self>, t: u32, text: &str) {
+            let kb = self
+                .keyboard_manager
+                .create_virtual_keyboard(&self.seat, qh, ());
+            let (keymap, codes) = text_keymap(text);
+            set_keymap(&kb, keymap.as_bytes());
+            for c in text.chars() {
+                let Some(code) = codes.get(&c) else { continue };
+                kb.key(t, *code, 1);
+                kb.key(t, *code, 0);
+            }
+            kb.destroy();
         }
 
         fn note_held(&mut self, event: &InputEvent) {
             let (lifted, pressed) = match event {
-                InputEvent::Key { code, pressed } => (
-                    InputEvent::Key {
-                        code: *code,
-                        pressed: false,
-                    },
-                    *pressed,
-                ),
+                InputEvent::Key { code, pressed, .. } => (InputEvent::key(*code, false), *pressed),
                 InputEvent::Button { code, pressed } => (
                     InputEvent::Button {
                         code: *code,
@@ -906,6 +1293,8 @@ mod helper {
             seat,
             keyboard: None,
             mods: ModState::default(),
+            finder: None,
+            pressed_as: HashMap::new(),
             seat_keymap: None,
             outputs: HashMap::new(),
             xdg_outputs: HashMap::new(),
@@ -1318,9 +1707,38 @@ impl LinuxCapture {
             .handshake_tokio("ligatured", ei::handshake::ContextType::Receiver)
             .await
             .map_err(|e| Error::Io(format!("libei handshake: {e}")))?;
+        // What the keys mean (ADR 0043), once the keyboard's keymap arrives,
+        // and the keys whose press was a dead key's and sent nothing.
+        let mut meaning: Option<KeyMeaning> = None;
+        let mut unsent: Vec<u16> = Vec::new();
         while let Some(event) = events.next().await {
             let event = event.map_err(|e| Error::Io(format!("libei: {e}")))?;
             let out = match event {
+                EiEvent::DeviceAdded(e) => {
+                    tracing::debug!(
+                        name = e.device.name(),
+                        keymap = e.device.keymap().is_some(),
+                        "capture device"
+                    );
+                    if let Some(keymap) = e.device.keymap() {
+                        meaning = read_keymap(keymap).and_then(|text| {
+                            let found = KeyMeaning::new(&text, Some(&locale()));
+                            if found.is_none() {
+                                tracing::warn!(
+                                    "the capture's keymap does not compile; keys go by position"
+                                );
+                            }
+                            found
+                        });
+                    }
+                    continue;
+                }
+                EiEvent::KeyboardModifiers(m) => {
+                    if let Some(meaning) = meaning.as_mut() {
+                        meaning.set_mods(m.depressed, m.latched, m.locked, m.group);
+                    }
+                    continue;
+                }
                 EiEvent::SeatAdded(e) => {
                     e.seat.bind_capabilities(
                         DeviceCapability::Pointer
@@ -1349,10 +1767,32 @@ impl LinuxCapture {
                     dy: f64::from(s.discrete_dy) / EI_DETENT,
                     discrete: true,
                 },
-                EiEvent::KeyboardKey(k) => InputEvent::Key {
-                    code: u16::try_from(k.key).unwrap_or(0),
-                    pressed: matches!(k.state, ei::keyboard::KeyState::Press),
-                },
+                EiEvent::KeyboardKey(k) => {
+                    let code = u16::try_from(k.key).unwrap_or(0);
+                    let pressed = matches!(k.state, ei::keyboard::KeyState::Press);
+                    let Some(meaning) = meaning.as_mut() else {
+                        let _ = self
+                            .events
+                            .send(CaptureEvent::Input(InputEvent::key(code, pressed)));
+                        continue;
+                    };
+                    match meaning.key(code, pressed) {
+                        None => {
+                            unsent.push(code);
+                            continue;
+                        }
+                        Some(_) if !pressed && unsent.contains(&code) => {
+                            unsent.retain(|c| *c != code);
+                            continue;
+                        }
+                        Some((id, mods)) => InputEvent::Key {
+                            code,
+                            pressed,
+                            id,
+                            mods: Some(mods),
+                        },
+                    }
+                }
                 EiEvent::Disconnected(_) => break,
                 _ => continue,
             };
@@ -1440,6 +1880,7 @@ impl LinuxCaptureRef {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lp_core::input::keyid;
 
     fn zone(x: i32, y: i32, w: u32, h: u32) -> Zone {
         Zone {
@@ -1551,6 +1992,112 @@ mod tests {
         assert_eq!(roles[&69], ModRole::Locks(mod_bits::MOD2));
         assert_eq!(roles.get(&58), None, "Caps Lock composes here");
         assert_eq!(modifier_roles("not a keymap"), us_modifier_roles());
+    }
+
+    /// The keymap of a layout, `us(intl)` naming a variant, from the
+    /// system's XKB data.
+    fn keymap_text(layout: &str, options: &str) -> String {
+        use xkbcommon::xkb;
+        let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+        let (layout, variant) = layout
+            .trim_end_matches(')')
+            .split_once('(')
+            .unwrap_or((layout, ""));
+        let keymap = xkb::Keymap::new_from_names(
+            &context,
+            "evdev",
+            "pc105",
+            layout,
+            variant,
+            Some(options.to_owned()),
+            xkb::KEYMAP_COMPILE_NO_FLAGS,
+        )
+        .expect("the system's XKB data has the layout");
+        keymap.get_as_string(xkb::KEYMAP_FORMAT_TEXT_V1)
+    }
+
+    #[test]
+    fn a_controller_s_key_says_what_its_layout_types() {
+        use lp_core::input::keyid::{self, mask};
+        let ch = |c: char| Some((Some(u32::from(c)), 0));
+        let mut gb = KeyMeaning::new(&keymap_text("gb", ""), None).unwrap();
+        // The key right of ';' is '\'' on a British layout, '@' with Shift.
+        assert_eq!(gb.key(40, true), ch('\''));
+        gb.key(40, false);
+        assert_eq!(gb.key(42, true), Some((Some(keyid::SHIFT_L), 0)));
+        assert_eq!(gb.key(40, true), Some((Some(u32::from('@')), mask::SHIFT)));
+        gb.key(40, false);
+        assert_eq!(gb.key(3, true), Some((Some(u32::from('"')), mask::SHIFT)));
+        gb.key(3, false);
+        gb.key(42, false);
+        // Control does not change the character: Control+C is 'c'.
+        assert_eq!(gb.key(29, true), Some((Some(keyid::CONTROL_L), 0)));
+        assert_eq!(
+            gb.key(46, true),
+            Some((Some(u32::from('c')), mask::CONTROL))
+        );
+        gb.key(46, false);
+        gb.key(29, false);
+        assert_eq!(gb.key(28, true), Some((Some(keyid::RETURN), 0)));
+        gb.key(28, false);
+        // Caps Lock is its key, then the letters it shifts.
+        assert_eq!(gb.key(58, true), Some((Some(keyid::CAPS_LOCK), 0)));
+        gb.key(58, false);
+        assert_eq!(
+            gb.key(30, true),
+            Some((Some(u32::from('A')), mask::CAPS_LOCK))
+        );
+        gb.key(30, false);
+        // With Alt and the logo key swapped, the Alt position is Super.
+        let mut swapped = KeyMeaning::new(&keymap_text("us", "altwin:swap_alt_win"), None).unwrap();
+        assert_eq!(swapped.key(56, true), Some((Some(keyid::SUPER_L), 0)));
+        // A dead key sends nothing, and the key that completes it the
+        // composed character (when the system has the locale's table).
+        let mut intl = KeyMeaning::new(&keymap_text("us(intl)", ""), Some("en_US.UTF-8")).unwrap();
+        if intl.compose.is_some() {
+            assert_eq!(intl.key(40, true), None);
+            intl.key(40, false);
+            assert_eq!(intl.key(18, true), ch('é'));
+            intl.key(18, false);
+            assert_eq!(intl.key(18, true), ch('e'));
+        }
+    }
+
+    #[test]
+    fn a_meaning_is_typed_by_the_driven_layout_s_own_key() {
+        let shift = mod_bits::SHIFT;
+        let mut us = KeyFinder::new(&keymap_text("us", "")).unwrap();
+        // '@' is Shift+2 on a US keyboard, on a British one Shift and the key
+        // right of ';'.
+        assert_eq!(
+            us.find(keysym_of(u32::from('@')).unwrap()),
+            Some((3, shift))
+        );
+        let mut gb = KeyFinder::new(&keymap_text("gb", "")).unwrap();
+        assert_eq!(
+            gb.find(keysym_of(u32::from('@')).unwrap()),
+            Some((40, shift))
+        );
+        assert_eq!(
+            gb.find(keysym_of(u32::from('"')).unwrap()),
+            Some((3, shift))
+        );
+        // A letter without Shift, a capital with it, never by Caps Lock.
+        assert_eq!(us.find(keysym_of(u32::from('a')).unwrap()), Some((30, 0)));
+        assert_eq!(
+            us.find(keysym_of(u32::from('A')).unwrap()),
+            Some((30, shift))
+        );
+        // Named keys and modifiers by their keysyms, wherever the layout puts
+        // them: with Alt and Win swapped, Alt_L is on the Win key.
+        assert_eq!(us.find(keysym_of(keyid::RETURN).unwrap()), Some((28, 0)));
+        let mut swapped = KeyFinder::new(&keymap_text("us", "altwin:swap_alt_win")).unwrap();
+        assert_eq!(
+            swapped.find(keysym_of(keyid::ALT_L).unwrap()).map(|f| f.0),
+            Some(125)
+        );
+        // A character the layout lacks.
+        assert_eq!(us.find(keysym_of(u32::from('é')).unwrap()), None);
     }
 
     #[test]

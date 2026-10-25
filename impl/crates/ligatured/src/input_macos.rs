@@ -10,7 +10,10 @@
 //! cursor (the mouse still reports its motion), and turns what it sees into
 //! the wire's events: virtual key codes through the table in
 //! [`crate::input::mac`], modifier flag changes into presses and releases,
-//! repeats dropped since the driven device repeats for itself. A supervisor
+//! repeats dropped since the driven device repeats for itself. Each press
+//! carries what it means on this Mac's layout (ADR 0043), read with
+//! `UCKeyTranslate`; a dead key's press sends nothing and the key after it
+//! the composed character. A supervisor
 //! thread starts the tap once Accessibility and Input Monitoring are both
 //! granted, re-reads the displays, and stops the tap if a permission is
 //! withdrawn, ending a drive as the compositor's `Lost` does on Linux.
@@ -18,26 +21,30 @@
 //! **Injection** ([`MacInject`]). Events are posted at the HID level from
 //! an event source tagged so this Mac's own tap passes them by. The pointer
 //! is tracked here and kept on a display; a button carries the click count
-//! a double click needs; a key carries the held modifiers' flags; `text` is
-//! typed as key events with the string attached, whatever the layout. The
+//! a double click needs; a key carries the held modifiers' flags; a key
+//! that carries its meaning is the named key's own, or the key and level
+//! that type the character on this Mac's layout, or the character attached
+//! to a key event when no key types it; `text` is typed as key events with
+//! the string attached, whatever the layout. The
 //! family accepts only while the Accessibility permission is held, which the
 //! manifest re-reads every second, so withdrawing it drops the family from
 //! every peer's view.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use lp_core::Error;
+use lp_core::input::keyid::{self, KeyId};
 use lp_core::input::{Edge, InputEvent, InputParams};
 use lp_macos::input::{self as quartz, Mouse, TapEvent};
 use tokio::sync::broadcast;
 
 use crate::input::geometry::{EdgeWatch, Zone, back_position, clamp_to_zones, point_at, size};
 use crate::input::mac::{
-    ClickCounter, ModifierCapture, ModifierInject, ScrollUnits, evdev_button, evdev_of, iso_swap,
-    mac_button, mac_of, wire_scroll,
+    ClickCounter, KeyMeaning, ModifierCapture, ModifierInject, ScrollUnits, Translate,
+    character_flags, evdev_button, evdev_of, iso_swap, mac_button, mac_of, wire_scroll,
 };
 use crate::input::{Capture, CaptureEvent, Inject};
 
@@ -71,6 +78,7 @@ struct TapState {
     captured: bool,
     watch: EdgeWatch,
     modifiers: ModifierCapture,
+    meaning: KeyMeaning,
 }
 
 /// The Mac's capture: a listen-only event tap that watches for edges, and a
@@ -164,6 +172,7 @@ fn supervise(
     loop {
         if round.is_multiple_of(DISPLAYS_EVERY) {
             lock(state).zones = zones();
+            quartz::refresh_keyboard_layout();
         }
         round = round.wrapping_add(1);
         let (ax, hid) = (quartz::accessibility_live(), quartz::listen_access_live());
@@ -259,9 +268,27 @@ fn capturer(
             },
             TapEvent::Key { repeat: true, .. } => Vec::new(),
             TapEvent::Key {
-                code, pressed, iso, ..
+                code,
+                pressed,
+                iso,
+                keyboard,
+                flags,
+                ..
             } => match evdev_of(iso_swap(code, iso)) {
-                Some(code) => vec![InputEvent::Key { code, pressed }],
+                Some(evdev) => {
+                    let layout = quartz::keyboard_layout();
+                    let translate = layout.as_deref().map(|l| {
+                        move |m: u32, dead: Option<&mut u32>| match dead {
+                            Some(dead) => l.translate(code, m, keyboard, 0, dead),
+                            None => l.translate_plain(code, m, keyboard),
+                        }
+                    });
+                    let translate = translate.as_ref().map(|t| t as &dyn Translate);
+                    s.meaning
+                        .key(evdev, pressed, flags, translate)
+                        .into_iter()
+                        .collect()
+                }
                 None => {
                     tracing::debug!(code, "a key with no evdev code, dropped");
                     Vec::new()
@@ -271,7 +298,7 @@ fn capturer(
                 .modifiers
                 .changed(code, flags)
                 .into_iter()
-                .map(|(code, pressed)| InputEvent::Key { code, pressed })
+                .map(|(code, pressed)| KeyMeaning::modifier(code, pressed, flags))
                 .collect(),
         };
         drop(guard);
@@ -302,6 +329,7 @@ impl Capture for MacCapture {
         if lock(&self.drive_tap).is_some() {
             return Ok(());
         }
+        quartz::refresh_keyboard_layout();
         let tap = quartz::tap(
             quartz::TapKind::Filter,
             capturer(self.state.clone(), self.events.clone()),
@@ -311,6 +339,7 @@ impl Capture for MacCapture {
             let mut s = lock(&self.state);
             s.captured = true;
             s.modifiers.clear();
+            s.meaning.clear();
             quartz::hold_cursor(true);
         }
         *lock(&self.drive_tap) = Some(tap);
@@ -327,11 +356,23 @@ impl Capture for MacCapture {
     }
 }
 
+/// How a key pressed by its meaning was pressed, for its release.
+enum Pressed {
+    /// As the key at this evdev position: a named key.
+    Position(u16),
+    /// As this Mac key: a character on its key.
+    Mac(u16),
+    /// Typed as a character attached to a key event; nothing to release.
+    Typed,
+}
+
 struct InjectState {
     pos: (f64, f64),
     zones: Vec<Zone>,
     buttons: Vec<u16>,
     keys: HashSet<u16>,
+    /// The keys pressed by their meaning, by wire code.
+    pressed_as: HashMap<u16, Pressed>,
     modifiers: ModifierInject,
     clicks: ClickCounter,
     lines: ScrollUnits,
@@ -370,6 +411,7 @@ impl MacInject {
                 zones: zones(),
                 buttons: Vec::new(),
                 keys: HashSet::new(),
+                pressed_as: HashMap::new(),
                 modifiers: ModifierInject::default(),
                 clicks: ClickCounter::new(quartz::double_click_interval()),
                 lines: ScrollUnits::default(),
@@ -398,6 +440,66 @@ impl MacInject {
         };
         poster.mouse(kind, to, delta, 0, s.modifiers.flags());
         Ok(())
+    }
+
+    /// A key by its evdev position, a modifier as a flag change.
+    fn key_position(poster: &quartz::Poster, s: &mut InjectState, code: u16, pressed: bool) {
+        let Some(mac) = mac_of(code).map(|m| iso_swap(m, quartz::current_keyboard_is_iso())) else {
+            tracing::debug!(code, "a key the Mac has no code for, dropped");
+            return;
+        };
+        let modifier = s.modifiers.key(code, pressed);
+        if !modifier {
+            if pressed {
+                s.keys.insert(code);
+            } else {
+                s.keys.remove(&code);
+            }
+        }
+        poster.key(mac, pressed, modifier, s.modifiers.flags());
+    }
+
+    /// A press by its meaning (ADR 0043 decision 3): a named key at its
+    /// position, a character on the key and level that type it here (with
+    /// the held modifiers instead for a shortcut), else attached to a key
+    /// event; by position when the ID means nothing here.
+    fn press_meaning(
+        poster: &quartz::Poster,
+        s: &mut InjectState,
+        code: u16,
+        id: KeyId,
+        mods: u32,
+    ) {
+        if keyid::is_named(id) {
+            match keyid::evdev_for_named(id) {
+                Some(evdev) => {
+                    s.pressed_as.insert(code, Pressed::Position(evdev));
+                    Self::key_position(poster, s, evdev, true);
+                }
+                None => Self::key_position(poster, s, code, true),
+            }
+            return;
+        }
+        let Some(c) = keyid::character(id) else {
+            Self::key_position(poster, s, code, true);
+            return;
+        };
+        match quartz::keyboard_layout().and_then(|l| l.find(c)) {
+            Some((mac, level)) => {
+                let held = s.modifiers.flags();
+                let flags = if mods & keyid::mask::COMMAND != 0 {
+                    held
+                } else {
+                    character_flags(held, level)
+                };
+                poster.key(mac, true, false, flags);
+                s.pressed_as.insert(code, Pressed::Mac(mac));
+            }
+            None => {
+                poster.text(&c.to_string());
+                s.pressed_as.insert(code, Pressed::Typed);
+            }
+        }
     }
 }
 
@@ -433,6 +535,7 @@ impl Inject for MacInject {
         s.pos = to;
         s.lines.clear();
         s.pixels.clear();
+        quartz::refresh_keyboard_layout();
         self.move_to(&mut s, to)
     }
 
@@ -479,23 +582,23 @@ impl Inject for MacInject {
                 let (vertical, horizontal) = units.take(*dx, *dy);
                 poster.scroll(*discrete, vertical, horizontal, s.modifiers.flags());
             }
-            InputEvent::Key { code, pressed } => {
-                let Some(mac) =
-                    mac_of(*code).map(|m| iso_swap(m, quartz::current_keyboard_is_iso()))
-                else {
-                    tracing::debug!(code, "a key the Mac has no code for, dropped");
-                    return Ok(());
-                };
-                let modifier = s.modifiers.key(*code, *pressed);
-                if !modifier {
-                    if *pressed {
-                        s.keys.insert(*code);
-                    } else {
-                        s.keys.remove(code);
-                    }
-                }
-                poster.key(mac, *pressed, modifier, s.modifiers.flags());
-            }
+            InputEvent::Key {
+                code,
+                pressed: true,
+                id: Some(id),
+                mods,
+            } => Self::press_meaning(poster, s, *code, *id, mods.unwrap_or(0)),
+            InputEvent::Key {
+                code,
+                pressed: false,
+                ..
+            } => match s.pressed_as.remove(code) {
+                Some(Pressed::Position(evdev)) => Self::key_position(poster, s, evdev, false),
+                Some(Pressed::Mac(mac)) => poster.key(mac, false, false, s.modifiers.flags()),
+                Some(Pressed::Typed) => {}
+                None => Self::key_position(poster, s, *code, false),
+            },
+            InputEvent::Key { code, .. } => Self::key_position(poster, s, *code, true),
             InputEvent::Text { text } => poster.text(text),
         }
         Ok(())
@@ -508,6 +611,11 @@ impl Inject for MacInject {
         for code in std::mem::take(&mut s.buttons) {
             if let Some(button) = mac_button(code) {
                 poster.mouse(Mouse::Up(button), s.pos, (0.0, 0.0), 1, s.modifiers.flags());
+            }
+        }
+        for (_, pressed) in s.pressed_as.drain() {
+            if let Pressed::Mac(mac) = pressed {
+                poster.key(mac, false, false, s.modifiers.flags());
             }
         }
         let mut keys: Vec<u16> = s.keys.drain().collect();

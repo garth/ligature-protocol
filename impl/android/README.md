@@ -27,7 +27,9 @@ echo "sdk.dir=$HOME/Android/Sdk" > local.properties   # where the SDK is
 Gradle runs `cargo ndk` for `arm64-v8a` and `x86_64` (release profile) and then
 `uniffi-bindgen` to generate the Kotlin bindings, before compiling the app. The NDK named
 in `app/build.gradle.kts` is downloaded by the Android Gradle plugin if it is missing
-(`sdkmanager --licenses` must have been accepted). Without mise, set `rust.cargo` in
+(`sdkmanager --licenses` must have been accepted). On a Linux host `uniffi-bindgen` links
+the daemon for the host, so xkbcommon's development files are needed as for the desktop
+build. Without mise, set `rust.cargo` in
 `gradle.properties` (or `-Prust.cargo=/path/to/cargo`) if `cargo` is not on `PATH`.
 
 The debug APK is `app/build/outputs/apk/debug/app-debug.apk`:

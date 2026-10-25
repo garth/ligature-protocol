@@ -38,6 +38,7 @@ ashpd.workspace = true
 rustix.workspace = true
 zbus.workspace = true
 futures-util.workspace = true
+xkbcommon.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 lp-macos.workspace = true

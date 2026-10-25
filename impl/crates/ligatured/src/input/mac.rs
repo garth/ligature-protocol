@@ -1,7 +1,8 @@
 //! The macOS input backend's arithmetic, kept apart from Quartz so it builds
 //! and is tested on every platform (milestone 7, LP-144): the table between
 //! macOS virtual key codes and the evdev codes on the wire, the modifier
-//! keys (which macOS reports as flag changes, not key presses), the click
+//! keys (which macOS reports as flag changes, not key presses), what a key
+//! means (ADR 0043) with the layout's translation handed in, the click
 //! count a double click needs, and scroll in whole units.
 
 use std::collections::HashSet;
@@ -482,6 +483,158 @@ pub fn wire_scroll(
     }
 }
 
+/// Carbon's Shift, shifted down by eight as `UCKeyTranslate` takes it.
+pub const CARBON_SHIFT: u32 = 0x02;
+/// Carbon's Caps Lock, shifted down by eight.
+pub const CARBON_CAPS: u32 = 0x04;
+/// Carbon's Option, shifted down by eight.
+pub const CARBON_OPTION: u32 = 0x08;
+
+/// The modifier mask of ADR 0043 for a Mac's event flags: Command is Super
+/// and Option is Alt, as in Synergy.
+#[must_use]
+pub fn mask_of_flags(f: u64) -> u32 {
+    use lp_core::input::keyid::mask;
+    [
+        (flags::SHIFT, mask::SHIFT),
+        (flags::CONTROL, mask::CONTROL),
+        (flags::ALTERNATE, mask::ALT),
+        (flags::COMMAND, mask::SUPER),
+        (flags::ALPHA_SHIFT, mask::CAPS_LOCK),
+    ]
+    .into_iter()
+    .filter(|(flag, _)| f & flag != 0)
+    .fold(0, |a, (_, bit)| a | bit)
+}
+
+/// The Carbon modifiers that choose the character a key sends: Shift and
+/// Caps Lock, never Control, Option or Command (ADR 0043 decision 2).
+#[must_use]
+pub fn character_modifiers(f: u64) -> u32 {
+    let mut out = 0;
+    if f & flags::SHIFT != 0 {
+        out |= CARBON_SHIFT;
+    }
+    if f & flags::ALPHA_SHIFT != 0 {
+        out |= CARBON_CAPS;
+    }
+    out
+}
+
+/// The flags of a key typed as a character (ADR 0043 decision 3): the held
+/// flags without the level ones (Shift, Option, Caps Lock), and with those
+/// the found level needs (`carbon`, shifted down by eight).
+#[must_use]
+pub fn character_flags(held: u64, carbon: u32) -> u64 {
+    // Left Shift's and left Option's device bits, and the right ones'.
+    const LEVEL_DEVICE: u64 = 0x0002 | 0x0004 | 0x0020 | 0x0040;
+    let mut out = held & !(flags::SHIFT | flags::ALTERNATE | flags::ALPHA_SHIFT | LEVEL_DEVICE);
+    if carbon & CARBON_SHIFT != 0 {
+        out |= flags::SHIFT | 0x0002;
+    }
+    if carbon & CARBON_OPTION != 0 {
+        out |= flags::ALTERNATE | 0x0020;
+    }
+    out
+}
+
+/// What a Mac controller's keys mean (ADR 0043 decision 2), with the
+/// layout's translation handed in, so it is tested on every platform. Holds
+/// the dead key's state between presses, and the keys whose press started
+/// one and sent nothing.
+#[derive(Debug, Default)]
+pub struct KeyMeaning {
+    dead: u32,
+    unsent: HashSet<u16>,
+}
+
+/// A layout's translation: what the key types with the Carbon modifiers,
+/// carrying the dead key's state when given one and composing none without.
+pub trait Translate {
+    /// The text the key types, empty when it starts a dead key.
+    fn translate(&self, modifiers: u32, dead: Option<&mut u32>) -> String;
+}
+
+impl<F: Fn(u32, Option<&mut u32>) -> String> Translate for F {
+    fn translate(&self, modifiers: u32, dead: Option<&mut u32>) -> String {
+        self(modifiers, dead)
+    }
+}
+
+impl KeyMeaning {
+    /// The key event for a key that is not a modifier, by evdev code, with
+    /// the event's flags; `None` for a dead key's press and its release.
+    pub fn key(
+        &mut self,
+        evdev: u16,
+        pressed: bool,
+        f: u64,
+        layout: Option<&dyn Translate>,
+    ) -> Option<lp_core::input::InputEvent> {
+        use lp_core::input::keyid;
+        let mods = Some(mask_of_flags(f));
+        if !pressed {
+            if self.unsent.remove(&evdev) {
+                return None;
+            }
+            return Some(lp_core::input::InputEvent::Key {
+                code: evdev,
+                pressed,
+                id: None,
+                mods,
+            });
+        }
+        let shortcut = f & (flags::CONTROL | flags::ALTERNATE | flags::COMMAND) != 0;
+        let id = match (keyid::named_for_evdev(evdev), layout) {
+            (Some(named), _) => Some(named),
+            (None, None) => None,
+            (None, Some(layout)) => {
+                let text = if shortcut {
+                    layout.translate(character_modifiers(f), None)
+                } else {
+                    let text = layout.translate(character_modifiers(f), Some(&mut self.dead));
+                    if text.is_empty() && self.dead != 0 {
+                        self.unsent.insert(evdev);
+                        return None;
+                    }
+                    text
+                };
+                let mut chars = text.chars();
+                match (chars.next(), chars.next()) {
+                    (Some(c), None) if !c.is_control() => Some(u32::from(c)),
+                    _ => None,
+                }
+            }
+        };
+        Some(lp_core::input::InputEvent::Key {
+            code: evdev,
+            pressed,
+            id,
+            mods,
+        })
+    }
+
+    /// The key event for a modifier's press or release, by evdev code, with
+    /// the flags after it.
+    #[must_use]
+    pub fn modifier(evdev: u16, pressed: bool, f: u64) -> lp_core::input::InputEvent {
+        lp_core::input::InputEvent::Key {
+            code: evdev,
+            pressed,
+            id: pressed
+                .then(|| lp_core::input::keyid::named_for_evdev(evdev))
+                .flatten(),
+            mods: Some(mask_of_flags(f)),
+        }
+    }
+
+    /// Forgets a dead key in progress, when a capture starts or ends.
+    pub fn clear(&mut self) {
+        self.dead = 0;
+        self.unsent.clear();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -630,5 +783,87 @@ mod tests {
                 discrete: false
             }
         );
+    }
+
+    #[test]
+    fn a_mac_key_says_what_its_layout_types() {
+        use lp_core::input::InputEvent;
+        use lp_core::input::keyid::{self, mask};
+        let mut meaning = KeyMeaning::default();
+        // A layout whose key types 'a', 'A' with Shift or Caps Lock, and a
+        // dead key: the first press starts it, the next composes 'é'.
+        let a = |m: u32, _: Option<&mut u32>| {
+            if m & (CARBON_SHIFT | CARBON_CAPS) != 0 {
+                "A"
+            } else {
+                "a"
+            }
+            .to_owned()
+        };
+        let dead = |_: u32, dead: Option<&mut u32>| match dead {
+            Some(d) if *d == 0 => {
+                *d = 1;
+                String::new()
+            }
+            Some(d) => {
+                *d = 0;
+                "é".to_owned()
+            }
+            None => "´".to_owned(),
+        };
+        let id = |e: Option<InputEvent>| match e {
+            Some(InputEvent::Key { id, mods, .. }) => Some((id, mods.unwrap_or(0))),
+            _ => None,
+        };
+        assert_eq!(
+            id(meaning.key(30, true, 0, Some(&a))),
+            Some((Some(0x61), 0))
+        );
+        assert_eq!(
+            id(meaning.key(30, true, flags::SHIFT, Some(&a))),
+            Some((Some(0x41), mask::SHIFT))
+        );
+        // Command does not change the character, and is Super.
+        assert_eq!(
+            id(meaning.key(30, true, flags::COMMAND, Some(&a))),
+            Some((Some(0x61), mask::SUPER))
+        );
+        // A named key is named whatever the layout.
+        assert_eq!(
+            id(meaning.key(28, true, 0, Some(&a))),
+            Some((Some(keyid::RETURN), 0))
+        );
+        // A dead key's press and release send nothing.
+        assert_eq!(meaning.key(26, true, 0, Some(&dead)), None);
+        assert_eq!(meaning.key(26, false, 0, Some(&dead)), None);
+        assert_eq!(
+            id(meaning.key(26, true, 0, Some(&dead))),
+            Some((Some(u32::from('é')), 0))
+        );
+        assert!(meaning.key(26, false, 0, Some(&dead)).is_some());
+        // Without the layout, a character key goes by position.
+        assert_eq!(id(meaning.key(30, true, 0, None)), Some((None, 0)));
+        // A modifier is its named key; Option is Alt and Command Super.
+        assert_eq!(
+            id(Some(KeyMeaning::modifier(56, true, flags::ALTERNATE))),
+            Some((Some(keyid::ALT_L), mask::ALT))
+        );
+        assert_eq!(
+            id(Some(KeyMeaning::modifier(125, true, flags::COMMAND))),
+            Some((Some(keyid::SUPER_L), mask::SUPER))
+        );
+    }
+
+    #[test]
+    fn a_character_is_typed_with_the_level_it_needs_and_the_held_shortcut_keys() {
+        // '@' on Shift, with Control held and Caps Lock on: Control stays,
+        // Caps Lock goes, Shift comes.
+        let held = flags::CONTROL | 0x0001 | flags::ALPHA_SHIFT;
+        assert_eq!(
+            character_flags(held, CARBON_SHIFT),
+            flags::CONTROL | 0x0001 | flags::SHIFT | 0x0002
+        );
+        // A lower-case letter with Shift held is typed without it.
+        assert_eq!(character_flags(flags::SHIFT | 0x0004, 0), 0);
     }
 }

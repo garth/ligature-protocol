@@ -227,10 +227,19 @@ applies its acceleration, then scales by the ratio of the driven width from `rea
 sweep across one screen is a sweep across the other and nothing is accelerated twice), `position`
 (`x`, `y` fractions, only to a device that advertises `absolute`), `button` and `key` (`code`,
 `pressed`), `scroll` (`dx`, `dy` in pixels, or in wheel steps when `discrete`) and `text` (a string,
-only to a device that advertises `text`). Keys and buttons travel as Linux evdev codes, which name
-physical keys as USB HID does: the driven device applies its own keyboard layout, so a key typed on
-one layout into a device with another yields what that device's layout says, as a keyboard plugged
-into it would. An unmapped code is dropped, never guessed.
+only to a device that advertises `text`). Buttons travel as Linux evdev codes. A key carries three
+things, as Synergy's key message does ([ADR 0043](../adr/0043-keys-carry-their-meaning.md)): `code`,
+the physical key as an evdev code; on a press `id`, what the key means on the controller's layout
+(Synergy's key ID: a character's Unicode value, or a named key's value in U+E000 to U+EFFF, the X11
+keysym less 0x1000); and `mods`, the controller's modifier mask. The controller computes the
+character with Shift and Caps Lock and without Control, Alt or Super, composes dead keys itself, and
+counts a Mac's Command as Super and its Option as Alt. The driven device finds its own key for
+`id`: a modifier presses its own key for that modifier and Caps Lock or Num Lock toggles its lock;
+with a command modifier held it presses the key that produces `id` with the user's modifiers; and
+otherwise it presses the key and level that produce `id`, setting Shift or AltGr for that press,
+or types the character where no key produces it. A release is matched to its press by `code`, and a
+key without `id` is placed by `code` with the driven device's layout. An unmapped code is dropped,
+never guessed.
 
 The drive ends in one of three ways. The driven device sends `leave` when the pointer
 reaches the edge it entered by, with `at` along it, and the controller takes the pointer

@@ -182,14 +182,8 @@ async fn the_pointer_crosses_an_edge_drives_the_other_device_and_comes_back() {
     // Motion is scaled by the ratio of the widths (2000 / 1000); keys,
     // buttons and scroll pass through in order.
     a.capture.feed(InputEvent::Motion { dx: 10.0, dy: 5.0 });
-    a.capture.feed(InputEvent::Key {
-        code: 30,
-        pressed: true,
-    });
-    a.capture.feed(InputEvent::Key {
-        code: 30,
-        pressed: false,
-    });
+    a.capture.feed(InputEvent::key(30, true));
+    a.capture.feed(InputEvent::key(30, false));
     a.capture.feed(InputEvent::Button {
         code: BTN_LEFT,
         pressed: true,
@@ -209,13 +203,7 @@ async fn the_pointer_crosses_an_edge_drives_the_other_device_and_comes_back() {
     .await;
     let injected = b.inject.injected();
     assert_eq!(injected[0], InputEvent::Motion { dx: 20.0, dy: 10.0 });
-    assert_eq!(
-        injected[1],
-        InputEvent::Key {
-            code: 30,
-            pressed: true
-        }
-    );
+    assert_eq!(injected[1], InputEvent::key(30, true));
     assert_eq!(
         injected[3],
         InputEvent::Button {
@@ -322,14 +310,8 @@ async fn the_release_chord_gives_the_input_back() {
         .unwrap();
     a.capture.hit_edge(Edge::Left, 0.5);
     until("b is driven", || b.sync.driven_by().is_some()).await;
-    a.capture.feed(InputEvent::Key {
-        code: KEY_LEFTCTRL,
-        pressed: true,
-    });
-    a.capture.feed(InputEvent::Key {
-        code: KEY_RIGHTCTRL,
-        pressed: true,
-    });
+    a.capture.feed(InputEvent::key(KEY_LEFTCTRL, true));
+    a.capture.feed(InputEvent::key(KEY_RIGHTCTRL, true));
     until("a let go", || !a.sync.is_driving()).await;
     until("b lifted everything", || b.inject.ends() == 1).await;
     assert_eq!(a.capture.releases(), vec![None]);
@@ -413,7 +395,7 @@ async fn input_captured_with_no_drive_is_given_back_at_once() {
     // Captured events with nothing driven: the platform holds the input for
     // no one. The first gives it back; the rest of the burst do not repeat it.
     for pressed in [true, false] {
-        a.capture.feed(InputEvent::Key { code: 30, pressed });
+        a.capture.feed(InputEvent::key(30, pressed));
     }
     until("a gave the input back", || {
         a.capture.releases() == vec![None]
@@ -433,10 +415,7 @@ async fn a_disconnect_mid_drive_lifts_everything_and_returns_the_pointer() {
     a.capture.hit_edge(Edge::Bottom, 0.75);
     until("b is driven", || b.sync.driven_by().is_some()).await;
     assert_eq!(b.inject.begun(), vec![(0.75, 0.0)]);
-    a.capture.feed(InputEvent::Key {
-        code: 42,
-        pressed: true,
-    });
+    a.capture.feed(InputEvent::key(42, true));
     until("the key is held on b", || b.inject.injected().len() == 1).await;
     // The driven device's daemon stops: a gets its pointer back at once.
     b.daemon.manager().drop_peer(a.daemon.binding().public());

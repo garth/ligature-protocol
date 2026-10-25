@@ -71,16 +71,17 @@ What this milestone pins:
    `ready` after `enter` with the controlled screen's `width` and `height` in pixels so
    the controller scales motion. Either side sends `release` to lift every held key and
    button, and does so itself on `leave` and on disconnect, so nothing stays pressed.
-4. **Codes and layouts.** Keys travel as Linux evdev key codes, the code space every
-   platform maps to and from (macOS virtual key codes through a table, Android key codes
-   through another), and name physical keys, as USB HID does: the controlled device
-   applies its own keyboard layout, so a key typed on a QWERTY controller into a QWERTZ
-   device yields what that device's layout says. That is what a USB keyboard plugged into
-   the device would do and is the only rule that needs no layout on the wire. Buttons are
-   evdev button codes. Motion is relative, in the controller's pixels, scaled by the ratio
-   of the two screens' widths as `ready` reports them, so a sweep across one screen is a
-   sweep across the other; acceleration is applied on the controller, where the device
-   is, and never again.
+4. **Codes, meanings and layouts.** A key travels as its Linux evdev key code, the code
+   space every platform maps to and from (macOS virtual key codes through a table, Android
+   key codes through another), which names the physical key as USB HID does, and, from a
+   controller that knows its layout, as what it means there: Synergy's key ID and the
+   controller's modifier mask (ADR 0043). The controlled device types the meaning with its
+   own keys, so a key typed on a British Mac into a Linux machine set to US yields what the
+   Mac's keycap says, and places a key that carries no meaning by its code, as a USB
+   keyboard plugged into it would. Buttons are evdev button codes. Motion is relative, in
+   the controller's pixels, scaled by the ratio of the two screens' widths as `ready`
+   reports them, so a sweep across one screen is a sweep across the other; acceleration
+   is applied on the controller, where the device is, and never again.
 5. **Small messages on the stream, measured.** Events are batched per input frame into one
    `events` message, which keeps a message small (tens of bytes) and the stream in order,
    as ADR 0036 wants. The reference implementation measures the round trip from a

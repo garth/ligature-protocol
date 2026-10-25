@@ -23,6 +23,7 @@ use clap::Parser;
 use ligatured::control::{
     Caps, Client, Devices, Empty, Event, InputDriven, Request, ScreenStopped, types,
 };
+use lp_core::input::keyid::{self, KeyId};
 use lp_core::input::{
     BTN_LEFT, BTN_MIDDLE, BTN_RIGHT, InputEvent, InputParams, KEY_LEFTCTRL, KEY_RIGHTCTRL,
 };
@@ -34,8 +35,8 @@ use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition};
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
-use winit::keyboard::ModifiersState;
-use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
+use winit::platform::modifier_supplement::KeyEventExtModifierSupplement as _;
 use winit::window::{Window, WindowId};
 
 /// Command-line options.
@@ -148,6 +149,8 @@ fn main() {
         target: (0.0, 0.0, 1.0, 1.0),
         held_ctrl: (false, false),
         held_modifiers: Vec::new(),
+        modifiers: ModifiersState::empty(),
+        unsent: Vec::new(),
         ended: None,
         debug: std::env::var_os("LPVIEW_DEBUG").is_some(),
         watch_only: None,
@@ -449,6 +452,11 @@ struct App {
     held_ctrl: (bool, bool),
     /// Modifier keys sent as pressed and not yet released, by evdev code.
     held_modifiers: Vec<u16>,
+    /// The window's modifier state, for each key's mask.
+    modifiers: ModifiersState,
+    /// Keys whose press was not sent (a dead key waiting for the next), so
+    /// their release is not sent either.
+    unsent: Vec<u16>,
     ended: Option<String>,
     /// `LPVIEW_DEBUG` set: every window event is printed.
     debug: bool,
@@ -679,16 +687,14 @@ impl ApplicationHandler<UserEvent> for App {
                 // A modifier's release the window did not report as a key
                 // would leave it held on the driven device: whatever the
                 // window says is up is released there.
+                self.modifiers = modifiers.state();
                 let stale = stale_modifiers(&self.held_modifiers, modifiers.state());
                 if !stale.is_empty() {
                     self.held_modifiers.retain(|c| !stale.contains(c));
                     self.send(
                         stale
                             .into_iter()
-                            .map(|code| InputEvent::Key {
-                                code,
-                                pressed: false,
-                            })
+                            .map(|code| InputEvent::key(code, false))
                             .collect(),
                     );
                 }
@@ -709,6 +715,7 @@ impl ApplicationHandler<UserEvent> for App {
                     KEY_RIGHTCTRL => self.held_ctrl.1 = pressed,
                     _ => {}
                 }
+                let mods = Some(mask_of(self.modifiers));
                 if cfg!(target_os = "macos") && code == KEY_CAPSLOCK {
                     // macOS reports Caps Lock as its state changes, pressed
                     // when it turns on and released when it turns off; the
@@ -718,11 +725,10 @@ impl ApplicationHandler<UserEvent> for App {
                         InputEvent::Key {
                             code,
                             pressed: true,
+                            id: Some(keyid::CAPS_LOCK),
+                            mods,
                         },
-                        InputEvent::Key {
-                            code,
-                            pressed: false,
-                        },
+                        InputEvent::key(code, false),
                     ]);
                     return;
                 }
@@ -732,7 +738,52 @@ impl ApplicationHandler<UserEvent> for App {
                         self.held_modifiers.push(code);
                     }
                 }
-                self.send(vec![InputEvent::Key { code, pressed }]);
+                if !pressed {
+                    // A release is matched to its press by position.
+                    if self.unsent.contains(&code) {
+                        self.unsent.retain(|c| *c != code);
+                        return;
+                    }
+                    self.send(vec![InputEvent::key(code, false)]);
+                } else {
+                    let id = match &event.logical_key {
+                        // A dead key waits for the key that completes it,
+                        // which carries the composed character.
+                        Key::Dead(_) => {
+                            self.unsent.push(code);
+                            return;
+                        }
+                        Key::Named(named) => named_id(*named, code),
+                        Key::Character(_) => {
+                            // The character with Shift and Caps Lock, not with
+                            // Option (a Mac's Alt), as Synergy computes it.
+                            let key = if cfg!(target_os = "macos") && self.modifiers.alt_key() {
+                                event.key_without_modifiers()
+                            } else {
+                                event.logical_key.clone()
+                            };
+                            let text = event
+                                .text
+                                .as_ref()
+                                .filter(|_| {
+                                    !self.modifiers.alt_key() && !self.modifiers.control_key()
+                                })
+                                .map(ToString::to_string)
+                                .or_else(|| match &key {
+                                    Key::Character(c) => Some(c.to_string()),
+                                    _ => None,
+                                });
+                            text.and_then(|t| single_char_id(&t, self.modifiers.shift_key()))
+                        }
+                        _ => None,
+                    };
+                    self.send(vec![InputEvent::Key {
+                        code,
+                        pressed,
+                        id,
+                        mods,
+                    }]);
+                }
                 if self.held_ctrl == (true, true) {
                     self.held_ctrl = (false, false);
                     self.release();
@@ -740,6 +791,57 @@ impl ApplicationHandler<UserEvent> for App {
             }
             _ => {}
         }
+    }
+}
+
+/// Synergy's modifier mask for the window's modifier state.
+fn mask_of(state: ModifiersState) -> u32 {
+    let mut mask = 0;
+    if state.shift_key() {
+        mask |= keyid::mask::SHIFT;
+    }
+    if state.control_key() {
+        mask |= keyid::mask::CONTROL;
+    }
+    if state.alt_key() {
+        mask |= keyid::mask::ALT;
+    }
+    if state.super_key() {
+        mask |= keyid::mask::SUPER;
+    }
+    mask
+}
+
+/// The key ID of a single character; a Shift held over a character key
+/// whose text came without it (Option stripped) shifts a letter.
+fn single_char_id(text: &str, shift: bool) -> Option<KeyId> {
+    let mut chars = text.chars();
+    let c = chars.next()?;
+    if chars.next().is_some() || c.is_control() {
+        return None;
+    }
+    let c = if shift && c.is_lowercase() {
+        c.to_uppercase().next().unwrap_or(c)
+    } else {
+        c
+    };
+    Some(u32::from(c))
+}
+
+/// The key ID of a named key, the side of a modifier from its position.
+fn named_id(named: NamedKey, code: u16) -> Option<KeyId> {
+    let right = matches!(code, 54 | 97 | 100 | 126);
+    let pick = |left: KeyId, right_id: KeyId| Some(if right { right_id } else { left });
+    match named {
+        NamedKey::Shift => pick(keyid::SHIFT_L, keyid::SHIFT_R),
+        NamedKey::Control => pick(keyid::CONTROL_L, keyid::CONTROL_R),
+        NamedKey::Alt => pick(keyid::ALT_L, keyid::ALT_R),
+        NamedKey::Super => pick(keyid::SUPER_L, keyid::SUPER_R),
+        NamedKey::Meta => pick(keyid::META_L, keyid::META_R),
+        NamedKey::AltGraph => Some(keyid::ALT_GR),
+        NamedKey::CapsLock => Some(keyid::CAPS_LOCK),
+        NamedKey::Space => Some(u32::from(' ')),
+        _ => keyid::named_for_evdev(code),
     }
 }
 
@@ -926,6 +1028,24 @@ mod tests {
             .output()
             .ok()?;
         (out.status.success() && !out.stdout.is_empty()).then_some(out.stdout)
+    }
+
+    #[test]
+    fn keys_carry_their_meaning() {
+        assert_eq!(single_char_id("@", true), Some(u32::from('@')));
+        assert_eq!(
+            single_char_id("e", true),
+            Some(u32::from('E')),
+            "Option stripped, Shift kept"
+        );
+        assert_eq!(single_char_id("ab", false), None);
+        assert_eq!(single_char_id("\r", false), None);
+        assert_eq!(named_id(NamedKey::Alt, 56), Some(keyid::ALT_L));
+        assert_eq!(named_id(NamedKey::Super, 126), Some(keyid::SUPER_R));
+        assert_eq!(named_id(NamedKey::Enter, 28), Some(keyid::RETURN));
+        assert_eq!(named_id(NamedKey::Space, 57), Some(0x20));
+        let state = ModifiersState::SHIFT | ModifiersState::CONTROL;
+        assert_eq!(mask_of(state), keyid::mask::SHIFT | keyid::mask::CONTROL);
     }
 
     #[test]

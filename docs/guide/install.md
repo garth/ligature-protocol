@@ -139,6 +139,9 @@ cargo build --release -p ligatured -p lpctl -p lpview
 ../packaging/install.sh target/release
 ```
 
+On Linux the build needs xkbcommon's development files: `libxkbcommon-dev` on Debian and
+Ubuntu, `libxkbcommon-devel` on Fedora, `libxkbcommon` on Arch.
+
 The Android app builds from `impl/android` with the Android SDK and NDK; its
 [README](https://github.com/garth/ligature-protocol/blob/main/impl/android/README.md) has
 the steps.

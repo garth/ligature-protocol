@@ -24,6 +24,16 @@ accounts. LP's file capability should interoperate with it where possible.
 **Apple Continuity**: The proprietary benchmark: Handoff, Universal Clipboard, AirDrop,
 Sidecar, phone calls on Mac. LP aims at equivalent user experience on open platforms.
 
+**Synergy, Barrier and Input Leap**: One keyboard and mouse across computers, the pointer
+crossing from one screen to the next. Synergy began as a reimplementation of Chris
+Schoeneman's CosmoSynergy; Symless's Synergy 1.9 was forked as Barrier, and Barrier as
+Input Leap, which keeps Synergy's key message. LP takes that key model for its input
+family: each key carries its meaning on the controller (a key ID, a Unicode character or a
+named key), the modifier mask and the physical key, and the driven device finds its own key
+for the meaning ([ADR 0043](adr/0043-keys-carry-their-meaning.md)). LP differs in carrying
+input over its authenticated per-device sessions rather than a server and clients, and in
+the edge layout being each device's own setting.
+
 ## Identity and encryption
 
 **Matrix**: Source of the cross-signing model for device trust (ADR 0003, ADR 0017): a

@@ -57,6 +57,11 @@ release workflow publishes the section as the release notes with the installers.
 
 ### Changed
 
+- A key sent across a drive carries what it means on the controller's layout as well as its
+  position, after Synergy and Input Leap (ADR 0043): the driven device types the
+  controller's character with its own keys, modifiers keep their meaning across layouts
+  that move them, a shortcut is the same letter's, and a dead key is composed on the
+  controller. Building on Linux now needs xkbcommon's development files (LP-161).
 - On macOS the daemon runs from its own application bundle, `~/Applications/Ligature.app`,
   and shows other devices' notifications through the user notification centre: the
   permission prompt names Ligature, icons are shown, a dismissal on another device clears

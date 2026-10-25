@@ -21,6 +21,9 @@ jobs:
         working-directory: impl
     steps:
       - uses: actions/checkout@v7
+      - name: xkbcommon, which the daemon links on Linux (ADR 0043)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxkbcommon-dev xkb-data
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -48,6 +51,8 @@ jobs:
         working-directory: impl
     steps:
       - uses: actions/checkout@v7
+      - name: xkbcommon, which the daemon links on Linux (ADR 0043)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxkbcommon-dev xkb-data
       - name: Read rust-version from the workspace
         id: msrv
         run: echo "version=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml)" >> "$GITHUB_OUTPUT"
@@ -68,6 +73,8 @@ jobs:
         working-directory: impl
     steps:
       - uses: actions/checkout@v7
+      - name: xkbcommon, which the daemon links on Linux (ADR 0043)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxkbcommon-dev xkb-data
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android, x86_64-linux-android
@@ -93,6 +100,8 @@ jobs:
         working-directory: impl/android
     steps:
       - uses: actions/checkout@v7
+      - name: xkbcommon, which the daemon links on Linux (ADR 0043)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxkbcommon-dev xkb-data
       - uses: actions/setup-java@v6
         with:
           distribution: temurin

@@ -108,8 +108,23 @@ unsafe extern "C" {
 
 #[link(name = "Carbon", kind = "framework")]
 unsafe extern "C" {
+    static kTISPropertyUnicodeKeyLayoutData: CFStringRef;
     fn LMGetKbdType() -> u8;
     fn KBGetLayoutType(keyboard_type: i16) -> u32;
+    fn TISCopyCurrentKeyboardLayoutInputSource() -> CFTypeRef;
+    fn TISGetInputSourceProperty(source: CFTypeRef, key: CFStringRef) -> CFTypeRef;
+    fn UCKeyTranslate(
+        layout: *const c_void,
+        code: u16,
+        action: u16,
+        modifiers: u32,
+        keyboard_type: u32,
+        options: u32,
+        dead_key_state: *mut u32,
+        max_length: usize,
+        actual_length: *mut usize,
+        string: *mut u16,
+    ) -> i32;
 }
 
 #[link(name = "IOKit", kind = "framework")]
@@ -122,6 +137,8 @@ unsafe extern "C" {
     static kCFRunLoopCommonModes: CFStringRef;
     static kCFBooleanTrue: CFTypeRef;
     fn CFRelease(cf: CFTypeRef);
+    fn CFDataGetBytePtr(data: CFTypeRef) -> *const u8;
+    fn CFDataGetLength(data: CFTypeRef) -> isize;
     fn CFMachPortCreateRunLoopSource(
         allocator: CFTypeRef,
         port: CFMachPortRef,
@@ -249,6 +266,153 @@ fn keyboard_type_is_iso(keyboard_type: i64) -> bool {
 pub fn current_keyboard_is_iso() -> bool {
     // SAFETY: a plain query with no arguments.
     keyboard_type_is_iso(i64::from(unsafe { LMGetKbdType() }))
+}
+
+/// `kUCKeyActionDown`.
+const KEY_ACTION_DOWN: u16 = 0;
+/// `kUCKeyTranslateNoDeadKeysMask`.
+const NO_DEAD_KEYS: u32 = 1;
+/// The Carbon modifier bits `UCKeyTranslate` takes, shifted down by eight:
+/// Shift and Option, the two that choose a character's level.
+const LEVEL_MODIFIERS: [u32; 4] = [0, 0x02, 0x08, 0x02 | 0x08];
+
+/// The current keyboard layout's `uchr` data, copied, with the keyboard
+/// type it was read for and, for each character the layout types without a
+/// dead key, the key and the Carbon modifiers (shifted down by eight) that
+/// type it, Shift preferred to Option (ADR 0043).
+pub struct KeyboardLayout {
+    data: Vec<u8>,
+    keyboard_type: u32,
+    keys: std::collections::HashMap<char, (u16, u32)>,
+}
+
+impl std::fmt::Debug for KeyboardLayout {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("KeyboardLayout")
+    }
+}
+
+static LAYOUT: std::sync::Mutex<Option<std::sync::Arc<KeyboardLayout>>> =
+    std::sync::Mutex::new(None);
+
+/// The keyboard layout as last read, `None` before the first read or when
+/// the layout has no Unicode data.
+#[must_use]
+pub fn keyboard_layout() -> Option<std::sync::Arc<KeyboardLayout>> {
+    LAYOUT
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
+/// Reads the keyboard layout again, on the main thread, where the Text
+/// Input Sources calls must be made; [`keyboard_layout`] has it once the
+/// main thread's run loop has run the read.
+pub fn refresh_keyboard_layout() {
+    dispatch2::DispatchQueue::main().exec_async(|| {
+        let layout = KeyboardLayout::current().map(std::sync::Arc::new);
+        *LAYOUT
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = layout;
+    });
+}
+
+impl KeyboardLayout {
+    /// The current layout, read through the Text Input Sources calls,
+    /// which belong on the main thread.
+    fn current() -> Option<Self> {
+        // SAFETY: the input source is retained here and released below; the
+        // data it holds is copied before that.
+        let data = unsafe {
+            let source = TISCopyCurrentKeyboardLayoutInputSource();
+            if source.is_null() {
+                return None;
+            }
+            let uchr = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData);
+            let data = if uchr.is_null() {
+                None
+            } else {
+                let len = usize::try_from(CFDataGetLength(uchr)).unwrap_or(0);
+                let ptr = CFDataGetBytePtr(uchr);
+                (!ptr.is_null() && len > 0).then(|| std::slice::from_raw_parts(ptr, len).to_vec())
+            };
+            CFRelease(source);
+            data?
+        };
+        // SAFETY: a plain query with no arguments.
+        let keyboard_type = u32::from(unsafe { LMGetKbdType() });
+        let mut layout = Self {
+            data,
+            keyboard_type,
+            keys: std::collections::HashMap::new(),
+        };
+        for modifiers in LEVEL_MODIFIERS.iter().rev() {
+            for code in (0..128u16).rev() {
+                let mut dead = 0;
+                let text = layout.translate(code, *modifiers, layout.keyboard_type, 0, &mut dead);
+                let mut chars = text.chars();
+                if dead == 0
+                    && let (Some(c), None) = (chars.next(), chars.next())
+                    && !c.is_control()
+                {
+                    // Visited from the most modifiers to the fewest and from
+                    // the highest code down, so the last written wins.
+                    layout.keys.insert(c, (code, *modifiers));
+                }
+            }
+        }
+        Some(layout)
+    }
+
+    /// What `code` types with `modifiers` (Carbon's, shifted down by eight)
+    /// on a keyboard of `keyboard_type`, carrying a dead key's state in
+    /// `dead`; empty when the key starts a dead key or types nothing.
+    #[must_use]
+    pub fn translate(
+        &self,
+        code: u16,
+        modifiers: u32,
+        keyboard_type: u32,
+        options: u32,
+        dead: &mut u32,
+    ) -> String {
+        let mut units = [0u16; 8];
+        let mut length = 0usize;
+        // SAFETY: the layout data is a copy of the input source's `uchr`,
+        // alive for the call; the buffer and the counters are local.
+        let status = unsafe {
+            UCKeyTranslate(
+                self.data.as_ptr().cast(),
+                code,
+                KEY_ACTION_DOWN,
+                modifiers,
+                keyboard_type,
+                options,
+                dead,
+                units.len(),
+                &mut length,
+                units.as_mut_ptr(),
+            )
+        };
+        if status != 0 {
+            return String::new();
+        }
+        String::from_utf16_lossy(&units[..length.min(units.len())])
+    }
+
+    /// What `code` types with `modifiers` and no dead key, for a shortcut.
+    #[must_use]
+    pub fn translate_plain(&self, code: u16, modifiers: u32, keyboard_type: u32) -> String {
+        let mut dead = 0;
+        self.translate(code, modifiers, keyboard_type, NO_DEAD_KEYS, &mut dead)
+    }
+
+    /// The key and the Carbon modifiers (shifted down by eight: 0x02 Shift,
+    /// 0x08 Option) that type `c` on this layout without a dead key.
+    #[must_use]
+    pub fn find(&self, c: char) -> Option<(u16, u32)> {
+        self.keys.get(&c).copied()
+    }
 }
 
 /// Asks for whichever of the two permissions is missing: macOS shows its
@@ -434,6 +598,11 @@ pub enum TapEvent {
         repeat: bool,
         /// The key came from an ISO keyboard.
         iso: bool,
+        /// The keyboard type (`kCGKeyboardEventKeyboardType`), which
+        /// [`KeyboardLayout::translate`] takes.
+        keyboard: u32,
+        /// `CGEventFlags`.
+        flags: u64,
     },
     /// A modifier key changed: its virtual key code and the flags after.
     Flags {
@@ -660,6 +829,8 @@ unsafe fn decode(kind: u32, event: CGEventRef) -> Option<TapEvent> {
                 pressed: kind == KEY_DOWN,
                 repeat: int(KEYBOARD_AUTOREPEAT) != 0,
                 iso: keyboard_type_is_iso(int(KEYBOARD_TYPE)),
+                keyboard: u32::try_from(int(KEYBOARD_TYPE)).unwrap_or(0),
+                flags: CGEventGetFlags(event),
             },
             FLAGS_CHANGED => TapEvent::Flags {
                 code: u16::try_from(int(KEYBOARD_KEYCODE)).unwrap_or(u16::MAX),

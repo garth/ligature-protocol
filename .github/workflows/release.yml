@@ -65,6 +65,8 @@ jobs:
           - { runner: ubuntu-24.04-arm, arch: aarch64 }
     steps:
       - uses: actions/checkout@v7
+      - name: xkbcommon, which the daemon links on Linux (ADR 0043)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxkbcommon-dev xkb-data
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -121,6 +123,8 @@ jobs:
         working-directory: impl/android
     steps:
       - uses: actions/checkout@v7
+      - name: xkbcommon, which the daemon links on Linux (ADR 0043)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxkbcommon-dev xkb-data
       - uses: actions/setup-java@v6
         with:
           distribution: temurin

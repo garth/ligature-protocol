@@ -50,7 +50,7 @@
       "type": "integer",
       "minimum": 0,
       "maximum": 65535,
-      "description": "A Linux evdev key or button code (input-event-codes.h): KEY_A is 30, BTN_LEFT is 272. Names a physical key; the driven device's layout decides what it types."
+      "description": "A Linux evdev key or button code (input-event-codes.h): KEY_A is 30, BTN_LEFT is 272. Names a physical key: a key event's id says what it means (ADR 0043), and without one the driven device's layout decides what it types."
     },
     "enter": {
       "type": "object",
@@ -207,7 +207,7 @@
           }
         },
         {
-          "description": "A key pressed or released, by evdev code.",
+          "description": "A key pressed or released: the physical key, and on a press what it means on the controller's layout (ADR 0043). The driven device finds its own key for id and releases by code; without id it places the key by code.",
           "required": [
             "kind",
             "code",
@@ -222,6 +222,18 @@
             },
             "pressed": {
               "type": "boolean"
+            },
+            "id": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4294967295,
+              "description": "Synergy's key ID: a character's Unicode scalar value, or a named key's value in U+E000 to U+EFFF (an X11 keysym of 0xFF00 to 0xFFFF less 0x1000: BackSpace 0xEF08, Return 0xEF0D, Escape 0xEF1B, Shift_L 0xEFE1, Caps_Lock 0xEFE5). The character is the one the controller's layout produces with Shift and Caps Lock, ignoring Control, Alt and Super."
+            },
+            "mods": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295,
+              "description": "Synergy's modifier mask of the controller at the event: Shift 0x1, Control 0x2, Alt 0x4, Meta 0x8, Super 0x10, AltGr 0x20, CapsLock 0x1000, NumLock 0x2000, ScrollLock 0x4000."
             }
           }
         },

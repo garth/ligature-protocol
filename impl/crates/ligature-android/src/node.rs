@@ -638,7 +638,18 @@ impl Node {
                     dy,
                     discrete: true,
                 },
-                crate::TouchEvent::Key { code, pressed } => InputEvent::Key { code, pressed },
+                crate::TouchEvent::Key { code, pressed } => InputEvent::Key {
+                    code,
+                    pressed,
+                    // The phone sends named keys only (Backspace, Enter):
+                    // their meaning is their position's (ADR 0043).
+                    id: if pressed {
+                        lp_core::input::keyid::named_for_evdev(code)
+                    } else {
+                        None
+                    },
+                    mods: None,
+                },
                 crate::TouchEvent::Text { text } => InputEvent::Text { text },
             })
             .collect();

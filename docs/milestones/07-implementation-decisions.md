@@ -208,13 +208,13 @@ after it, not as a key press. The side is read from the device-dependent bits (l
 right Shift, Control, Option and Command each have one); a source that sets none toggles.
 Caps Lock reports only its new state, so it travels as a press and a release each time.
 
-**Keys map by position through one table.** Virtual key codes name ANSI positions, as evdev
-codes do, so the table pairs them one to one; Print Screen, Scroll Lock and Pause, which a
-Mac lacks, are typed as F13 to F15, as macOS does with a PC keyboard; anything else
-unmapped is dropped and logged at debug. Apple's ISO keyboards report the key left of 1 and
-the key beside left Shift swapped relative to a PC's; the Mac reads each key event's keyboard
-type (`KBGetLayoutType`) and swaps the two on an ISO keyboard both ways, as Linux's
-`hid-apple` does (LP-160).
+**Keys map by position through one table, and carry their meaning since LP-161.** Virtual
+key codes name ANSI positions, as evdev codes do, so the table pairs them one to one; Print
+Screen, Scroll Lock and Pause, which a Mac lacks, are typed as F13 to F15, as macOS does
+with a PC keyboard; anything else unmapped is dropped and logged at debug. Apple's ISO
+keyboards report the key left of 1 and the key beside left Shift swapped relative to a PC's;
+the Mac reads each key event's keyboard type (`KBGetLayoutType`) and swaps the two on an ISO
+keyboard both ways, as Linux's `hid-apple` does (LP-160).
 
 **Injection posts tagged events.** Events are posted at the HID level from an event source
 whose user data is a fixed tag, and the tap passes tagged events without looking, so the
@@ -263,3 +263,52 @@ previous build shows as on and does not apply, and the entries are reset with `t
 granted again, as the upgrade guide says. With Terminal's Secure Keyboard Entry on and its
 window in front, the Mac's keys still reached the Linux machine it drove; a password field in
 another application is not yet tried.
+
+## LP-161: keys carry their meaning (ADR 0043)
+
+**xkbcommon on both Linux sides.** The daemon links the `xkbcommon` crate on Linux, which the
+CI and release jobs install as `libxkbcommon-dev` and `xkb-data`; an Android build on a
+Linux host links it too, through the host build `uniffi-bindgen` runs. The capture's
+`KeyMeaning` compiles the keymap libei hands over with the keyboard device, follows the
+modifier state the compositor reports and its own key events, and sends a named key's ID
+from the keysym, or the character the key types with Shift, Caps Lock and AltGr but
+without Control, Alt and Super. The injector's `KeyFinder` searches the seat keymap for the
+key and level that type a keysym, the fewest modifiers first and Shift before AltGr, never
+Caps Lock; it is cached per keysym. A capture whose device brings no keymap sends positions,
+and logs `capture device` with `keymap = false` at debug.
+
+**Dead keys are composed with the locale's table.** The capture loads the compose table of
+`LC_ALL`, `LC_CTYPE` or `LANG`, else `C`. A press that starts or continues a sequence sends
+nothing, nor does its release; the key that completes it sends the composed character on
+its own code; a cancelled sequence sends nothing. A shortcut is never composed. The
+Compose key itself goes through the same table, so Compose sequences work across a drive.
+
+**The Mac reads its layout on the main thread.** The Text Input Sources calls belong on the
+main thread, which the daemon's run loop owns, so `refresh_keyboard_layout` asks it for a
+copy of the current layout's `uchr` data and the keyboard type, and builds the reverse table
+there: for each character the layout types with no dead key, the key and level that type
+it, the fewest modifiers first, Shift before Option. It is refreshed when a drive starts in
+either direction and with the displays every two seconds, so a layout switch mid-drive takes
+effect within that. The capture translates with the tap event's own keyboard type, and keeps
+the dead key's state between presses; the injector posts a character on its key with the
+level's flags in place of the held Shift, Option and Caps Lock (`character_flags`), with
+the held flags unchanged for a shortcut, and attaches the character to a key event, as
+`text` does, when no key types it.
+
+**AltGr is not a shortcut modifier.** Synergy counts AltGr among the modifiers that make a key
+a command; here it chooses a level as Shift does, since a Linux controller's AltGr reaches a
+Mac as a held right Option, and a character typed under it as a command would be typed with
+Option and be another character. The ADR records the departure.
+
+**The viewer and the phone.** `lpview` takes the meaning from winit's logical key: a named key
+by its keysym's ID, a character by its text (on a Mac with Option held, the key without
+modifiers, as Option is Alt), and a dead key suppressed with its release. The phone's
+touchpad keys (Backspace, Enter) carry their named IDs; its typing stays `text`.
+
+**Measured in the nested Hyprland.** The ignored `input_nested` test presses Shift and then
+sends `@` by meaning with the code of the British `@` key: the US seat must type Shift and 2,
+seen by a bind on `SHIFT, 2`, and not Shift and the quote key, which a bind on
+`SHIFT, apostrophe` would see. Hyprland matches binds by a key's unshifted keysym, so a bind
+on `SHIFT, at` never fires. Both sides' tables are unit-tested against the system's British,
+US, US international and swapped Alt and Super keymaps; the Mac's logic is tested with a
+stand-in translation, and its Quartz and Text Input Sources calls are only type-checked here.

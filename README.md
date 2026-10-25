@@ -187,6 +187,9 @@ cargo build --release -p ligatured -p lpctl -p lpview
 ../packaging/install.sh target/release
 ```
 
+On Linux the build needs xkbcommon's development files: `libxkbcommon-dev` on Debian and
+Ubuntu, `libxkbcommon-devel` on Fedora, `libxkbcommon` on Arch.
+
 State lives in the platform's data directory, `~/.local/share/ligature` on Linux
 (`$XDG_DATA_HOME`) and `~/Library/Application Support/ligature` on macOS, and the control
 socket in `$XDG_RUNTIME_DIR/ligature` or `$TMPDIR/ligature`; `--data-dir`, `--runtime-dir`

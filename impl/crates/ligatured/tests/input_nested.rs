@@ -83,7 +83,16 @@ async fn a_drive_moves_the_nested_compositor_s_pointer_and_types_into_it() {
     let display = std::env::var("LP_NESTED_DISPLAY").expect("LP_NESTED_DISPLAY");
     let instance = std::env::var("LP_NESTED_HYPR").expect("LP_NESTED_HYPR");
     let runtime_dir = std::path::PathBuf::from(std::env::var("XDG_RUNTIME_DIR").unwrap());
-    for marker in ["f9", "eacute", "f10", "q", "shift_f11", "f11"] {
+    for marker in [
+        "f9",
+        "eacute",
+        "f10",
+        "q",
+        "shift_f11",
+        "f11",
+        "at",
+        "quotedbl",
+    ] {
         let _ = std::fs::remove_file(Path::new("/tmp/lp-nested").join(marker));
     }
 
@@ -180,14 +189,8 @@ async fn a_drive_moves_the_nested_compositor_s_pointer_and_types_into_it() {
     assert!((y2 - y).abs() < 5.0);
 
     // A key the nested compositor binds, a click, and a character typed.
-    capture.feed(InputEvent::Key {
-        code: 67,
-        pressed: true,
-    });
-    capture.feed(InputEvent::Key {
-        code: 67,
-        pressed: false,
-    });
+    capture.feed(InputEvent::key(67, true));
+    capture.feed(InputEvent::key(67, false));
     capture.feed(InputEvent::Button {
         code: BTN_LEFT,
         pressed: true,
@@ -204,7 +207,7 @@ async fn a_drive_moves_the_nested_compositor_s_pointer_and_types_into_it() {
     // modifier only if the virtual keyboard reports it (LP-143), so the
     // Shift+F11 binding fires and the plain F11 one does not.
     for (code, pressed) in [(42, true), (87, true), (87, false), (42, false)] {
-        capture.feed(InputEvent::Key { code, pressed });
+        capture.feed(InputEvent::key(code, pressed));
     }
     until("Shift+F11 reached the compositor", || {
         Path::new("/tmp/lp-nested/shift_f11").exists()
@@ -213,6 +216,36 @@ async fn a_drive_moves_the_nested_compositor_s_pointer_and_types_into_it() {
     assert!(
         !Path::new("/tmp/lp-nested/f11").exists(),
         "F11 arrived without Shift"
+    );
+    // A key by its meaning (ADR 0043): a British controller's `@` is Shift
+    // and the key right of `;` (evdev 40). By position that is `"` on this
+    // US layout; by meaning the driven side presses its own Shift+2.
+    let shift = lp_core::input::keyid::mask::SHIFT;
+    for event in [
+        InputEvent::Key {
+            code: 42,
+            pressed: true,
+            id: Some(lp_core::input::keyid::SHIFT_L),
+            mods: Some(0),
+        },
+        InputEvent::Key {
+            code: 40,
+            pressed: true,
+            id: Some(u32::from('@')),
+            mods: Some(shift),
+        },
+        InputEvent::key(40, false),
+        InputEvent::key(42, false),
+    ] {
+        capture.feed(event);
+    }
+    until("the meaning @ reached the compositor", || {
+        Path::new("/tmp/lp-nested/at").exists()
+    })
+    .await;
+    assert!(
+        !Path::new("/tmp/lp-nested/quotedbl").exists(),
+        "the key was placed by position"
     );
     // A character the seat's layout has, through the temporary keymap.
     controller_sync
@@ -248,14 +281,8 @@ async fn a_drive_moves_the_nested_compositor_s_pointer_and_types_into_it() {
     })
     .await;
     // A key the compositor's own keymap has, after the text swapped keymaps.
-    capture.feed(InputEvent::Key {
-        code: 68,
-        pressed: true,
-    });
-    capture.feed(InputEvent::Key {
-        code: 68,
-        pressed: false,
-    });
+    capture.feed(InputEvent::key(68, true));
+    capture.feed(InputEvent::key(68, false));
     until(
         "F10 reached the compositor after the keymap came back",
         || Path::new("/tmp/lp-nested/f10").exists(),

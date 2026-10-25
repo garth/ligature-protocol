@@ -3,11 +3,12 @@
 //!
 //! ScreenCaptureKit hands the daemon BGRA frames of the share's size, the
 //! cursor drawn in, but only when something on the display changed. A pacer
-//! thread writes each new frame into ffmpeg's stdin, at most at the agreed
-//! rate, and the last one again once a second while the screen is still, so
-//! the stream keeps going and a keyframe comes every second without the
-//! viewer decoding the full rate of an unchanged screen. The encoder's
-//! output goes through the same split into frames as on Linux
+//! thread writes each new frame into the encoder, at most at the agreed rate,
+//! and the last one again once a second while the screen is still, so the
+//! stream keeps going without the viewer decoding the full rate of an
+//! unchanged screen. The encoder is the same [`LiveEncoder`] as on Linux: a
+//! keyframe at the start and when one is asked for, the last picture of a
+//! change settled, and its output split into frames
 //! ([`crate::screen::encode`]).
 //!
 //! ScreenCaptureKit serves only a process with the Screen Recording
@@ -17,8 +18,6 @@
 //! menu bar's sharing indicator is the platform's own, and stopping the
 //! share there ends it with `consent`.
 
-use std::io::Write as _;
-use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -29,7 +28,7 @@ use lp_macos::screen::{self as sck, Ended, ScreenDisplay, StartError};
 use tokio::sync::mpsc;
 
 use crate::input::geometry::{Zone, region_of};
-use crate::screen::encode::{Encoder, RawInput, encoder_args, probe_encoder, read_frames};
+use crate::screen::encode::{Encoder, LiveEncoder, RawInput, probe_encoder};
 use crate::screen::{Capture, Captured, Settings, Share, ShareControl};
 
 /// How often ffmpeg's encoders are looked at again, for an ffmpeg
@@ -63,7 +62,7 @@ fn name(d: &ScreenDisplay) -> String {
 
 /// A running share: the encoder and the capture, ended together.
 struct Running {
-    encoder: Child,
+    encoder: Arc<LiveEncoder>,
     stream: Option<sck::Stream>,
 }
 
@@ -163,22 +162,14 @@ impl Capture for MacScreen {
             height: settings.height,
             pix_fmt: "bgra".to_owned(),
         };
-        let mut ffmpeg = Command::new("ffmpeg")
-            .args(encoder_args(encoder, &input, settings))
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .map_err(|e| {
-                tracing::warn!(%e, "cannot start ffmpeg");
-                RefuseReason::NoEncoder
-            })?;
-        let (Some(mut raw), Some(encoded)) = (ffmpeg.stdin.take(), ffmpeg.stdout.take()) else {
-            let _ = ffmpeg.kill();
-            return Err(RefuseReason::NoEncoder);
-        };
-
         let (frames_tx, frames) = mpsc::unbounded_channel::<Captured>();
+        let live = LiveEncoder::start(
+            encoder,
+            input,
+            settings,
+            frames_tx.clone(),
+            Arc::new(Mutex::new(Instant::now())),
+        )?;
         let (control, mut control_rx) = mpsc::unbounded_channel::<ShareControl>();
         let stopping = Arc::new(AtomicBool::new(false));
         let latest: Arc<Mutex<Option<Vec<u8>>>> = Arc::new(Mutex::new(None));
@@ -223,8 +214,7 @@ impl Capture for MacScreen {
         ) {
             Ok(s) => s,
             Err(e) => {
-                let _ = ffmpeg.kill();
-                let _ = ffmpeg.wait();
+                live.stop();
                 return Err(match e {
                     StartError::Consent => RefuseReason::Consent,
                     StartError::NoDisplay => RefuseReason::NoDisplay,
@@ -242,18 +232,13 @@ impl Capture for MacScreen {
             "screen capture started"
         );
 
-        if let Err(e) = read_frames(encoded, frames_tx.clone(), stopping.clone()) {
-            tracing::warn!(%e, "cannot read the encoder");
-            let _ = ffmpeg.kill();
-            return Err(RefuseReason::NoEncoder);
-        }
-
         // The pacer: a new picture into the encoder at most at the agreed
         // rate, and the last one again once a second while the screen is
-        // still, so the encoder's keyframe a second still comes.
+        // still.
         {
             let stopping = stopping.clone();
             let latest = latest.clone();
+            let pacer_live = live.clone();
             let period = Duration::from_secs(1) / settings.frame_rate.max(1);
             let spawned = std::thread::Builder::new()
                 .name("screen-pacer".into())
@@ -265,7 +250,7 @@ impl Capture for MacScreen {
                             || written.is_none_or(|at| at.elapsed() >= STILL_REPEAT);
                         let frame = if due { lock(&latest).clone() } else { None };
                         if let Some(frame) = frame.filter(|f| f.len() == frame_bytes) {
-                            if raw.write_all(&frame).is_err() {
+                            if pacer_live.write(&frame).is_err() {
                                 break;
                             }
                             written = Some(Instant::now());
@@ -281,21 +266,21 @@ impl Capture for MacScreen {
                 });
             if let Err(e) = spawned {
                 tracing::warn!(%e, "cannot start the screen pacer");
-                let _ = ffmpeg.kill();
+                live.stop();
                 return Err(RefuseReason::NoEncoder);
             }
         }
 
         let running = Arc::new(Mutex::new(Running {
-            encoder: ffmpeg,
+            encoder: live,
             stream: Some(stream),
         }));
-        // Control: keyframes come every second on their own; a stop ends the
+        // Control: a keyframe from the encoder started again; a stop ends the
         // capture, the pacer and the encoder.
         self.handle.spawn(async move {
             while let Some(c) = control_rx.recv().await {
                 match c {
-                    ShareControl::Keyframe => {}
+                    ShareControl::Keyframe => lock(&running).encoder.keyframe(),
                     ShareControl::Stop => break,
                 }
             }
@@ -303,8 +288,7 @@ impl Capture for MacScreen {
             let _ = tokio::task::spawn_blocking(move || {
                 let mut r = lock(&running);
                 drop(r.stream.take());
-                let _ = r.encoder.kill();
-                let _ = r.encoder.wait();
+                r.encoder.stop();
             })
             .await;
             tracing::info!("screen capture stopped");

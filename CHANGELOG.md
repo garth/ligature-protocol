@@ -77,6 +77,8 @@ release workflow publishes the section as the release notes with the installers.
 - A change on a shared Linux screen shows at once: the last picture of a change is encoded
   again after a frame and a half, which pushes out the frame the daemon and `lpview`'s
   decoder had held until the next one, up to a second later (LP-149).
+- A Mac's share makes a keyframe at the start and when one is asked for rather than every
+  second, and a change on its screen shows at once, as a Linux share's does (LP-150).
 - A Mac's share writes a frame when the screen changes and the last one again once a second,
   instead of the full frame rate of a still screen (LP-150).
 - Watching a still screen no longer costs the viewer the full frame rate: a Linux share sends

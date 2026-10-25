@@ -9,8 +9,9 @@
 //! landed); from then on the pointer's position over the picture, its
 //! buttons and wheel, and the keyboard go to the device as `input` events,
 //! until both Control keys are pressed, the window loses focus, or it
-//! closes. Keys travel as Linux evdev codes from winit's physical key codes,
-//! so the device's own layout applies.
+//! closes. A key travels as its Linux evdev code, from winit's physical key
+//! code, and a press carries what it means from winit's logical key (ADR
+//! 0043), so the device types what this keyboard's layout says.
 
 use std::io::{Read as _, Write as _};
 use std::num::NonZeroU32;

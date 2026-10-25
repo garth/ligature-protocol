@@ -30,8 +30,9 @@ pub enum Error {
     NotInitialised,
     /// The daemon already has an identity.
     AlreadyInitialised,
-    /// A request the daemon refused, as a client of its control socket sees
-    /// it: the text is the daemon's own message, shown as it is.
+    /// A request refused by the device asked: a peer that would not share
+    /// or be driven, or, as a client of the control socket sees it, the
+    /// daemon. The text is shown as it is.
     Refused(String),
 }
 

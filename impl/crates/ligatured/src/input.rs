@@ -438,12 +438,18 @@ impl InputSync {
             return Err(Error::Io("already driving a device".to_owned()));
         }
         let params = self.peer_params(&peer)?;
+        let name = || {
+            self.daemon
+                .device_display_name(&peer)
+                .unwrap_or_else(|| peer.fingerprint())
+        };
         if !params.accepts {
-            return Err(Error::Chain(format!("{peer} does not accept input")));
+            return Err(Error::Refused(format!("{} does not accept input", name())));
         }
         if enter.is_absolute() == Some(true) && !params.absolute {
-            return Err(Error::Chain(format!(
-                "{peer} does not accept an absolute entry"
+            return Err(Error::Refused(format!(
+                "{} does not accept an absolute entry",
+                name()
             )));
         }
         let conn = self

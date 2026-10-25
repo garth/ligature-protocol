@@ -402,7 +402,13 @@ impl ScreenSync {
         let started = match answer {
             Some(ScreenMessage::Started(started)) => started,
             Some(ScreenMessage::Refused(Refused { reason })) => {
-                return Err(Error::Chain(format!("{peer} refused the share: {reason}")));
+                let name = self
+                    .daemon
+                    .device_display_name(peer)
+                    .unwrap_or_else(|| peer.fingerprint());
+                return Err(Error::Refused(format!(
+                    "{name} refused the share: {reason}"
+                )));
             }
             other => {
                 stream.reset(lp_core::frame::MALFORMED_CODE);

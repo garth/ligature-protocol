@@ -217,6 +217,7 @@ impl ErrorBody {
             Error::AlreadyInitialised => "already-initialised",
             Error::Decode(_) | Error::InvalidKey(_) => "bad-request",
             Error::InvalidSignature(_) | Error::Chain(_) => "mismatch",
+            Error::Refused(_) => "aborted",
             _ => "internal",
         };
         Self {
@@ -1483,6 +1484,14 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_peer_s_refusal_is_aborted_and_reads_plainly() {
+        let refused = Error::Refused("Mac refused the share: consent".to_owned());
+        let body = ErrorBody::from_error(&refused);
+        assert_eq!(body.code, "aborted");
+        assert_eq!(body.message, "Mac refused the share: consent");
+    }
 
     #[test]
     fn a_refusal_reads_as_the_daemon_wrote_it() {

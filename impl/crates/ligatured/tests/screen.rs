@@ -343,6 +343,10 @@ async fn a_share_ends_from_the_sharer_from_consent_and_from_a_dropped_connection
         .await
         .unwrap_err();
     assert!(err.to_string().contains("consent"), "{err}");
+    assert!(
+        !err.to_string().starts_with("trust chain"),
+        "a refusal is not a trust failure: {err}"
+    );
 
     // The connection drops mid-share: both sides end it.
     let mut w = p.viewer_sync.watch(&sharer_key, start(None)).await.unwrap();

@@ -235,9 +235,17 @@ projection from the system ends it with `consent`. A request answers only within
 so a tap on a stale notification opens nothing.
 
 **The encoder is configured for viewers that join late.** Dimensions are rounded down to
-multiples of 16, which encoders want (486x1080 asked becomes 480x1072, which the viewer scales);
-a keyframe comes every second and on request (`PARAMETER_KEY_REQUEST_SYNC_FRAME`); a still
-screen repeats its last frame at the frame rate. Encoders that refuse to put the parameter
+multiples of 16, which encoders want (486x1080 asked becomes 480x1072, which the viewer scales).
+A keyframe comes at the start and on request (`PARAMETER_KEY_REQUEST_SYNC_FRAME`), as on the
+desktops, with `KEY_I_FRAME_INTERVAL` set to 10,000 frames' time as the safety net; it had
+been a keyframe every second, which redrew the picture each second. `MediaCodec` encodes
+what the virtual display draws, so the app cannot give it a picture again as the desktops'
+encoder does; instead `KEY_REPEAT_PREVIOUS_FRAME_AFTER` repeats the last picture a frame and a
+half after a change (at least 50 ms), which brings the frame a viewer's decoder held out, and
+keeps repeating while the screen is still. On the owner's Pixel a still home screen sent 11
+frames a second (12 before), `lpview` drew none of the repeats, and a 25-second recording of
+598 frames, still and scrolled, held two keyframes where it had held one a second. Encoders
+that refuse to put the parameter
 sets before every keyframe (the emulator's) are configured without it, and the app puts the
 codec configuration it saved before each keyframe that lacks it.
 

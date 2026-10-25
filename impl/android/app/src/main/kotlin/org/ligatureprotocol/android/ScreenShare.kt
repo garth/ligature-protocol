@@ -215,10 +215,15 @@ class ScreenShareService : Service() {
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
             setInteger(MediaFormat.KEY_BIT_RATE, bitRate(w, h, rate))
             setInteger(MediaFormat.KEY_FRAME_RATE, rate)
-            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
+            // Keyframes at the start and when asked for, as the desktops make
+            // them: a timed one codes again what did not change, and the
+            // picture shifts each time. This is only the safety net.
+            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, keyframeBackstopSeconds(rate))
             if (prependHeaders) setInteger(MediaFormat.KEY_PREPEND_HEADER_TO_SYNC_FRAMES, 1)
-            // A still screen keeps producing frames, so a late viewer sees one.
-            setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 1_000_000L / rate)
+            // The last picture again shortly after a change, so a viewer's
+            // decoder that holds a picture until the next one shows it, and
+            // then while the screen is still.
+            setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, settleAfterUs(rate))
         }
         // Not every encoder repeats the parameter sets itself; the drain loop
         // puts them before each keyframe where it did not.
@@ -347,6 +352,19 @@ class ScreenShareService : Service() {
                 .putExtra(EXTRA_RATE, request.frameRate)
             ContextCompat.startForegroundService(context, intent)
         }
+
+        /** The most frames between keyframes, as the desktops' `KEYFRAME_BACKSTOP`. */
+        private const val KEYFRAME_BACKSTOP_FRAMES = 10_000
+
+        /** The encoder's keyframe interval in seconds: the backstop at `rate`. */
+        fun keyframeBackstopSeconds(rate: Int): Int = (KEYFRAME_BACKSTOP_FRAMES / rate.coerceAtLeast(1)).coerceAtLeast(1)
+
+        /**
+         * How long after the last new picture it is encoded again, in
+         * microseconds: a frame and a half at `rate` and never under 50 ms, as
+         * the desktops' `settle_after`.
+         */
+        fun settleAfterUs(rate: Int): Long = (1_500_000L / rate.coerceAtLeast(1)).coerceAtLeast(50_000L)
 
         /** About 0.1 bit per pixel per frame, between 1 and 12 Mbit/s. */
         fun bitRate(width: Int, height: Int, rate: Int): Int =

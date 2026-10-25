@@ -22,9 +22,29 @@ keys**, or move to another window. Closing the window ends the share.
 | --- | --- |
 | `--display <id>` | Shares that display instead of the primary one; `lpctl screen displays <device>` lists them |
 | `--width`, `--height`, `--rate` | The largest picture and the frame rate you want (1920 by 1080 at 30 a second by default); the sharer sends no larger than its own screen |
+| `--actual-size` | Shows the screen at its actual size instead of scaled to the window (below) |
 | `--view-only` | Watch without ever driving |
 
 A device that takes no input, such as the phone, is only watched.
+
+### At its actual size
+
+Scaling a picture to the window softens text. With `--actual-size`, the other screen is
+shown at the size it has on that device: a window there is the same size in `lpview`, even
+when one screen is high-DPI and the other is not. The picture is sent at that size, so
+`lpview` draws it pixel for pixel. The one exception is a high-DPI viewer of a screen that is
+not; there each of its pixels becomes a square of two by two or more, since the other device
+has no more pixels to send.
+
+When the picture is smaller than the window, it sits in black margins. When it is larger,
+it scrolls:
+
+- **while not driving**, with the scroll wheel, and Shift with the wheel for sideways;
+- **while driving**, by holding the pointer at an edge of the window, since the wheel
+  then scrolls on the other device.
+
+`lpctl screen displays <device>` shows each display's scale, for example `2880x1800 at 2x`
+for a Retina display.
 
 ## What the sharing device asks
 

@@ -628,10 +628,11 @@ async fn screen(client: &mut Client, action: &ScreenAction) -> Result<(), Error>
             let d: ScreenDisplays = client.request(req).await?;
             for display in d.displays {
                 println!(
-                    "{:<12} {}x{}{}  {}",
+                    "{:<12} {}x{} at {}x{}  {}",
                     display.id,
                     display.width,
                     display.height,
+                    display.scale(),
                     if display.primary { "  primary" } else { "" },
                     display.name.unwrap_or_default()
                 );

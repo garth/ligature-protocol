@@ -1091,7 +1091,7 @@ fn stream_share(
 }
 
 /// The `screen.displays` result.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScreenDisplays {
     /// The device's displays.
     pub displays: Vec<lp_core::screen::Display>,

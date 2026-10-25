@@ -181,7 +181,7 @@ pub fn fit(width: u32, height: u32, max_width: u32, max_height: u32) -> (u32, u3
 }
 
 /// One display a sharer offers.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Display {
     /// The sharer's name for it, stable for the session.
     pub id: String,
@@ -195,10 +195,25 @@ pub struct Display {
     /// Whether a `start` without an id shares it.
     #[serde(default)]
     pub primary: bool,
+    /// Its pixels per logical point (ADR 0045), when the platform says; see
+    /// [`Display::scale`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scale: Option<f64>,
+}
+
+impl Display {
+    /// Its pixels per logical point: what it reported, or 1 when it reported
+    /// nothing usable.
+    #[must_use]
+    pub fn scale(&self) -> f64 {
+        self.scale
+            .filter(|s| s.is_finite() && *s > 0.0)
+            .unwrap_or(1.0)
+    }
 }
 
 /// `displays`: a request without a list, an answer with one.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct Displays {
     /// The sharer's displays; present only in the answer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -318,7 +333,7 @@ pub struct Stop {
 }
 
 /// One message on the screen stream, told apart by `type`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ScreenMessage {
     /// The displays, asked for or listed.
@@ -443,6 +458,7 @@ mod tests {
                     width: 2560,
                     height: 1440,
                     primary: true,
+                    scale: Some(1.5),
                 }]),
             }),
             ScreenMessage::Start(Start {

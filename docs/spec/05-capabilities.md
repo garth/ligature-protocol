@@ -278,25 +278,28 @@ any keyframe), and as a viewer `maxWidth`, `maxHeight` and `maxFrameRate`, the l
 fastest picture it takes.
 
 A **share** is one stream with the capability type as its purpose, opened by the viewer.
-`displays` without a list asks the sharer what it has and is answered by `displays` with
-the list, each display an `id` stable for the session, a `name`, its `width` and `height`
-and whether it is `primary`. `start` names a display (the primary one when it names
-none), the `codec` and the largest `width` and `height` and fastest `frameRate` the viewer
-wants; the sharer answers `started` with what it settled on, which may be smaller or
-slower and never larger or faster, the picture scaled down keeping the display's aspect,
-or `refused` with a reason (`consent`, `no-encoder`, `no-display`, `busy`) and ends the
-stream. Then `frame` messages carry the encoded picture: each is one chunk of one frame
-with the frame's `seq`, its capture time `at` in microseconds since the share started,
-whether it is a `key` frame, whether this chunk is the `last`, and up to 256 KiB of
-`bytes`, a frame being the concatenation of its chunks in order, so no message exceeds
-the bound of [ADR 0036](../adr/0036-stream-framing-and-message-typing.md) and the bound
-stands as it is. The sharer paces frames to the agreed rate and, when the stream's flow
-control holds it back, drops frames rather than queues them, so the picture stays current
-rather than complete; it sends a keyframe at the start, whenever the viewer sends
-`keyframe`, after a loss or a late start, and after frames it dropped, and need send no
-other, since a keyframe codes again what did not change. `stop` from either side, with a reason (`viewer`,
-`sharer`, `consent`, `error`), ends the share and then the stream; a stream that ends
-without one is a stop too, and either way the sharer ends its capture at once.
+`displays` without a list asks the sharer what it has and is answered by `displays` with the
+list, each display an `id` stable for the session, a `name`, its `width` and `height` in
+pixels, whether it is `primary`, and its `scale`, the pixels per logical point the platform
+draws it at (1 when absent), so a viewer can ask for and show the picture at the size it has
+on the sharer ([ADR 0045](../adr/0045-a-display-reports-its-scale.md)). `start` names a
+display (the primary one when it names none), the `codec` and the largest `width` and
+`height` and fastest `frameRate` the viewer wants; the sharer answers `started` with what it
+settled on, which may be smaller or slower and never larger or faster, the picture scaled
+down keeping the display's aspect, or `refused` with a reason (`consent`, `no-encoder`,
+`no-display`, `busy`) and ends the stream. Then `frame` messages carry the encoded picture:
+each is one chunk of one frame with the frame's `seq`, its capture time `at` in microseconds
+since the share started, whether it is a `key` frame, whether this chunk is the `last`, and
+up to 256 KiB of `bytes`, a frame being the concatenation of its chunks in order, so no
+message exceeds the bound of [ADR 0036](../adr/0036-stream-framing-and-message-typing.md)
+and the bound stands as it is. The sharer paces frames to the agreed rate and, when the
+stream's flow control holds it back, drops frames rather than queues them, so the picture
+stays current rather than complete; it sends a keyframe at the start, whenever the viewer
+sends `keyframe`, after a loss or a late start, and after frames it dropped, and need send
+no other, since a keyframe codes again what did not change. `stop` from either side, with a
+reason (`viewer`, `sharer`, `consent`, `error`), ends the share and then the stream; a
+stream that ends without one is a stop too, and either way the sharer ends its capture at
+once.
 
 Driving a shared display is the input family on its own stream: the viewer sends an
 absolute `enter` and `position` events as fractions of the shared display, computed from

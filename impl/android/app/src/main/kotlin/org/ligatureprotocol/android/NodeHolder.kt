@@ -140,6 +140,8 @@ object NodeHolder : Host {
             ScreenShare.hasEncoder(),
             minOf(metrics.widthPixels, metrics.heightPixels).toUInt(),
             maxOf(metrics.widthPixels, metrics.heightPixels).toUInt(),
+            // Pixels per dp: Android's own scale (ADR 0045).
+            metrics.density.toDouble(),
         )
         if (listenerConnected) node?.setNotificationsEmitting(true)
         _state.update {

@@ -727,7 +727,7 @@ fn the_phone_watches_a_desktop_and_shares_its_own_screen() {
     let phone_host = Arc::new(FakeHost::with_downloads());
     let phone = Node::start(config(&phone_dir, "phone"), phone_host.clone()).unwrap();
     // The app has an encoder and a 1080x2400 screen.
-    phone.set_screen_share(true, 1080, 2400);
+    phone.set_screen_share(true, 1080, 2400, 2.625);
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
@@ -741,6 +741,7 @@ fn the_phone_watches_a_desktop_and_shares_its_own_screen() {
         width: 2560,
         height: 1440,
         primary: true,
+        scale: None,
     }]);
     let (desktop, desktop_sync, addr) = {
         let _guard = runtime.enter();
@@ -864,6 +865,18 @@ fn the_phone_watches_a_desktop_and_shares_its_own_screen() {
 
     // The desktop watches the phone: the app is asked, consents, encodes.
     let phone_key = *phone.daemon().binding().public();
+    // The phone lists its screen with Android's density as its scale (ADR 0045).
+    let listed = {
+        let sync = desktop_sync.clone();
+        runtime
+            .block_on(async move { sync.displays(&phone_key).await })
+            .unwrap()
+    };
+    assert_eq!(listed.len(), 1);
+    assert_eq!(
+        (listed[0].width, listed[0].height, listed[0].scale()),
+        (1080, 2400, 2.625)
+    );
     let start = Start {
         display: None,
         codec: Codec::H264,

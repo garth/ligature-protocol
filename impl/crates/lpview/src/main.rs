@@ -22,14 +22,14 @@ use std::time::Duration;
 
 use clap::Parser;
 use ligatured::control::{
-    Caps, Client, Devices, Empty, Event, InputDriven, Request, ScreenStopped, types,
+    Caps, Client, Devices, Empty, Event, InputDriven, Request, ScreenDisplays, ScreenStopped, types,
 };
 use lp_core::input::keyid::{self, KeyId};
 use lp_core::input::{
     BTN_LEFT, BTN_MIDDLE, BTN_RIGHT, InputEvent, InputParams, KEY_LEFTCTRL, KEY_RIGHTCTRL,
 };
 use lp_core::paths::{DATA_DIR_ENV, Locations, RUNTIME_DIR_ENV};
-use lp_core::screen::Started;
+use lp_core::screen::{Display, Started};
 use lp_core::{Error, PublicKey};
 use tokio::sync::mpsc;
 use winit::application::ApplicationHandler;
@@ -61,6 +61,13 @@ struct Options {
     /// Watch only: never drive the device.
     #[arg(long)]
     view_only: bool,
+    /// Show the picture at its actual size, not scaled to the window: a point
+    /// on the device's screen is a point in the window, whatever the high-DPI
+    /// scale at each end. A larger picture scrolls (the wheel while not
+    /// driving, the pointer at an edge while driving); `--width` and
+    /// `--height` are then ignored.
+    #[arg(long)]
+    actual_size: bool,
     /// The daemon's data directory (default: the platform's).
     #[arg(long, env = DATA_DIR_ENV)]
     data_dir: Option<PathBuf>,
@@ -82,6 +89,9 @@ enum UserEvent {
     WatchOnly(String),
     /// The share ended, with why.
     Ended(String),
+    /// Shown at its actual size: the shared display's width in pixels and
+    /// its scale (ADR 0045), which the picture's zoom is worked out from.
+    Actual(u32, f64),
 }
 
 /// What the window asks of the network thread.
@@ -112,6 +122,8 @@ fn main() {
     let picture: Arc<Mutex<Picture>> = Arc::new(Mutex::new(None));
     let (commands, commands_rx) = mpsc::unbounded_channel::<Command_>();
     let decoder_slot: DecoderSlot = Arc::new(Mutex::new(None));
+    // The window's scale, once it exists, for a request at the actual size.
+    let (scale_tx, scale_rx) = tokio::sync::oneshot::channel::<f64>();
     {
         let picture = picture.clone();
         let decoder_slot = decoder_slot.clone();
@@ -137,6 +149,7 @@ fn main() {
                 picture,
                 commands_rx,
                 decoder_slot,
+                scale_rx,
             ));
             let message = match ended {
                 Ok(reason) => format!("the share ended ({reason})"),
@@ -163,6 +176,10 @@ fn main() {
         ended: None,
         debug: std::env::var_os("LPVIEW_DEBUG").is_some(),
         watch_only: None,
+        scale_tx: Some(scale_tx),
+        actual: None,
+        scroll: (0.0, 0.0),
+        pan: (0.0, 0.0),
     };
     if let Err(e) = event_loop.run_app(&mut app) {
         eprintln!("lpview: {e}");
@@ -183,6 +200,7 @@ struct OptionsForNet {
     width: u32,
     height: u32,
     rate: u32,
+    actual_size: bool,
 }
 
 impl From<&Options> for OptionsForNet {
@@ -193,6 +211,7 @@ impl From<&Options> for OptionsForNet {
             width: o.width,
             height: o.height,
             rate: o.rate,
+            actual_size: o.actual_size,
         }
     }
 }
@@ -333,47 +352,138 @@ impl Pictures {
     }
 }
 
+/// How a picture is sized in the window.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Fit {
+    /// Scaled to fit, its shape kept.
+    Window,
+    /// So many window pixels to a picture pixel, scrolled where larger.
+    Zoom(f64),
+}
+
+/// The picture size to ask a sharer for to show `display` at its actual
+/// size in a window of `viewer_scale` pixels per point: the display's points
+/// in this window's pixels. The sharer sends no more pixels than it has.
+fn actual_request(display: &Display, viewer_scale: f64) -> (u32, u32) {
+    let k = viewer_scale / display.scale();
+    let size = |px: u32| ((f64::from(px) * k).round() as u32).max(2);
+    (size(display.width), size(display.height))
+}
+
+/// Window pixels per picture pixel for the actual size: a picture of
+/// `picture_width` pixels of a display `display_width` pixels wide at
+/// `display_scale`, shown at `viewer_scale`. Close to a whole number, it is
+/// that number, so pixels map one to one or to whole squares.
+fn actual_zoom(
+    display_width: u32,
+    display_scale: f64,
+    picture_width: u32,
+    viewer_scale: f64,
+) -> f64 {
+    let z = f64::from(display_width) / f64::from(picture_width.max(1)) * viewer_scale
+        / display_scale.max(f64::MIN_POSITIVE);
+    let whole = z.round();
+    if whole >= 1.0 && (z - whole).abs() < 0.02 {
+        whole
+    } else {
+        z
+    }
+}
+
+/// The scroll offset kept within what a picture of `drawn` window pixels
+/// can scroll in a window of `window` pixels: none along a side that fits.
+fn clamp_scroll(scroll: (f64, f64), drawn: (f64, f64), (ww, wh): (u32, u32)) -> (f64, f64) {
+    let max_x = (drawn.0 - f64::from(ww)).max(0.0);
+    let max_y = (drawn.1 - f64::from(wh)).max(0.0);
+    (scroll.0.clamp(0.0, max_x), scroll.1.clamp(0.0, max_y))
+}
+
+/// Where a picture of `pw` by `ph` lies in a window of `ww` by `wh`: left,
+/// top, and window pixels per picture pixel. Along a side where it fits it
+/// is centred; along one where it is larger it starts at `-scroll`.
+fn place(
+    (pw, ph): (u32, u32),
+    (ww, wh): (u32, u32),
+    fit: Fit,
+    scroll: (f64, f64),
+) -> (f64, f64, f64) {
+    let (fw, fh) = (f64::from(ww), f64::from(wh));
+    let zoom = match fit {
+        Fit::Window => (fw / f64::from(pw.max(1))).min(fh / f64::from(ph.max(1))),
+        Fit::Zoom(z) => z,
+    };
+    let (dw, dh) = (f64::from(pw) * zoom, f64::from(ph) * zoom);
+    let (sx, sy) = clamp_scroll(scroll, (dw, dh), (ww, wh));
+    let x = if dw <= fw { (fw - dw) / 2.0 } else { -sx };
+    let y = if dh <= fh { (fh - dh) / 2.0 } else { -sy };
+    (x, y, zoom)
+}
+
 /// Draws a picture of `pw` by `ph` pixels into a window buffer of `ww` by
-/// `wh`, scaled to fit with its shape kept and centred, the margins black.
-/// Returns where it lies: left, top, width and height in window pixels.
-fn blit(
+/// `wh` at `(x, y)` and `zoom` window pixels per picture pixel, the rest
+/// black. Returns where it lies: left, top, width and height in window
+/// pixels, which may reach past the window.
+fn draw(
     pixels: &[u32],
     (pw, ph): (u32, u32),
     buffer: &mut [u32],
     (ww, wh): (u32, u32),
+    (x, y, zoom): (f64, f64, f64),
 ) -> (f64, f64, f64, f64) {
     let (fw, fh) = (f64::from(ww), f64::from(wh));
-    if pw == 0 || ph == 0 || pixels.len() < pw as usize * ph as usize {
+    if pw == 0 || ph == 0 || zoom <= 0.0 || pixels.len() < pw as usize * ph as usize {
         buffer.fill(0);
         return (0.0, 0.0, fw, fh);
     }
-    let scale = (fw / f64::from(pw)).min(fh / f64::from(ph));
-    let (dw, dh) = (f64::from(pw) * scale, f64::from(ph) * scale);
-    let (dx, dy) = ((fw - dw) / 2.0, (fh - dh) / 2.0);
-    let (x0, y0) = (dx as usize, dy as usize);
-    let (x1, y1) = (
-        ((dx + dw) as usize).min(ww as usize),
-        ((dy + dh) as usize).min(wh as usize),
-    );
+    let (dw, dh) = (f64::from(pw) * zoom, f64::from(ph) * zoom);
+    let x0 = x.max(0.0).ceil() as usize;
+    let y0 = y.max(0.0).ceil() as usize;
+    let x1 = (x + dw).clamp(0.0, fw) as usize;
+    let y1 = (y + dh).clamp(0.0, fh) as usize;
     let (row, pw, ph) = (ww as usize, pw as usize, ph as usize);
     // Which source column each window column shows, worked out once.
-    let columns: Vec<usize> = (x0..x1)
-        .map(|x| (((x - x0) as f64 / scale) as usize).min(pw - 1))
+    let columns: Vec<usize> = (x0..x1.max(x0))
+        .map(|wx| (((wx as f64 - x) / zoom) as usize).min(pw - 1))
         .collect();
-    for (y, dst) in buffer.chunks_exact_mut(row).take(wh as usize).enumerate() {
-        if y < y0 || y >= y1 {
+    for (wy, dst) in buffer.chunks_exact_mut(row).take(wh as usize).enumerate() {
+        if wy < y0 || wy >= y1 || x0 >= x1 {
             dst.fill(0);
             continue;
         }
         dst[..x0].fill(0);
         dst[x1..].fill(0);
-        let sy = (((y - y0) as f64 / scale) as usize).min(ph - 1);
+        let sy = (((wy as f64 - y) / zoom) as usize).min(ph - 1);
         let src = &pixels[sy * pw..(sy + 1) * pw];
         for (out, &sx) in dst[x0..x1].iter_mut().zip(&columns) {
             *out = src[sx];
         }
     }
-    (dx, dy, dw, dh)
+    (x, y, dw, dh)
+}
+
+/// A window position as fractions of a picture drawn at `(x, y, w, h)`,
+/// which may reach past the window when it is scrolled; `None` off it.
+fn fraction_of((x, y, w, h): (f64, f64, f64, f64), (px, py): (f64, f64)) -> Option<(f64, f64)> {
+    let fx = (px - x) / w;
+    let fy = (py - y) / h;
+    ((0.0..=1.0).contains(&fx) && (0.0..=1.0).contains(&fy)).then_some((fx, fy))
+}
+
+/// Draws a picture scaled to fit the window, centred, the margins black.
+#[cfg(test)]
+fn blit(
+    pixels: &[u32],
+    picture: (u32, u32),
+    buffer: &mut [u32],
+    window: (u32, u32),
+) -> (f64, f64, f64, f64) {
+    draw(
+        pixels,
+        picture,
+        buffer,
+        window,
+        place(picture, window, Fit::Window, (0.0, 0.0)),
+    )
 }
 
 /// Waits for Ctrl+C or SIGTERM; false if neither can be watched.
@@ -411,6 +521,7 @@ async fn network(
     picture: Arc<Mutex<Picture>>,
     mut commands: mpsc::UnboundedReceiver<Command_>,
     decoder_slot: DecoderSlot,
+    viewer_scale: tokio::sync::oneshot::Receiver<f64>,
 ) -> Result<String, Error> {
     let socket = locations.control_socket();
     let mut watch = Client::connect(&socket).await?;
@@ -478,12 +589,38 @@ async fn network(
         }
     });
 
+    // At the actual size, the picture asked for is the display's points in
+    // this window's pixels (ADR 0045).
+    let (width, height) = if options.actual_size {
+        let mut req = Request::new(types::SCREEN_DISPLAYS, 0);
+        req.key = Some(peer);
+        let listed: ScreenDisplays = watch.request(req).await?;
+        let display = match &options.display {
+            Some(id) => listed.displays.iter().find(|d| &d.id == id),
+            None => listed
+                .displays
+                .iter()
+                .find(|d| d.primary)
+                .or(listed.displays.first()),
+        }
+        .ok_or_else(|| Error::Decode("the device has no such display".to_owned()))?;
+        let scale = tokio::time::timeout(Duration::from_secs(5), viewer_scale)
+            .await
+            .ok()
+            .and_then(Result::ok)
+            .unwrap_or(1.0);
+        let _ = proxy.send_event(UserEvent::Actual(display.width, display.scale()));
+        actual_request(display, scale)
+    } else {
+        (options.width, options.height)
+    };
+
     // The share: started, then the frames into the decoder.
     let mut req = Request::new(types::SCREEN_START, 0);
     req.key = Some(peer);
     req.display = options.display.clone();
-    req.width = Some(options.width);
-    req.height = Some(options.height);
+    req.width = Some(width);
+    req.height = Some(height);
     req.frame_rate = Some(options.rate);
     let mut feed: Option<std::process::ChildStdin> = None;
     let response = watch
@@ -570,7 +707,27 @@ struct App {
     debug: bool,
     /// Why the device cannot be driven, when it cannot.
     watch_only: Option<String>,
+    /// Where the window's scale goes once the window exists.
+    scale_tx: Option<tokio::sync::oneshot::Sender<f64>>,
+    /// At the actual size: the shared display's width in pixels and its
+    /// scale; scaled to fit when `None`.
+    actual: Option<(u32, f64)>,
+    /// How far a picture larger than the window is scrolled, in window
+    /// pixels.
+    scroll: (f64, f64),
+    /// Window pixels a frame to scroll while the pointer rests at an edge.
+    pan: (f64, f64),
 }
+
+/// How close to a window's edge, in points, the pointer pans a larger
+/// picture while driving.
+const PAN_EDGE: f64 = 24.0;
+/// How far it pans each frame, in points.
+const PAN_STEP: f64 = 16.0;
+/// How often a pan steps.
+const PAN_EVERY: Duration = Duration::from_millis(16);
+/// Points a wheel step scrolls.
+const WHEEL_LINE: f64 = 48.0;
 
 impl App {
     fn title(&self) -> String {
@@ -594,10 +751,7 @@ impl App {
 
     /// The pointer's position as fractions of the picture, if over it.
     fn fraction(&self, at: PhysicalPosition<f64>) -> Option<(f64, f64)> {
-        let (x, y, w, h) = self.target;
-        let fx = (at.x - x) / w;
-        let fy = (at.y - y) / h;
-        ((0.0..=1.0).contains(&fx) && (0.0..=1.0).contains(&fy)).then_some((fx, fy))
+        fraction_of(self.target, (at.x, at.y))
     }
 
     fn send(&self, events: Vec<InputEvent>) {
@@ -614,11 +768,61 @@ impl App {
         }
     }
 
+    /// Scrolls a larger picture by `(dx, dy)` window pixels; whether it moved.
+    fn scroll_by(&mut self, dx: f64, dy: f64) -> bool {
+        let (Some(window), Some((_, _, w, h))) = (&self.window, Some(self.target)) else {
+            return false;
+        };
+        let size = window.inner_size();
+        let before = self.scroll;
+        self.scroll = clamp_scroll(
+            (self.scroll.0 + dx, self.scroll.1 + dy),
+            (w, h),
+            (size.width, size.height),
+        );
+        if self.scroll != before {
+            window.request_redraw();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// The pan for the pointer at `at` while driving a picture larger than
+    /// the window: toward each edge it is within [`PAN_EDGE`] of.
+    fn pan_at(&self, at: PhysicalPosition<f64>) -> (f64, f64) {
+        let Some(window) = &self.window else {
+            return (0.0, 0.0);
+        };
+        if self.actual.is_none() || !self.driving {
+            return (0.0, 0.0);
+        }
+        let k = window.scale_factor();
+        let size = window.inner_size();
+        let (ww, wh) = (f64::from(size.width), f64::from(size.height));
+        let (_, _, w, h) = self.target;
+        let (edge, step) = (PAN_EDGE * k, PAN_STEP * k);
+        let along = |pos: f64, extent: f64, drawn: f64| {
+            if drawn <= extent {
+                0.0
+            } else if pos < edge {
+                -step
+            } else if pos > extent - edge {
+                step
+            } else {
+                0.0
+            }
+        };
+        (along(at.x, ww, w), along(at.y, wh, h))
+    }
+
     fn redraw(&mut self) {
+        let actual = self.actual;
         let (Some(window), Some(surface)) = (&self.window, self.surface.as_mut()) else {
             return;
         };
         let size = window.inner_size();
+        let viewer_scale = window.scale_factor();
         let (Some(ww), Some(wh)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
         else {
             return;
@@ -635,7 +839,20 @@ impl App {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         match guard.as_ref() {
             Some((pw, ph, pixels)) => {
-                self.target = blit(pixels, (*pw, *ph), &mut buffer, (size.width, size.height));
+                let (picture, window) = ((*pw, *ph), (size.width, size.height));
+                let fit = match actual {
+                    Some((dw, ds)) => Fit::Zoom(actual_zoom(dw, ds, *pw, viewer_scale)),
+                    None => Fit::Window,
+                };
+                let placed = place(picture, window, fit, self.scroll);
+                if let Fit::Zoom(z) = fit {
+                    self.scroll = clamp_scroll(
+                        self.scroll,
+                        (f64::from(*pw) * z, f64::from(*ph) * z),
+                        window,
+                    );
+                }
+                self.target = draw(pixels, picture, &mut buffer, window, placed);
             }
             None => buffer.fill(0),
         }
@@ -645,6 +862,39 @@ impl App {
 }
 
 impl ApplicationHandler<UserEvent> for App {
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        use winit::event_loop::ControlFlow;
+        if self.pan == (0.0, 0.0) || !self.driving {
+            self.pan = (0.0, 0.0);
+            event_loop.set_control_flow(ControlFlow::Wait);
+            return;
+        }
+        let now = std::time::Instant::now();
+        if let ControlFlow::WaitUntil(due) = event_loop.control_flow()
+            && due > now
+        {
+            return;
+        }
+        let (dx, dy) = self.pan;
+        if self.scroll_by(dx, dy) {
+            // What is under the pointer moved: the driven pointer follows.
+            let moved = (
+                self.target.0 - dx,
+                self.target.1 - dy,
+                self.target.2,
+                self.target.3,
+            );
+            self.target = moved;
+            if let Some((x, y)) = self.cursor.and_then(|c| self.fraction(c)) {
+                self.send(vec![InputEvent::Position { x, y }]);
+            }
+            event_loop.set_control_flow(ControlFlow::WaitUntil(now + PAN_EVERY));
+        } else {
+            self.pan = (0.0, 0.0);
+            event_loop.set_control_flow(ControlFlow::Wait);
+        }
+    }
+
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {
             return;
@@ -670,12 +920,24 @@ impl ApplicationHandler<UserEvent> for App {
                 return;
             }
         }
+        if let Some(tx) = self.scale_tx.take() {
+            let _ = tx.send(window.scale_factor());
+        }
         self.window = Some(window);
     }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
         match event {
             UserEvent::Started(started) => {
+                // At the actual size the window asks to fit the picture; the
+                // compositor may tile it otherwise, and the picture scrolls.
+                if let (Some((dw, ds)), Some(w)) = (self.actual, &self.window) {
+                    let z = actual_zoom(dw, ds, started.width, w.scale_factor());
+                    let _ = w.request_inner_size(winit::dpi::PhysicalSize::new(
+                        (f64::from(started.width) * z).round() as u32,
+                        (f64::from(started.height) * z).round() as u32,
+                    ));
+                }
                 self.started = Some(started);
                 self.retitle();
             }
@@ -697,6 +959,7 @@ impl ApplicationHandler<UserEvent> for App {
                 self.ended = Some(message);
                 event_loop.exit();
             }
+            UserEvent::Actual(width, scale) => self.actual = Some((width, scale)),
         }
     }
 
@@ -722,6 +985,15 @@ impl ApplicationHandler<UserEvent> for App {
                     && let Some((x, y)) = self.fraction(position)
                 {
                     self.send(vec![InputEvent::Position { x, y }]);
+                }
+                let pan = self.pan_at(position);
+                if pan != self.pan {
+                    self.pan = pan;
+                    if pan != (0.0, 0.0) {
+                        event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
+                            std::time::Instant::now() + PAN_EVERY,
+                        ));
+                    }
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {
@@ -758,6 +1030,25 @@ impl ApplicationHandler<UserEvent> for App {
                 self.send(vec![InputEvent::Button { code, pressed }]);
             }
             WindowEvent::MouseWheel { delta, .. } => {
+                if !self.driving && self.actual.is_some() {
+                    // Not driving, the wheel scrolls a picture larger than
+                    // the window; Shift turns a vertical wheel sideways.
+                    let k = self.window.as_ref().map_or(1.0, |w| w.scale_factor());
+                    let (dx, dy) = match delta {
+                        MouseScrollDelta::LineDelta(x, y) => (
+                            -f64::from(x) * WHEEL_LINE * k,
+                            -f64::from(y) * WHEEL_LINE * k,
+                        ),
+                        MouseScrollDelta::PixelDelta(p) => (-p.x, -p.y),
+                    };
+                    let (dx, dy) = if self.modifiers.shift_key() && dx == 0.0 {
+                        (dy, 0.0)
+                    } else {
+                        (dx, dy)
+                    };
+                    self.scroll_by(dx, dy);
+                    return;
+                }
                 let event = match delta {
                     // winit's positive is away from the user; a wheel step
                     // down is positive on the wire, as on Wayland.
@@ -1118,6 +1409,106 @@ mod tests {
         let mut buffer = vec![7u32; 8];
         blit(&[a], (1, 1), &mut buffer, (4, 2));
         assert_eq!(buffer, [0, a, a, 0, 0, a, a, 0]);
+    }
+
+    fn display(width: u32, height: u32, scale: Option<f64>) -> Display {
+        Display {
+            id: "1".to_owned(),
+            name: None,
+            width,
+            height,
+            primary: true,
+            scale,
+        }
+    }
+
+    /// The picture asked for is the display's points in the viewer's pixels.
+    #[test]
+    fn the_actual_size_asks_for_the_display_s_points_in_the_viewer_s_pixels() {
+        let retina = display(2880, 1800, Some(2.0));
+        assert_eq!(
+            actual_request(&retina, 1.0),
+            (1440, 900),
+            "a Retina Mac on a 1x monitor"
+        );
+        assert_eq!(
+            actual_request(&retina, 2.0),
+            (2880, 1800),
+            "Retina to Retina"
+        );
+        let plain = display(1920, 1080, None);
+        assert_eq!(actual_request(&plain, 1.0), (1920, 1080), "no scale is 1");
+        assert_eq!(
+            actual_request(&plain, 2.0),
+            (3840, 2160),
+            "more than it has: it caps"
+        );
+        let fractional = display(3840, 2160, Some(1.5));
+        assert_eq!(actual_request(&fractional, 1.0), (2560, 1440));
+    }
+
+    /// The zoom is one where the sharer scaled down to the request, a whole
+    /// number where it could not send enough, and snaps to one near it.
+    #[test]
+    fn the_actual_size_zoom_maps_pixels_one_to_one_or_to_whole_squares() {
+        assert_eq!(actual_zoom(2880, 2.0, 1440, 1.0), 1.0);
+        assert_eq!(actual_zoom(2880, 2.0, 2880, 2.0), 1.0);
+        assert_eq!(
+            actual_zoom(1920, 1.0, 1920, 2.0),
+            2.0,
+            "a 1x screen on a Retina viewer"
+        );
+        assert_eq!(
+            actual_zoom(2880, 2.0, 1438, 1.0),
+            1.0,
+            "even rounding by the sharer"
+        );
+        let z = actual_zoom(3840, 1.5, 3840, 1.0);
+        assert!((z - 2.0 / 3.0).abs() < 1e-9, "{z}");
+    }
+
+    #[test]
+    fn a_picture_smaller_than_the_window_is_centred_and_a_larger_one_scrolls() {
+        // 4 by 2 at zoom 1 in a 6 by 4 window: centred.
+        assert_eq!(
+            place((4, 2), (6, 4), Fit::Zoom(1.0), (0.0, 0.0)),
+            (1.0, 1.0, 1.0)
+        );
+        // 10 by 2 in the same window: scrolled across, centred down.
+        assert_eq!(
+            place((10, 2), (6, 4), Fit::Zoom(1.0), (3.0, 9.0)),
+            (-3.0, 1.0, 1.0)
+        );
+        // Scrolled past its end: held at the end.
+        assert_eq!(
+            place((10, 2), (6, 4), Fit::Zoom(1.0), (50.0, 0.0)),
+            (-4.0, 1.0, 1.0)
+        );
+        assert_eq!(clamp_scroll((-5.0, 3.0), (10.0, 2.0), (6, 4)), (0.0, 0.0));
+        assert_eq!(clamp_scroll((2.0, 3.0), (10.0, 8.0), (6, 4)), (2.0, 3.0));
+        // Fit is unchanged: twice the size of a 2 by 1 picture in 4 by 4.
+        assert_eq!(
+            place((2, 1), (4, 4), Fit::Window, (9.0, 9.0)),
+            (0.0, 1.0, 2.0)
+        );
+    }
+
+    #[test]
+    fn a_scrolled_picture_is_drawn_from_where_it_is_scrolled_to_and_clicks_map_through_it() {
+        // Four pixels in a row, a window two wide, scrolled one along.
+        let px = [1, 2, 3, 4];
+        let mut buffer = vec![7u32; 2];
+        let placed = place((4, 1), (2, 1), Fit::Zoom(1.0), (1.0, 0.0));
+        let target = draw(&px, (4, 1), &mut buffer, (2, 1), placed);
+        assert_eq!(buffer, [2, 3]);
+        assert_eq!(target, (-1.0, 0.0, 4.0, 1.0));
+        // The window's first pixel is the picture's second: a quarter along.
+        assert_eq!(fraction_of(target, (0.0, 0.5)), Some((0.25, 0.5)));
+        assert_eq!(fraction_of(target, (5.0, 0.5)), None);
+        // At zoom 2, each picture pixel is a square of four.
+        let mut buffer = vec![7u32; 8];
+        draw(&[1, 2], (2, 1), &mut buffer, (4, 2), (0.0, 0.0, 2.0));
+        assert_eq!(buffer, [1, 1, 2, 2, 1, 1, 2, 2]);
     }
 
     /// Encodes `frames` pictures of a test pattern at 30 a second, a

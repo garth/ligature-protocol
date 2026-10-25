@@ -596,10 +596,11 @@ impl Node {
         }
     }
 
-    /// Whether the app can share the screen (it has an H.264 encoder) and
-    /// the screen's size in pixels.
-    pub fn set_screen_share(&self, available: bool, width: u32, height: u32) {
-        self.screen.set_available(available, width, height);
+    /// Whether the app can share the screen (it has an H.264 encoder), the
+    /// screen's size in pixels, and its pixels per logical point (Android's
+    /// density, ADR 0045).
+    pub fn set_screen_share(&self, available: bool, width: u32, height: u32, scale: f64) {
+        self.screen.set_available(available, width, height, scale);
     }
 
     /// The user answered the media projection dialog.

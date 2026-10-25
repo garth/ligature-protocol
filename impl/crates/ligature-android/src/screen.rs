@@ -27,6 +27,7 @@ struct State {
     available: bool,
     width: u32,
     height: u32,
+    scale: f64,
     starting: Option<std::sync::mpsc::Sender<bool>>,
     frames: Option<mpsc::UnboundedSender<Captured>>,
 }
@@ -58,12 +59,14 @@ impl HostScreen {
         })
     }
 
-    /// Whether the app has an H.264 encoder, and the screen's size.
-    pub fn set_available(&self, available: bool, width: u32, height: u32) {
+    /// Whether the app has an H.264 encoder, the screen's size, and its
+    /// pixels per logical point.
+    pub fn set_available(&self, available: bool, width: u32, height: u32, scale: f64) {
         let mut s = lock(&self.state);
         s.available = available;
         s.width = width;
         s.height = height;
+        s.scale = scale;
     }
 
     /// The user answered the projection dialog.
@@ -116,6 +119,7 @@ impl Capture for HostScreen {
             width: s.width,
             height: s.height,
             primary: true,
+            scale: (s.scale > 0.0).then_some(s.scale),
         }]
     }
 

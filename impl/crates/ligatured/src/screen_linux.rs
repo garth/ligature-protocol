@@ -132,6 +132,34 @@ pub struct OutputInfo {
     pub width: u32,
     /// Logical height.
     pub height: u32,
+    /// Width in pixels, as the output's current mode turned by its
+    /// transform; 0 when the compositor did not say.
+    #[serde(default)]
+    pub pixel_width: u32,
+    /// Height in pixels; 0 when the compositor did not say.
+    #[serde(default)]
+    pub pixel_height: u32,
+}
+
+impl OutputInfo {
+    /// Its size in pixels, or its logical size when the pixels are unknown.
+    #[must_use]
+    pub fn pixels(&self) -> (u32, u32) {
+        if self.pixel_width > 0 && self.pixel_height > 0 {
+            (self.pixel_width, self.pixel_height)
+        } else {
+            (self.width, self.height)
+        }
+    }
+
+    /// Its pixels per logical point (ADR 0045), when its pixels are known.
+    #[must_use]
+    pub fn scale(&self) -> Option<f64> {
+        (self.pixel_width > 0 && self.width > 0).then(|| {
+            let s = f64::from(self.pixel_width) / f64::from(self.width);
+            (s * 1000.0).round() / 1000.0
+        })
+    }
 }
 
 /// What `screen-helper list` prints.
@@ -156,12 +184,16 @@ impl HelperList {
         self.outputs
             .iter()
             .enumerate()
-            .map(|(i, o)| Display {
-                id: o.id.clone(),
-                name: o.description.clone(),
-                width: o.width,
-                height: o.height,
-                primary: i == primary,
+            .map(|(i, o)| {
+                let (width, height) = o.pixels();
+                Display {
+                    id: o.id.clone(),
+                    name: o.description.clone(),
+                    width,
+                    height,
+                    primary: i == primary,
+                    scale: o.scale(),
+                }
             })
             .collect()
     }
@@ -1075,6 +1107,11 @@ mod helper {
         y: i32,
         width: i32,
         height: i32,
+        /// The current mode's size in pixels.
+        mode: (i32, i32),
+        /// Whether the transform turns it a quarter, so the mode's width is
+        /// the output's height.
+        turned: bool,
     }
 
     #[derive(Default)]
@@ -1117,6 +1154,19 @@ mod helper {
                 wl_output::Event::Name { name } => o.name = Some(name),
                 wl_output::Event::Description { description } => {
                     o.description = Some(description);
+                }
+                wl_output::Event::Mode {
+                    flags: WEnum::Value(flags),
+                    width,
+                    height,
+                    ..
+                } if flags.contains(wl_output::Mode::Current) => o.mode = (width, height),
+                wl_output::Event::Geometry {
+                    transform: WEnum::Value(t),
+                    ..
+                } => {
+                    use wl_output::Transform as T;
+                    o.turned = matches!(t, T::_90 | T::_270 | T::Flipped90 | T::Flipped270);
                 }
                 _ => {}
             }
@@ -1249,6 +1299,11 @@ mod helper {
             .iter()
             .filter_map(|(name, _)| {
                 let o = session.state.outputs.get(name)?;
+                let (mw, mh) = if o.turned {
+                    (o.mode.1, o.mode.0)
+                } else {
+                    o.mode
+                };
                 Some(OutputInfo {
                     id: o.name.clone().unwrap_or_else(|| format!("output-{name}")),
                     description: o.description.clone(),
@@ -1256,6 +1311,8 @@ mod helper {
                     y: o.y,
                     width: u32::try_from(o.width).ok()?,
                     height: u32::try_from(o.height).ok()?,
+                    pixel_width: u32::try_from(mw).unwrap_or(0),
+                    pixel_height: u32::try_from(mh).unwrap_or(0),
                 })
             })
             .filter(|o| o.width > 0 && o.height > 0)
@@ -1559,7 +1616,10 @@ mod tests {
                     y: 0,
                     width: 1920,
                     height: 1080,
+                    pixel_width: 0,
+                    pixel_height: 0,
                 },
+                // A 4K monitor at scale 1.5: 2560 by 1440 points.
                 OutputInfo {
                     id: "DP-1".into(),
                     description: Some("Dell".into()),
@@ -1567,13 +1627,20 @@ mod tests {
                     y: 0,
                     width: 2560,
                     height: 1440,
+                    pixel_width: 3840,
+                    pixel_height: 2160,
                 },
             ],
             screencopy: true,
         };
         let displays = list.displays();
         assert_eq!(displays.len(), 2);
-        assert!(displays.iter().find(|d| d.id == "DP-1").unwrap().primary);
+        let dp = displays.iter().find(|d| d.id == "DP-1").unwrap();
+        assert!(dp.primary);
+        // Listed in pixels, with the scale between them and the points.
+        assert_eq!((dp.width, dp.height, dp.scale), (3840, 2160, Some(1.5)));
+        let hdmi = displays.iter().find(|d| d.id == "HDMI-A-1").unwrap();
+        assert_eq!((hdmi.width, hdmi.height, hdmi.scale), (1920, 1080, None));
         assert!(
             !displays
                 .iter()

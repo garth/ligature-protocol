@@ -326,3 +326,30 @@ Linux machine, as LP-144 was; built, linked and run on the Mac. To be recorded f
 run: the permission prompt and restart, the encoder the probe picks, the latency and CPU at
 the default size and rate, and whether macOS's monthly reminder for screen recording
 applications appears.
+
+## LP-164: the actual size in `lpview`, and each display's scale
+
+**A display reports its scale (ADR 0045).** Linux lists each output's pixel size, its current
+mode turned by its transform, and the scale as the pixels over the logical width from
+`xdg-output`, rounded to three places; the Mac the pixel width over the point width; the
+phone Android's density, passed by the app with the screen's size. A Linux display had been
+listed at its logical size, which the share treats as the most pixels it may send, so a
+screen at scale 2 was shared at half its resolution each way; it is now listed in pixels,
+while the input region still comes from the logical layout.
+
+**`--actual-size` asks for the display's points in the window's pixels.** `lpview` lists the
+displays before it starts, waits for its window's scale (five seconds at most, then 1),
+and asks for the display's size over its scale times the window's. The sharer settles as
+always, so the picture comes at that size where the sharer has the pixels and at the
+display's own size where it has fewer. The window draws it at the display's width over the
+picture's, times its own scale over the sharer's, snapped to the nearest whole number
+within 0.02, so the pixels map one to one or to whole squares, and asks the compositor for
+a window that size, which a tiling compositor may decline.
+
+**Scrolling.** A picture larger than the window is drawn from the scroll offset, clamped to
+what it can scroll, and centred along a side where it fits. Not driving, the wheel scrolls it,
+48 points a step, Shift turning a vertical wheel sideways. Driving, the wheel goes to the
+device, so the pointer within 24 points of an edge pans the picture 16 points every 16 ms
+until it reaches the end or the pointer leaves the edge, and the driven pointer is moved to
+what is under the window's pointer after each step. A click maps through the scroll, since
+the picture's place in the window may begin left of or above it.

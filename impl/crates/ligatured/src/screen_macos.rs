@@ -129,6 +129,8 @@ impl Capture for MacScreen {
                 width: d.pixel_width,
                 height: d.pixel_height,
                 primary: d.main,
+                // Pixels per point: 2 on a Retina display (ADR 0045).
+                scale: (d.width > 0.0).then(|| f64::from(d.pixel_width) / d.width),
             })
             .collect()
     }

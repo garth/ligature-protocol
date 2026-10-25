@@ -80,6 +80,12 @@
           "type": "boolean",
           "default": false,
           "description": "Whether it is the display a start without an id shares."
+        },
+        "scale": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 1,
+          "description": "Its pixels per logical point as the platform reports it (2 on a Retina display, the output scale on a Wayland compositor, the density on Android), so a viewer can show it at its actual size (ADR 0045); absent means 1."
         }
       }
     },

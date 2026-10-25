@@ -10,6 +10,10 @@ release workflow publishes the section as the release notes with the installers.
 
 ### Added
 
+- `lpview --actual-size` shows a shared screen at the size it has on its device, pixel for
+  pixel and adjusted for a high-DPI screen at either end, scrolling when it is larger than
+  the window; displays now report their scale (ADR 0045) (LP-164).
+
 - Every release carries `SHA256SUMS` over its files and `SHA256SUMS.minisig`, its
   signature by the project's release key, made with minisign; the install guide has the
   public key and the commands that verify a download (LP-139).
@@ -69,6 +73,10 @@ release workflow publishes the section as the release notes with the installers.
   gone, and `ligatured` is no longer installed in `~/.local/bin` on macOS (LP-94).
 
 ### Fixed
+
+- A Linux share of a high-DPI screen is sent at its full resolution: its displays were
+  listed at their logical size, so a screen at scale 2 sent half its pixels each way
+  (LP-164).
 
 - A shared screen's text is sharp and stays still: x264 encodes at a constant quantiser
   instead of a low fixed rate, so what did not change is not coded again, and a keyframe comes

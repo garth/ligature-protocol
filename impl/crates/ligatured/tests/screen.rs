@@ -71,6 +71,7 @@ fn displays() -> Vec<Display> {
             width: 2560,
             height: 1440,
             primary: true,
+            scale: Some(2.0),
         },
         Display {
             id: "HDMI-A-1".to_owned(),
@@ -78,6 +79,7 @@ fn displays() -> Vec<Display> {
             width: 1920,
             height: 1080,
             primary: false,
+            scale: None,
         },
     ]
 }

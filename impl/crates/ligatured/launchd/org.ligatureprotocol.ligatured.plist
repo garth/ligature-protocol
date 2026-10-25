@@ -22,6 +22,10 @@
   <string>org.ligatureprotocol.ligatured</string>
   <key>EnvironmentVariables</key>
   <dict>
+    <!-- launchd's own PATH holds only the system directories; ffmpeg, which
+         screen sharing and viewing run, is usually Homebrew's (LP-150). -->
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     <key>LIGATURE_PORT</key>
     <string>47471</string>
     <key>RUST_LOG</key>

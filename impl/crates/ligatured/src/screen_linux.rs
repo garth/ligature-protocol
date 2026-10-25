@@ -42,7 +42,7 @@ use crate::clipboard_linux::select_wayland_socket;
 #[cfg(test)]
 use crate::screen::encode::bit_rate;
 #[cfg(test)]
-use crate::screen::encode::{AccessUnits, KEYFRAME_EVERY_SECOND, is_keyframe};
+use crate::screen::encode::{AccessUnits, KEYFRAME_EVERY_SECOND, X264_CRF, is_keyframe};
 use crate::screen::encode::{Encoder, RawInput, encoder_args, probe_encoder, read_frames};
 use crate::screen::{Capture, Captured, Settings, Share, ShareControl};
 
@@ -1514,10 +1514,19 @@ mod tests {
         assert!(joined.contains(&format!("-force_key_frames {KEYFRAME_EVERY_SECOND}")));
         assert!(joined.contains("-bf 0"));
         assert!(joined.contains("-fps_mode passthrough"));
+        // x264 holds a quality, not a rate, under a cap of four times the
+        // target with a buffer of a second, so a keyframe of text is sharp.
+        assert!(joined.contains("-preset superfast -tune zerolatency"));
+        assert!(joined.contains(&format!("-crf {X264_CRF}")));
+        assert!(!joined.contains("-b:v"));
+        let cap = 4 * bit_rate(1280, 720, 30);
+        assert!(joined.contains(&format!("-maxrate {cap} -bufsize {cap}")));
         assert!(joined.ends_with("-f h264 pipe:1"));
         let vaapi = encoder_args(Encoder::Vaapi, &input, &settings(1280, 720, 30)).join(" ");
         assert!(vaapi.contains("-vaapi_device /dev/dri/renderD128"));
         assert!(vaapi.contains("scale=1280:720,format=nv12,hwupload -c:v h264_vaapi -aud 1"));
+        assert!(vaapi.contains(&format!("-b:v {}", bit_rate(1280, 720, 30))));
+        assert!(vaapi.contains(&format!("-maxrate {cap} -bufsize {cap}")));
         assert_eq!(bit_rate(1280, 720, 30), 2_211_840);
         assert_eq!(bit_rate(64, 64, 1), 1_000_000);
         assert_eq!(bit_rate(7680, 4320, 60), 20_000_000);

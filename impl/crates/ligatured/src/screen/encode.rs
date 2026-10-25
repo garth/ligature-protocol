@@ -16,8 +16,14 @@ use tokio::sync::mpsc;
 
 use crate::screen::{Captured, EncodedFrame, Settings};
 
-/// Bits per pixel per frame the encoder aims for.
+/// Bits per pixel per frame a hardware encoder aims for.
 const BITS_PER_PIXEL: f64 = 0.08;
+/// The most any encoder may send, as a multiple of [`bit_rate`], over a
+/// buffer of one second: room for a sharp keyframe of a screen of text.
+const CAP_FACTOR: u64 = 4;
+/// x264's constant quality: it keeps text sharp, and a still screen costs
+/// next to nothing since frames come only when it changes.
+pub const X264_CRF: &str = "18";
 
 /// ffmpeg's expression for a keyframe at the first frame and then at the
 /// first frame a second or more after the last keyframe, by wall time: the
@@ -128,9 +134,11 @@ pub fn encoder_args(encoder: Encoder, input: &RawInput, settings: &Settings) -> 
                 "-c:v",
                 "libx264",
                 "-preset",
-                "ultrafast",
+                "superfast",
                 "-tune",
                 "zerolatency",
+                "-crf",
+                X264_CRF,
                 "-pix_fmt",
                 "yuv420p",
                 "-x264-params",
@@ -139,6 +147,11 @@ pub fn encoder_args(encoder: Encoder, input: &RawInput, settings: &Settings) -> 
             .map(str::to_owned),
         ),
     }
+    // The hardware encoders aim for a rate; x264 holds a quality instead.
+    if encoder != Encoder::X264 {
+        args.extend(["-b:v".to_owned(), br.to_string()]);
+    }
+    let cap = (br * CAP_FACTOR).to_string();
     // The longest run without a keyframe, should the forced ones not come.
     let gop = (rate * 2).to_string();
     args.extend(
@@ -151,12 +164,10 @@ pub fn encoder_args(encoder: Encoder, input: &RawInput, settings: &Settings) -> 
             "0",
             "-fps_mode",
             "passthrough",
-            "-b:v",
-            &br.to_string(),
             "-maxrate",
-            &br.to_string(),
+            &cap,
             "-bufsize",
-            &(br / 2).to_string(),
+            &cap,
             "-flush_packets",
             "1",
             "-f",

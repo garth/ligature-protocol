@@ -71,9 +71,19 @@ advertise `views`, and the probe that decides runs once at start (`screen sharin
 probed` in the log). On the portal path `gst-launch-1.0` runs `pipewiresrc` on the portal's
 PipeWire remote, passed as an inherited descriptor because `pre_exec` would need unsafe
 code, and scaling to the agreed size; its raw BGRx output feeds ffmpeg. How often a frame
-goes is the next decision. VA-API is used when a two-frame
-test encode on the render node succeeds, which it does not on this machine, so `libx264`
-(`ultrafast`, `zerolatency`) is what was measured.
+goes is a decision below. VA-API is used when a two-frame test encode on the render node
+succeeds, which it does not on this machine, so `libx264` is what was measured.
+
+**x264 holds a quality, under a cap with room for a keyframe.** The first settings aimed at
+0.08 bits per pixel per frame on the `ultrafast` preset, capped at that rate with half a
+second of buffer, and the owner found the picture's quality very low. A keyframe of a screen
+of text needs more than that buffer holds, so every keyframe came out blurred. On a 1440x900
+screen of text with a keyframe each second, the worst frame measured 31.6 dB PSNR. x264 now
+encodes at CRF 18 on `superfast` with `zerolatency`, which measured 47.4 dB at the worst frame
+in a smaller stream, at the same encoding speed. Every encoder is capped at four times that
+old rate with a buffer of a second; VA-API and VideoToolbox, which take no CRF, still aim at
+the old rate. A still screen costs next to nothing either way, since a frame goes only when it
+changes.
 
 **A stalled capture is started again.** On the owner's machine a share froze about 25 seconds
 in: `pipewiresrc` held the stream's buffers and waited for one that never came, while

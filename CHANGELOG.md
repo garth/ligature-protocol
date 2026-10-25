@@ -70,6 +70,8 @@ release workflow publishes the section as the release notes with the installers.
 
 ### Fixed
 
+- A shared screen's text is sharp: x264 encodes at a constant quality instead of a low fixed
+  rate, and every encoder has room for a keyframe, which had been blurred each second (LP-149).
 - A Mac's share writes a frame when the screen changes and the last one again once a second,
   instead of the full frame rate of a still screen (LP-150).
 - Watching a still screen no longer costs the viewer the full frame rate: a Linux share sends

@@ -1,7 +1,8 @@
 # Milestone 7: one keyboard and mouse across a person's desktops, and the phone as a touchpad
 
-**Status:** Accepted by the owner on 2026-10-24; in progress as the tasks LP-141 to LP-146
-under the epic LP-112, the macOS task (LP-144) waiting on LP-94. Raised on 2026-10-23
+**Status:** Accepted by the owner on 2026-10-24; implemented as LP-141 to LP-145, LP-160 and
+LP-161 under the epic LP-112, and the run with the real devices and the close are LP-146.
+Raised on 2026-10-23
 from the feasibility assessment of the candidate capability families: shared input is
 feasible on both desktops today, it is the first device-scoped capability, so it pins the
 device-principal question and the configuration of which edge leads where, and remote

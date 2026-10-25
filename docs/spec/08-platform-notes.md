@@ -35,10 +35,28 @@ whatever notification daemon is in use, so Linux emits and displays (chapter 05 
 3c). Files (chapter 05 section 3d) land in the user's download folder, `XDG_DOWNLOAD_DIR`
 from `user-dirs.dirs` or else `~/Downloads`, as a part file renamed into place once
 verified; the desktop sends with `lpctl files send` and fetches with `lpctl files get`, and
-a received file is announced by a local notification. Open question: the minimum set of
-compositors and portals to support
-(Hyprland is the first target), and how the system service drives audio and display without a
-session of its own.
+a received file is announced by a local notification.
+
+Remote input (chapter 05 section 3g) goes through the InputCapture portal, which Hyprland's
+portal backend implements: the daemon sets a pointer barrier on each mapped edge of the
+outputs' rectangles, and the compositor captures the keyboard and mouse the moment the
+pointer crosses one, before the daemon decides anything, delivering them over libei until
+the daemon releases them. So every barrier hit that does not become a drive gives the input
+back at once, or the desktop is left without a keyboard and mouse. Hyprland's portal takes a
+barrier only on a rectangle's boundary, which for a right or bottom edge is one past the
+last pixel. Injection uses the wlroots virtual pointer and virtual keyboard protocols, in a
+helper as the clipboard does. Hyprland takes a virtual keyboard's modifiers only from its
+modifier reports, never from its key events, so the helper reports them after every
+modifier key, and it applies a virtual keyboard's keymap when the keyboard is made, so
+typed text goes through a short-lived keyboard whose keymap names each character. Keys are
+read and found with xkbcommon against the seat's keymap and the locale's compose table
+([ADR 0043](../adr/0043-keys-carry-their-meaning.md)). The portal must not be started before
+the session has named its desktop and Wayland display: started earlier by the daemon, which
+runs from the user's service manager, it settles on fallbacks for the whole login and offers
+no InputCapture, so the daemon waits for the session's environment before touching it.
+
+Open question: the minimum set of compositors and portals to support (Hyprland is the first
+target), and how the system service drives audio and display without a session of its own.
 
 ## 2b. macOS
 
@@ -157,6 +175,10 @@ protocol of its own. LineageOS is the first target (no Google services, sideload
   the descriptor. Each transfer is a
   notification with a progress bar and a cancel. The phone takes one file at a time
   (`maxStreams` 1) and sends up to four at once (chapter 05 section 3d).
+- **Remote input.** Android lets an app inject no input into the system, so the phone
+  drives the desktops and is never driven: a touchpad screen turns gestures into pointer
+  motion, clicks and scrolling, and a text field types through the phone's own keyboard
+  and input method, which gives characters rather than keys.
 - **SMS, telephony.** SMS and telephony need their own permissions and, for SMS, store
   policy approval; neither is offered yet.
 - **Keys.** The Android Keystore holds no Ed25519 keys on most devices (section 3a); the

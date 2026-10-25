@@ -19,7 +19,11 @@ between a Linux machine, a Mac and an Android phone on one LAN; the phone receiv
 clipboard automatically and sends on a tap, since Android lets only a focused app read it;
 large clipboard content is fetched only when pasted; the Mac displays
 notifications but cannot read its own; files land in each device's download folder, from
-`lpctl files` on the desktops and the share sheet on the phone) and nothing beyond them.
+`lpctl files` on the desktops and the share sheet on the phone). On `main`, not yet in a
+release and awaiting its run with the real devices, it also implements milestone 7 (one
+keyboard and mouse across the desktops, an edge crossed through the InputCapture portal on
+Linux and an event tap on the Mac, keys carrying their meaning by ADR 0043, the phone as a
+touchpad and keyboard), and nothing beyond it.
 The project's domain is `ligatureprotocol.org`, so the `org.ligatureprotocol` type names
 and the schema `$id`s are official.
 
@@ -125,8 +129,10 @@ The reference implementation is Rust and is also the production implementation
   from `SECURITY.md` and the README; a Critical or High finding is named in one only once
   it is fixed or has an advisory.
 - `docs/milestones/`: one plan per milestone with scope, non-goals, decisions to pin, exit
-  criteria and a task breakdown; milestones 1 to 5 are done, 6 is drafted (epic LP-111) and
-  7 and 8 are accepted and in progress (epics LP-112 and LP-113, tasks LP-141 to LP-152).
+  criteria and a task breakdown; milestones 1 to 5 are done, 6 is drafted (epic LP-111), 7 is
+  implemented and awaits its run with the real devices (epic LP-112, tasks LP-141 to LP-146,
+  LP-160 and LP-161; the run is LP-146) and 8 is accepted and in progress (epic LP-113, tasks
+  LP-147 to LP-152).
   macOS share the clipboard) and `01-implementation-decisions.md` records its non-protocol
   choices (store is
   SQLite via rusqlite bundled; keys in a separate 0600 file; state under `data/` in the

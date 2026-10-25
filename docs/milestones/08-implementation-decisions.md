@@ -221,6 +221,12 @@ share's input region is the display's rectangle in points as a fraction of the d
 bounding box (`input::geometry::region_of`, shared with the input backend), which is what the
 Mac's injector places the pointer by.
 
+**The agent is scheduled as an application.** The first run on the Mac shared about 12
+frames a second instead of 30 and measured a 272 ms input round trip, while the network's
+was 4.5 ms. The launchd agent had `ProcessType` `Background`, set when the daemon only
+synchronised the clipboard, which launchd throttles so that it does not disturb the user.
+It is now `Interactive`, the scheduling an application gets.
+
 **`lpview` is unchanged.** It was written on winit, softbuffer and an ffmpeg decoder, which
 all run on macOS, so the plan's AppKit viewer is not needed; it already type-checks for the
 Mac.

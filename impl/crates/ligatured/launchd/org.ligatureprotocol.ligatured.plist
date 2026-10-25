@@ -35,8 +35,12 @@
   <true/>
   <key>KeepAlive</key>
   <true/>
+  <!-- Interactive, as an application is scheduled: the input capture and the
+       screen share run in real time, and Background's throttling held the
+       share to about a dozen frames a second and the input round trip to a
+       quarter of a second (LP-150). -->
   <key>ProcessType</key>
-  <string>Background</string>
+  <string>Interactive</string>
   <key>StandardOutPath</key>
   <string>HOME/Library/Logs/ligature/ligatured.log</string>
   <key>StandardErrorPath</key>

@@ -147,12 +147,17 @@ needed. The Quartz calls live in `lp-macos::input`, the crate allowed `unsafe`; 
 `input_macos` holds only safe code, and the arithmetic it needs (the key table, modifiers,
 click counting, scroll units) is in `input::mac`, built and tested on every platform.
 
-**Capture is an event tap that watches the cursor.** macOS has no pointer barriers, so a
-session tap at the head of the queue sees every mouse move and the daemon reports an edge
-hit when the cursor arrives on an armed edge of the displays' bounding box, once per
-arrival (`input::geometry::EdgeWatch`), so a pointer resting there while no drive can start
-does not repeat. The zone arithmetic the Linux portal used moved to `input::geometry` and is
-shared. While driving, the tap swallows every event, the cursor is frozen with
+**Capture is a listening tap that watches the cursor, and a filtering tap per drive.** macOS
+has no pointer barriers, so a listen-only session tap sees every mouse move and the daemon
+reports an edge hit when the cursor arrives on an armed edge of the displays' bounding box,
+once per arrival (`input::geometry::EdgeWatch`), so a pointer resting there while no drive
+can start does not repeat. The zone arithmetic the Linux portal used moved to
+`input::geometry` and is shared. A listening tap can hold nothing back. A filtering tap
+can: every event of the session waits for it, and when its process lost Accessibility on
+the owner's Mac, every click, gesture and key was held back until a forced restart. So the
+filtering tap, at the head of the queue, exists only for the length of a drive: `take`
+installs it and `release` removes it. While driving it swallows every event, the cursor is
+frozen with
 `CGAssociateMouseAndMouseCursorPosition` (the mouse still reports its motion, in points)
 and hidden. Hiding it from a background process needs the window server's
 `SetsCursorInBackground` connection property, which is not public: it is looked up by name
@@ -189,12 +194,19 @@ lines from a wheel, with the user's natural-scrolling setting already applied.
 **Text is a string on a key event.** `text` is posted as key down and up events carrying
 the string, at most 20 UTF-16 units each, so any character types whatever the layout.
 
-**The permissions gate the descriptor.** At start the daemon asks for whichever of the two
-permissions is missing, which macOS prompts for once each. A supervisor thread checks both
-every two seconds, starts the tap once both are granted, and re-reads the displays. The
-family `provides` while the tap runs and `accepts` while Accessibility is held; the manifest
-re-reads both every second, so granting one adds the family to every peer's view and
-withdrawing one removes it, and a withdrawal mid-drive ends the drive as a lost capture.
+**The permissions gate the descriptor, read live.** At start the daemon asks for whichever of
+the two permissions is missing, which macOS prompts for once each. `CGPreflightPostEventAccess`
+and `CGPreflightListenEventAccess` answer from what the process held when it started: on the
+owner's Mac they went on answering yes after the switch was turned off, which is how the
+filtering tap outlived its permission. So a supervisor thread also reads both live every
+half second, `AXIsProcessTrusted` for Accessibility and `IOHIDCheckAccess` for Input
+Monitoring. A permission it has seen held and then sees gone is a withdrawal: the
+listening tap stops, a drive's filtering tap goes with it, and the drive ends as a lost
+capture. The supervisor starts the listening tap once both are granted and re-reads the
+displays every two seconds. The family `provides` while the listening tap runs and
+`accepts` while Accessibility is held; the manifest re-reads both every second. On the
+owner's Mac the switch sat in Privacy & Security under "Device Control and Data Access",
+not under Accessibility.
 
 **Built here, run on the Mac.** The code is type-checked and linted for
 `aarch64-apple-darwin` on the Linux machine, with a stand-in C compiler since there is no

@@ -101,9 +101,10 @@ The daemon runs as a per-user launchd agent that starts at login.
 
 5. Allow input sharing if you want it. When the daemon first starts, macOS also asks about
     Input Monitoring and Accessibility for Ligature; both are under System Settings, Privacy
-    & Security. With Accessibility allowed your other devices can drive the Mac's pointer and
-    keyboard; with Input Monitoring as well, the Mac's own keyboard and mouse can drive
-    theirs. Until then the Mac leaves input alone and offers none.
+    & Security, where some macOS versions list Ligature's Accessibility switch under Device
+    Control and Data Access instead. With Accessibility allowed your other devices can drive
+    the Mac's pointer and keyboard; with Input Monitoring as well, the Mac's own keyboard and
+    mouse can drive theirs. Until then the Mac leaves input alone and offers none.
 
 6. Check it:
 

@@ -81,7 +81,11 @@ extra components. What a third-party daemon may offer is bounded by platform per
   so withdrawing either removes the family from every peer's view. macOS has no pointer
   barriers: the daemon watches the cursor in its tap and starts a drive when the cursor
   reaches a mapped edge. Secure input, which macOS turns on in a password field, keeps the
-  keyboard from every tap.
+  keyboard from every tap. Every event of the session waits for a filtering tap, and a
+  filtering tap whose process loses Accessibility holds back every click and key until it
+  is gone, so the daemon watches with a listen-only tap and filters only while it drives
+  another device. The permission checks a process can make at no cost answer from what it
+  held at start, so a withdrawal is read through the live checks.
 - **Displays**: ScreenCaptureKit captures a display for a share, and serves only a process
   with the Screen Recording permission, which the user grants to the bundle once under
   Privacy and Security. macOS applies a newly granted permission to the next start of the

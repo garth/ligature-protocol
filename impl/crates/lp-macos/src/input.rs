@@ -100,6 +100,17 @@ unsafe extern "C" {
     fn CGEventTapEnable(tap: CFMachPortRef, enable: bool);
 }
 
+#[link(name = "ApplicationServices", kind = "framework")]
+unsafe extern "C" {
+    /// `Boolean`, an unsigned char.
+    fn AXIsProcessTrusted() -> u8;
+}
+
+#[link(name = "IOKit", kind = "framework")]
+unsafe extern "C" {
+    fn IOHIDCheckAccess(request: u32) -> u32;
+}
+
 #[link(name = "CoreFoundation", kind = "framework")]
 unsafe extern "C" {
     static kCFRunLoopCommonModes: CFStringRef;
@@ -163,6 +174,11 @@ const HID_EVENT_TAP: u32 = 0;
 const SESSION_EVENT_TAP: u32 = 1;
 const HEAD_INSERT: u32 = 0;
 const TAP_DEFAULT: u32 = 0;
+const TAP_LISTEN_ONLY: u32 = 1;
+/// `kIOHIDRequestTypeListenEvent`.
+const HID_REQUEST_LISTEN: u32 = 1;
+/// `kIOHIDAccessTypeGranted`.
+const HID_ACCESS_GRANTED: u32 = 0;
 const COMBINED_SESSION_STATE: i32 = 0;
 const SCROLL_UNIT_PIXEL: u32 = 0;
 const SCROLL_UNIT_LINE: u32 = 1;
@@ -187,6 +203,23 @@ pub fn listen_access() -> bool {
 pub fn post_access() -> bool {
     // SAFETY: a plain query with no arguments.
     unsafe { CGPreflightPostEventAccess() }
+}
+
+/// Whether Accessibility is held right now. Unlike [`post_access`], which
+/// answers from what the process was granted when it started, this follows
+/// the switch in System Settings as it changes, so a withdrawal is seen.
+#[must_use]
+pub fn accessibility_live() -> bool {
+    // SAFETY: a plain query with no arguments.
+    unsafe { AXIsProcessTrusted() != 0 }
+}
+
+/// Whether Input Monitoring is held right now, as [`accessibility_live`]
+/// is for Accessibility.
+#[must_use]
+pub fn listen_access_live() -> bool {
+    // SAFETY: a plain query with a request type.
+    unsafe { IOHIDCheckAccess(HID_REQUEST_LISTEN) == HID_ACCESS_GRANTED }
 }
 
 /// Asks for whichever of the two permissions is missing: macOS shows its
@@ -388,6 +421,7 @@ type Handler = Box<dyn FnMut(TapEvent) -> bool + Send>;
 struct TapContext {
     handler: Handler,
     port: CFMachPortRef,
+    filter: bool,
 }
 
 /// A raw pointer handed between threads: the run loop to stop.
@@ -417,18 +451,36 @@ impl Drop for Tap {
     }
 }
 
-/// Starts a tap on the session's events, ahead of every application. The
-/// handler sees each event and returns `true` to swallow it.
+/// How a tap stands in the session's event stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TapKind {
+    /// Sees events and can never hold any back: the handler's answer is
+    /// ignored. Needs Input Monitoring only.
+    Listen,
+    /// Ahead of every application, and swallows an event when the handler
+    /// answers `true`. Every event of the session waits for it, so a
+    /// filtering tap whose process loses Accessibility holds back the whole
+    /// session's clicks and keys until it is gone: keep one only while it is
+    /// needed.
+    Filter,
+}
+
+/// Starts a tap on the session's events. The handler sees each event and,
+/// for a [`TapKind::Filter`] tap, returns `true` to swallow it.
 ///
 /// # Errors
 ///
 /// Returns a message when the tap cannot be made, which is what happens
-/// without the Accessibility and Input Monitoring permissions.
-pub fn tap(handler: impl FnMut(TapEvent) -> bool + Send + 'static) -> Result<Tap, String> {
+/// without the Input Monitoring permission, or for a filter without
+/// Accessibility.
+pub fn tap(
+    kind: TapKind,
+    handler: impl FnMut(TapEvent) -> bool + Send + 'static,
+) -> Result<Tap, String> {
     let (tx, rx) = mpsc::channel::<Result<SendPtr, String>>();
     let thread = std::thread::Builder::new()
         .name("ligature-event-tap".to_owned())
-        .spawn(move || run_tap(Box::new(handler), &tx))
+        .spawn(move || run_tap(kind, Box::new(handler), &tx))
         .map_err(|e| format!("cannot start the event tap thread: {e}"))?;
     match rx.recv() {
         Ok(Ok(run_loop)) => Ok(Tap {
@@ -443,7 +495,7 @@ pub fn tap(handler: impl FnMut(TapEvent) -> bool + Send + 'static) -> Result<Tap
     }
 }
 
-fn run_tap(handler: Handler, tx: &mpsc::Sender<Result<SendPtr, String>>) {
+fn run_tap(kind: TapKind, handler: Handler, tx: &mpsc::Sender<Result<SendPtr, String>>) {
     let mask: u64 = [
         LEFT_MOUSE_DOWN,
         LEFT_MOUSE_UP,
@@ -463,6 +515,7 @@ fn run_tap(handler: Handler, tx: &mpsc::Sender<Result<SendPtr, String>>) {
     .iter()
     .fold(0, |m, t| m | (1u64 << t));
     let context = Box::into_raw(Box::new(TapContext {
+        filter: kind == TapKind::Filter,
         handler,
         port: std::ptr::null_mut(),
     }));
@@ -473,7 +526,10 @@ fn run_tap(handler: Handler, tx: &mpsc::Sender<Result<SendPtr, String>>) {
         let port = CGEventTapCreate(
             SESSION_EVENT_TAP,
             HEAD_INSERT,
-            TAP_DEFAULT,
+            match kind {
+                TapKind::Listen => TAP_LISTEN_ONLY,
+                TapKind::Filter => TAP_DEFAULT,
+            },
             mask,
             tap_callback,
             context.cast(),
@@ -524,7 +580,7 @@ extern "C" fn tap_callback(
             return event;
         };
         match catch_unwind(AssertUnwindSafe(|| (context.handler)(decoded))) {
-            Ok(true) => std::ptr::null_mut(),
+            Ok(true) if context.filter => std::ptr::null_mut(),
             _ => event,
         }
     }

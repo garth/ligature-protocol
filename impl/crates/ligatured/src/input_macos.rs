@@ -41,8 +41,11 @@ use crate::input::mac::{
 };
 use crate::input::{Capture, CaptureEvent, Inject};
 
-/// How often the supervisor re-reads the permissions and the displays.
-const SUPERVISE: Duration = Duration::from_secs(2);
+/// How often the supervisor reads the permissions: a withdrawal mid-drive
+/// holds back the Mac's input until the filtering tap is gone.
+const SUPERVISE: Duration = Duration::from_millis(500);
+/// The displays are read again every so many supervisor rounds.
+const DISPLAYS_EVERY: u32 = 4;
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -70,12 +73,17 @@ struct TapState {
     modifiers: ModifierCapture,
 }
 
-/// The Mac's capture: an event tap. Implements [`Capture`]; `provides`
-/// while the tap runs.
+/// The Mac's capture: a listen-only event tap that watches for edges, and a
+/// filtering tap installed only while a drive runs. Implements [`Capture`];
+/// `provides` while the listening tap runs.
 pub struct MacCapture {
     events: broadcast::Sender<CaptureEvent>,
     state: Arc<Mutex<TapState>>,
     available: Arc<AtomicBool>,
+    /// The filtering tap of the drive in progress. Kept apart from the
+    /// state, which its handler locks, so it is never stopped (its thread
+    /// joined) while the state is held.
+    drive_tap: Arc<Mutex<Option<quartz::Tap>>>,
 }
 
 impl std::fmt::Debug for MacCapture {
@@ -86,7 +94,7 @@ impl std::fmt::Debug for MacCapture {
 
 impl MacCapture {
     /// Asks for the permissions if they are missing and starts the
-    /// supervisor, which starts the tap once they are granted.
+    /// supervisor, which starts the listening tap once they are granted.
     #[must_use]
     pub fn start() -> Arc<Self> {
         quartz::request_access();
@@ -97,15 +105,17 @@ impl MacCapture {
                 ..TapState::default()
             })),
             available: Arc::new(AtomicBool::new(false)),
+            drive_tap: Arc::new(Mutex::new(None)),
         });
-        let (state, available, events) = (
+        let (state, available, events, drive_tap) = (
             this.state.clone(),
             this.available.clone(),
             this.events.clone(),
+            this.drive_tap.clone(),
         );
         if let Err(e) = std::thread::Builder::new()
             .name("ligature-input-supervisor".to_owned())
-            .spawn(move || supervise(&state, &available, &events))
+            .spawn(move || supervise(&state, &available, &events, &drive_tap))
         {
             tracing::warn!(%e, "cannot start the input capture supervisor");
         }
@@ -113,30 +123,63 @@ impl MacCapture {
     }
 }
 
-/// Ends a capture from this side: the cursor is let go and the sync told.
-fn let_go(state: &Mutex<TapState>, events: &broadcast::Sender<CaptureEvent>) {
-    let was = std::mem::replace(&mut lock(state).captured, false);
-    if was {
-        quartz::hold_cursor(false);
-        let _ = events.send(CaptureEvent::Lost);
-    }
+/// Ends a drive's capture: the cursor is let go, placed at `back_at` when
+/// given, and the filtering tap removed. Returns whether one was running.
+fn end_capture(
+    state: &Mutex<TapState>,
+    drive_tap: &Mutex<Option<quartz::Tap>>,
+    back_at: Option<(f64, f64)>,
+) -> bool {
+    let was = {
+        let mut s = lock(state);
+        if let Some(at) = back_at {
+            quartz::warp(at);
+        }
+        let was = std::mem::replace(&mut s.captured, false);
+        if was {
+            // Reconnecting the mouse after the warp also lifts the pause
+            // macOS puts on mouse events after a warp.
+            quartz::hold_cursor(false);
+        }
+        was
+    };
+    // Stopped outside the state's lock: its handler may be waiting on it.
+    let tap = lock(drive_tap).take();
+    drop(tap);
+    was
 }
 
 fn supervise(
     state: &Arc<Mutex<TapState>>,
     available: &AtomicBool,
     events: &broadcast::Sender<CaptureEvent>,
+    drive_tap: &Arc<Mutex<Option<quartz::Tap>>>,
 ) {
-    let mut tap: Option<quartz::Tap> = None;
+    let mut watch: Option<quartz::Tap> = None;
     let mut told = false;
+    // The live checks seen to hold since start: either one going away is a
+    // withdrawal, which the cached checks would not show until a restart.
+    let (mut seen_ax, mut seen_hid) = (false, false);
+    let mut round: u32 = 0;
     loop {
-        lock(state).zones = zones();
-        let allowed = quartz::listen_access() && quartz::post_access();
-        if allowed && tap.is_none() {
-            match quartz::tap(handler(state.clone(), events.clone())) {
+        if round.is_multiple_of(DISPLAYS_EVERY) {
+            lock(state).zones = zones();
+        }
+        round = round.wrapping_add(1);
+        let (ax, hid) = (quartz::accessibility_live(), quartz::listen_access_live());
+        let withdrawn = (seen_ax && !ax) || (seen_hid && !hid);
+        seen_ax |= ax;
+        seen_hid |= hid;
+        let granted = (quartz::listen_access() && quartz::post_access()) || (ax && hid);
+        let allowed = granted && !withdrawn;
+        if allowed && watch.is_none() {
+            match quartz::tap(
+                quartz::TapKind::Listen,
+                watcher(state.clone(), events.clone()),
+            ) {
                 Ok(t) => {
-                    tracing::info!("input capture: the event tap is running");
-                    tap = Some(t);
+                    tracing::info!("input capture: the listening tap is running");
+                    watch = Some(t);
                     told = false;
                 }
                 Err(e) if !told => {
@@ -145,9 +188,11 @@ fn supervise(
                 }
                 Err(_) => {}
             }
-        } else if !allowed && tap.is_some() {
-            tap = None;
-            let_go(state, events);
+        } else if !allowed && watch.is_some() {
+            watch = None;
+            if end_capture(state, drive_tap, None) {
+                let _ = events.send(CaptureEvent::Lost);
+            }
             tracing::warn!(
                 "the Accessibility or Input Monitoring permission was withdrawn: input capture stopped"
             );
@@ -158,14 +203,34 @@ fn supervise(
             );
             told = true;
         }
-        available.store(tap.is_some(), Ordering::SeqCst);
+        available.store(watch.is_some(), Ordering::SeqCst);
         std::thread::sleep(SUPERVISE);
     }
 }
 
-/// The tap's handler: edge hits while free, every event captured and
-/// swallowed while driving.
-fn handler(
+/// The listening tap's handler: edge hits while nothing is driven. It can
+/// hold nothing back, whatever it answers.
+fn watcher(
+    state: Arc<Mutex<TapState>>,
+    events: broadcast::Sender<CaptureEvent>,
+) -> impl FnMut(TapEvent) -> bool + Send + 'static {
+    move |event| {
+        let mut guard = lock(&state);
+        let s = &mut *guard;
+        if !s.captured
+            && let TapEvent::Moved { at, .. } = event
+            && let Some((edge, at)) = s.watch.update(&s.zones, &s.armed, at)
+        {
+            drop(guard);
+            let _ = events.send(CaptureEvent::EdgeHit { edge, at });
+        }
+        false
+    }
+}
+
+/// The filtering tap's handler, for the length of a drive: every event
+/// captured and swallowed.
+fn capturer(
     state: Arc<Mutex<TapState>>,
     events: broadcast::Sender<CaptureEvent>,
 ) -> impl FnMut(TapEvent) -> bool + Send + 'static {
@@ -173,12 +238,6 @@ fn handler(
         let mut guard = lock(&state);
         let s = &mut *guard;
         if !s.captured {
-            if let TapEvent::Moved { at, .. } = event
-                && let Some((edge, at)) = s.watch.update(&s.zones, &s.armed, at)
-            {
-                drop(guard);
-                let _ = events.send(CaptureEvent::EdgeHit { edge, at });
-            }
             return false;
         }
         let captured: Vec<InputEvent> = match event {
@@ -238,25 +297,27 @@ impl Capture for MacCapture {
         if !self.provides() {
             return Err(Error::Io("the event tap is not running".to_owned()));
         }
-        let mut s = lock(&self.state);
-        if !s.captured {
+        if lock(&self.drive_tap).is_some() {
+            return Ok(());
+        }
+        let tap = quartz::tap(
+            quartz::TapKind::Filter,
+            capturer(self.state.clone(), self.events.clone()),
+        )
+        .map_err(Error::Io)?;
+        {
+            let mut s = lock(&self.state);
             s.captured = true;
             s.modifiers.clear();
             quartz::hold_cursor(true);
         }
+        *lock(&self.drive_tap) = Some(tap);
         Ok(())
     }
 
     fn release(&self, back_at: Option<(Edge, f64)>) {
-        let mut s = lock(&self.state);
-        if let Some((edge, at)) = back_at {
-            quartz::warp(back_position(edge, at, &s.zones));
-        }
-        if std::mem::replace(&mut s.captured, false) {
-            // Reconnecting the mouse after the warp also lifts the pause
-            // macOS puts on mouse events after a warp.
-            quartz::hold_cursor(false);
-        }
+        let at = back_at.map(|(edge, at)| back_position(edge, at, &lock(&self.state).zones));
+        end_capture(&self.state, &self.drive_tap, at);
     }
 
     fn subscribe(&self) -> broadcast::Receiver<CaptureEvent> {

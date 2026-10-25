@@ -1,6 +1,6 @@
 # 0044. A share's picture format is negotiated, and names what is sent, never what makes it
 
-**Status:** Proposed
+**Status:** Accepted (by the owner, 2026-10-25)
 **Date:** 2026-10-25
 
 ## Context

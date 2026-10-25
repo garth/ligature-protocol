@@ -135,7 +135,7 @@ The reference implementation is Rust and is also the production implementation
   criteria and a task breakdown; milestones 1 to 5 are done, 6 is drafted (epic LP-111), 7 is
   implemented and awaits its run with the real devices (epic LP-112, tasks LP-141 to LP-146,
   LP-160 and LP-161; the run is LP-146) and 8 is implemented and awaits its run (epic LP-113,
-  tasks LP-147 to LP-152 and LP-162, ADR 0044 proposed; the run is LP-152).
+  tasks LP-147 to LP-152 and LP-162 for ADR 0044; the run is LP-152).
   macOS share the clipboard) and `01-implementation-decisions.md` records its non-protocol
   choices (store is
   SQLite via rusqlite bundled; keys in a separate 0600 file; state under `data/` in the

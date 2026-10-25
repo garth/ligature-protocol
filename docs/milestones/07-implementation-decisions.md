@@ -246,5 +246,6 @@ trip from Linux was 7.8 ms median once the agent ran as `Interactive` (LP-150); 
 change holds and posted scroll is not inverted a second time. The permissions do not
 survive a rebuild: macOS ties them to the ad hoc signature, so a switch left on for the
 previous build shows as on and does not apply, and the entries are reset with `tccutil` and
-granted again, as the upgrade guide says. Still to be recorded: what secure input (a
-password field) does to the keyboard while driving.
+granted again, as the upgrade guide says. With Terminal's Secure Keyboard Entry on and its
+window in front, the Mac's keys still reached the Linux machine it drove; a password field in
+another application is not yet tried.

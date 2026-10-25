@@ -80,8 +80,9 @@ extra components. What a third-party daemon may offer is bounded by platform per
   once. The Mac accepts input while Accessibility is held and provides it while both are,
   so withdrawing either removes the family from every peer's view. macOS has no pointer
   barriers: the daemon watches the cursor in its tap and starts a drive when the cursor
-  reaches a mapped edge. Secure input, which macOS turns on in a password field, keeps the
-  keyboard from every tap. Every event of the session waits for a filtering tap, and a
+  reaches a mapped edge. With Terminal's Secure Keyboard Entry on, the keys still reached
+  the driven device; other password fields are not yet tried. Every event of the session
+  waits for a filtering tap, and a
   filtering tap whose process loses Accessibility holds back every click and key until it
   is gone, so the daemon watches with a listen-only tap and filters only while it drives
   another device. The permission checks a process can make at no cost answer from what it

@@ -369,6 +369,30 @@ async fn a_driven_device_never_follows_its_own_layout() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_device_driven_by_a_touchpad_still_follows_its_layout() {
+    // A touchpad (the phone) drives b with an absolute entry: b's pointer is
+    // then the touchpad's, as if a mouse were plugged into b, and b's edge
+    // leads on to the next desktop. Only a drive that entered by an edge is
+    // kept from following b's layout, since that is what could loop.
+    let (a, b, _c, _c_dir) = three().await;
+    a.sync
+        .drive(*b.daemon.binding().public(), Enter::absolute(0.5, 0.5))
+        .await
+        .unwrap();
+    until("b is driven", || b.sync.driven_by().is_some()).await;
+    b.sync
+        .set_edge(Edge::Right, *a.daemon.binding().public())
+        .unwrap();
+    b.capture.hit_edge(Edge::Right, 0.5);
+    until("b drives on from its edge", || b.sync.is_driving()).await;
+    assert_eq!(b.capture.taken(), Some(Edge::Right));
+    assert!(
+        b.capture.releases().is_empty(),
+        "the input was not given back"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_edge_hit_that_cannot_drive_gives_the_input_back() {
     // On Linux the compositor has already captured the keyboard and mouse
     // when it reports the edge hit: a drive that does not start must hand

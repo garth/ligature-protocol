@@ -415,6 +415,14 @@ impl InputSync {
         lock(&self.driven).as_ref().map(|d| d.peer)
     }
 
+    /// Whether this device is driven by another desktop that entered across
+    /// an edge, rather than by a touchpad or a viewer.
+    fn driven_by_edge(&self) -> bool {
+        lock(&self.driven)
+            .as_ref()
+            .is_some_and(|d| d.entry.is_some())
+    }
+
     /// Starts driving `peer` with `enter`, for a touchpad or a viewer that
     /// has no edge: the stream is opened, `ready` awaited, and events then go
     /// through [`InputSync::send`]. Returns the driven screen's size.
@@ -740,10 +748,12 @@ impl InputSync {
                 event = events.recv() => {
                     match event {
                         Ok(CaptureEvent::EdgeHit { edge, at }) => {
-                            // A driven device never follows its own layout
-                            // (decision 7): the pointer at its edge is the
-                            // controller's, which a capture that watches the
-                            // cursor sees as the user's own. A compositor may
+                            // A device driven across an edge never follows
+                            // its own layout (decision 7): the pointer at its
+                            // edge is the other desktop's, and following it
+                            // could loop. A touchpad's or a viewer's drive
+                            // (an absolute entry) is like a mouse plugged in,
+                            // and the edge leads on. A compositor may
                             // have captured the input already (the
                             // InputCapture portal does when the pointer, the
                             // controller's included, crosses a barrier), so
@@ -751,7 +761,7 @@ impl InputSync {
                             if self.is_driving() {
                                 continue;
                             }
-                            if self.driven_by().is_some() {
+                            if self.driven_by_edge() {
                                 tracing::info!(?edge, "the pointer reached an edge while driven; giving the input back");
                                 capture.release(Some((edge, at)));
                                 stray_released = true;

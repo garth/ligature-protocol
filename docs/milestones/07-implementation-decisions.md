@@ -50,7 +50,11 @@ reaches the driven device as two presses, which its `end` lifts.
 and mouse the moment the pointer crosses a barrier, before the daemon decides anything, and
 the pointer of a device driving this one crosses barriers too. So every edge hit that does
 not become a drive gives the input back at once: a drive that does not start (the peer
-gone, or refusing) and a hit while this device is itself driven. And a captured event that
+gone, or refusing) and a hit while this device is driven across an edge by another desktop,
+which decision 7 keeps from following its own layout, since that could loop. A device
+driven by a touchpad or a viewer (an absolute entry) does follow its layout: their pointer
+is like a mouse plugged into it, so the phone driving the Linux machine carries on across
+its edge to the Mac. And a captured event that
 arrives while nothing is driven gives it back at the first event, once per burst, whatever
 let it happen. On 2026-10-24 the phone drove the Linux machine to its right edge, which led
 to the Mac; the hit was ignored as the guard above says, the capture was never given back,

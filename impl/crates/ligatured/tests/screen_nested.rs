@@ -26,6 +26,28 @@ use lp_identity::cross_signing::PersonKeys;
 use lp_identity::facts;
 use lp_transport::manager::Event;
 
+/// The screencopy helper this test's capture started: a child of this
+/// process running `screen-helper capture`.
+fn helper_pid() -> Option<u32> {
+    let me = std::process::id();
+    std::fs::read_dir("/proc")
+        .ok()?
+        .filter_map(|e| e.ok()?.file_name().to_str()?.parse::<u32>().ok())
+        .find(|pid| {
+            let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap_or_default();
+            let parent = stat
+                .rsplit(')')
+                .next()
+                .and_then(|rest| rest.split_whitespace().nth(1))
+                .and_then(|p| p.parse::<u32>().ok());
+            let cmdline = std::fs::read(format!("/proc/{pid}/cmdline")).unwrap_or_default();
+            parent == Some(me)
+                && cmdline
+                    .windows(b"screen-helper\0capture".len())
+                    .any(|w| w == b"screen-helper\0capture")
+        })
+}
+
 fn at(offset: i64) -> Timestamp {
     Timestamp::from_unix(1_760_000_000 + offset).unwrap()
 }
@@ -213,6 +235,37 @@ async fn a_nested_compositor_s_output_is_shared_encoded_and_decodes() {
     );
     let decoded: u32 = probed.rsplit(',').next().unwrap().parse().unwrap();
     assert_eq!(decoded, frames, "every frame decodes");
+
+    // A stalled capture is started again (LP-149): the helper is frozen, the
+    // watchdog notices the silence and starts a new one, and the frames
+    // resume with a keyframe.
+    let frozen = helper_pid().expect("the screen helper runs");
+    let stop = std::process::Command::new("kill")
+        .args(["-STOP", &frozen.to_string()])
+        .status()
+        .unwrap();
+    assert!(stop.success());
+    let stalled = Instant::now();
+    let mut last = Instant::now();
+    loop {
+        match tokio::time::timeout(Duration::from_secs(15), watching.frames.recv()).await {
+            Ok(Some(Viewed::Frame { key, .. })) => {
+                let gap = last.elapsed();
+                last = Instant::now();
+                if gap > Duration::from_secs(2) {
+                    assert!(key, "the restarted capture begins with a keyframe");
+                    break;
+                }
+            }
+            other => panic!("expected the frames to resume, got {other:?}"),
+        }
+    }
+    eprintln!("resumed {:?} after the stall", stalled.elapsed());
+    assert!(
+        !std::path::Path::new(&format!("/proc/{frozen}")).exists(),
+        "the frozen helper was ended"
+    );
+    assert_ne!(helper_pid(), Some(frozen), "a new helper runs");
 
     // The viewer stops; the capture's processes go with it.
     watching.control.send(ShareControl::Stop).unwrap();

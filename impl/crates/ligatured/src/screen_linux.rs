@@ -25,10 +25,10 @@ use std::collections::HashMap;
 use std::io::Write as _;
 use std::os::fd::{AsRawFd as _, OwnedFd};
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use lp_core::Error;
 use lp_core::frame;
@@ -59,6 +59,56 @@ const PROBE_EVERY: Duration = Duration::from_secs(5);
 const PORTAL_REPROBE_ROUNDS: u32 = 12;
 /// The largest frame between the daemon and its screen helper's listing.
 const HELPER_MAX_FRAME: usize = 64 * 1024;
+/// A share whose encoder has written nothing for this long has stalled: a
+/// still screen keeps producing frames (`keepalive-time`).
+const STALL: Duration = Duration::from_secs(4);
+/// How often a share's watchdog looks.
+const WATCH_EVERY: Duration = Duration::from_secs(1);
+/// Restarts of a stalled capture before the share ends with an error.
+const MAX_RESTARTS: u32 = 3;
+/// A capture that has run this long since its last restart starts its count
+/// of restarts again.
+const RESTARTS_FORGIVEN: Duration = Duration::from_secs(60);
+
+/// What a share's watchdog does about how long its encoder has been quiet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Stall {
+    /// Frames are coming.
+    Fine,
+    /// Start the capture again.
+    Restart,
+    /// Restarts did not hold: end the share.
+    GiveUp,
+}
+
+/// The watchdog's count of restarts.
+#[derive(Debug, Default)]
+struct StallWatch {
+    restarts: u32,
+    restarted: Option<Instant>,
+}
+
+impl StallWatch {
+    /// The verdict at `now` for an encoder quiet for `quiet`.
+    fn check(&mut self, now: Instant, quiet: Duration) -> Stall {
+        if quiet < STALL {
+            if self
+                .restarted
+                .is_some_and(|at| now.duration_since(at) >= RESTARTS_FORGIVEN)
+            {
+                self.restarts = 0;
+                self.restarted = None;
+            }
+            return Stall::Fine;
+        }
+        if self.restarts >= MAX_RESTARTS {
+            return Stall::GiveUp;
+        }
+        self.restarts += 1;
+        self.restarted = Some(now);
+        Stall::Restart
+    }
+}
 
 /// One output as the helper lists it: the display, and where it lies in the
 /// layout.
@@ -181,6 +231,69 @@ pub use crate::screen::{probe_decoder, viewer_params};
 struct Running {
     children: Vec<Child>,
     portal: Option<Arc<PortalSession>>,
+    /// Set when the current processes are stopped on purpose, so the end of
+    /// their stream is not taken for a failure.
+    generation: Arc<AtomicBool>,
+}
+
+/// Where a running share's raw frames come from, to start them again.
+enum Source {
+    /// The portal's stream: a new remote on the same session, no picker.
+    Portal {
+        session: Arc<PortalSession>,
+        node: u32,
+    },
+    /// The screencopy helper.
+    Screencopy,
+}
+
+/// A reader that notes when it last read anything: the share's watchdog
+/// reads it.
+struct Noting<R> {
+    inner: R,
+    last: Arc<Mutex<Instant>>,
+}
+
+impl<R: std::io::Read> std::io::Read for Noting<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        if n > 0 {
+            *lock(&self.last) = Instant::now();
+        }
+        Ok(n)
+    }
+}
+
+/// Starts the encoder on a producer's raw frames; returns it and its output.
+fn spawn_encoder(
+    encoder: Encoder,
+    input: &RawInput,
+    settings: &Settings,
+    producer: &mut Child,
+) -> Result<(Child, ChildStdout), RefuseReason> {
+    let raw = producer.stdout.take().ok_or(RefuseReason::NoEncoder)?;
+    let mut ffmpeg = Command::new("ffmpeg")
+        .args(encoder_args(encoder, input, settings))
+        .stdin(Stdio::from(raw))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .map_err(|e| {
+            tracing::warn!(%e, "cannot start ffmpeg");
+            let _ = producer.kill();
+            RefuseReason::NoEncoder
+        })?;
+    let encoded = ffmpeg.stdout.take().ok_or(RefuseReason::NoEncoder)?;
+    Ok((ffmpeg, encoded))
+}
+
+/// The raw frames `gst-launch` writes: the share's size, BGRx.
+fn portal_input(settings: &Settings) -> RawInput {
+    RawInput {
+        width: settings.width,
+        height: settings.height,
+        pix_fmt: "bgr0".to_owned(),
+    }
 }
 
 /// What the portal handed back for a share.
@@ -195,17 +308,19 @@ struct PortalStart {
 struct Producer {
     child: Child,
     input: RawInput,
-    portal: Option<PortalSession>,
+    portal: Option<(PortalSession, u32)>,
     region: Option<Region>,
 }
 
 struct PortalSession {
-    /// The proxy the session was made through, kept for the session's life.
-    _proxy: ashpd::desktop::screencast::Screencast,
+    /// The proxy the session was made through, kept for the session's life
+    /// and for a new remote when the capture restarts.
+    proxy: ashpd::desktop::screencast::Screencast,
     session: ashpd::desktop::Session<ashpd::desktop::screencast::Screencast>,
 }
 
 /// The Linux screen capture. Implements [`Capture`].
+#[derive(Clone)]
 pub struct LinuxScreen {
     handle: tokio::runtime::Handle,
     store: Arc<TrustStore>,
@@ -398,10 +513,7 @@ impl LinuxScreen {
                 .open_pipe_wire_remote(&session, OpenPipeWireRemoteOptions::default())
                 .await?;
             Ok::<_, ashpd::Error>(PortalStart {
-                session: PortalSession {
-                    _proxy: proxy,
-                    session,
-                },
+                session: PortalSession { proxy, session },
                 node,
                 position,
                 fd,
@@ -424,6 +536,18 @@ impl LinuxScreen {
         let region = position
             .and_then(|(x, y)| list.at(x, y).map(|o| o.id.clone()))
             .and_then(|id| list.region(&id));
+        let child = Self::gst(fd, node, settings)?;
+        Ok(Producer {
+            child,
+            input: portal_input(settings),
+            portal: Some((portal, node)),
+            region,
+        })
+    }
+
+    /// `gst-launch-1.0` reading the portal's stream `node` through the
+    /// PipeWire remote `fd`.
+    fn gst(fd: OwnedFd, node: u32, settings: &Settings) -> Result<Child, RefuseReason> {
         // The child inherits a duplicate without close-on-exec, by number.
         let inherited = rustix::io::dup(&fd).map_err(|e| {
             tracing::warn!(%e, "cannot pass the PipeWire remote to GStreamer");
@@ -441,16 +565,113 @@ impl LinuxScreen {
             })?;
         drop(inherited);
         drop(fd);
-        Ok(Producer {
-            child,
-            input: RawInput {
-                width: settings.width,
-                height: settings.height,
-                pix_fmt: "bgr0".to_owned(),
-            },
-            portal: Some(portal),
-            region,
-        })
+        Ok(child)
+    }
+
+    /// Starts a share's processes again from its source: a new producer and
+    /// a new encoder, whose first frame is a keyframe. Blocks; called off the
+    /// runtime.
+    fn relaunch(
+        &self,
+        source: &Source,
+        encoder: Encoder,
+        settings: &Settings,
+    ) -> Result<(Vec<Child>, ChildStdout), RefuseReason> {
+        let (mut producer, input) = match source {
+            Source::Portal { session, node } => {
+                use ashpd::desktop::screencast::OpenPipeWireRemoteOptions;
+                let fd = self
+                    .handle
+                    .block_on(session.proxy.open_pipe_wire_remote(
+                        &session.session,
+                        OpenPipeWireRemoteOptions::default(),
+                    ))
+                    .map_err(|e| {
+                        tracing::warn!(%e, "cannot open the screen-cast stream again");
+                        RefuseReason::NoEncoder
+                    })?;
+                (Self::gst(fd, *node, settings)?, portal_input(settings))
+            }
+            Source::Screencopy => {
+                let p = self.producer_screencopy(settings)?;
+                (p.child, p.input)
+            }
+        };
+        let (ffmpeg, encoded) = spawn_encoder(encoder, &input, settings, &mut producer)?;
+        Ok((vec![producer, ffmpeg], encoded))
+    }
+
+    /// The share's watchdog: every second, restarts a capture whose encoder
+    /// has written nothing for [`STALL`], and ends the share once restarts
+    /// do not hold. Runs on a thread of its own until the share stops.
+    #[allow(clippy::too_many_arguments)]
+    fn watch_capture(
+        &self,
+        source: &Source,
+        encoder: Encoder,
+        settings: &Settings,
+        running: &Mutex<Running>,
+        stopping: &AtomicBool,
+        frames_tx: &mpsc::UnboundedSender<Captured>,
+        last: &Arc<Mutex<Instant>>,
+    ) {
+        let mut watch = StallWatch::default();
+        loop {
+            std::thread::sleep(WATCH_EVERY);
+            if stopping.load(Ordering::SeqCst) || frames_tx.is_closed() {
+                return;
+            }
+            let quiet = lock(last).elapsed();
+            match watch.check(Instant::now(), quiet) {
+                Stall::Fine => continue,
+                Stall::GiveUp => {
+                    tracing::warn!("the screen capture keeps stalling; ending the share");
+                    let _ = frames_tx.send(Captured::Ended(StopReason::Error));
+                    return;
+                }
+                Stall::Restart => {}
+            }
+            tracing::warn!(
+                quiet_ms = quiet.as_millis(),
+                restarts = watch.restarts,
+                "the screen capture stalled; starting it again"
+            );
+            let old = {
+                let mut r = lock(running);
+                r.generation.store(true, Ordering::SeqCst);
+                std::mem::take(&mut r.children)
+            };
+            for mut child in old {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            let Ok((mut children, encoded)) = self.relaunch(source, encoder, settings) else {
+                let _ = frames_tx.send(Captured::Ended(StopReason::Error));
+                return;
+            };
+            let generation = Arc::new(AtomicBool::new(false));
+            {
+                let mut r = lock(running);
+                if stopping.load(Ordering::SeqCst) {
+                    for child in &mut children {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                    }
+                    return;
+                }
+                r.children = children;
+                r.generation = generation.clone();
+            }
+            *lock(last) = Instant::now();
+            let noting = Noting {
+                inner: encoded,
+                last: last.clone(),
+            };
+            if read_frames(noting, frames_tx.clone(), generation).is_err() {
+                let _ = frames_tx.send(Captured::Ended(StopReason::Error));
+                return;
+            }
+        }
     }
 
     fn producer_screencopy(&self, settings: &Settings) -> Result<Producer, RefuseReason> {
@@ -558,19 +779,7 @@ impl Capture for LinuxScreen {
         } else {
             self.producer_screencopy(settings)?
         };
-        let raw = producer.stdout.take().ok_or(RefuseReason::NoEncoder)?;
-        let mut ffmpeg = Command::new("ffmpeg")
-            .args(encoder_args(encoder, &input, settings))
-            .stdin(Stdio::from(raw))
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .map_err(|e| {
-                tracing::warn!(%e, "cannot start ffmpeg");
-                let _ = producer.kill();
-                RefuseReason::NoEncoder
-            })?;
-        let encoded = ffmpeg.stdout.take().ok_or(RefuseReason::NoEncoder)?;
+        let (ffmpeg, encoded) = spawn_encoder(encoder, &input, settings, &mut producer)?;
         tracing::info!(
             display = %settings.display,
             ?encoder,
@@ -582,14 +791,44 @@ impl Capture for LinuxScreen {
         let (frames_tx, frames) = mpsc::unbounded_channel::<Captured>();
         let (control, mut control_rx) = mpsc::unbounded_channel::<ShareControl>();
         let stopping = Arc::new(AtomicBool::new(false));
+        let generation = Arc::new(AtomicBool::new(false));
+        let (portal, source) = match portal {
+            Some((session, node)) => {
+                let session = Arc::new(session);
+                (Some(session.clone()), Source::Portal { session, node })
+            }
+            None => (None, Source::Screencopy),
+        };
         let running = Arc::new(Mutex::new(Running {
             children: vec![producer, ffmpeg],
-            portal: portal.map(Arc::new),
+            portal,
+            generation: generation.clone(),
         }));
 
-        // The encoded stream, split into frames.
-        read_frames(encoded, frames_tx.clone(), stopping.clone())
-            .map_err(|_| RefuseReason::NoEncoder)?;
+        // The encoded stream, split into frames, and when it last moved.
+        let last = Arc::new(Mutex::new(Instant::now()));
+        let noting = Noting {
+            inner: encoded,
+            last: last.clone(),
+        };
+        read_frames(noting, frames_tx.clone(), generation).map_err(|_| RefuseReason::NoEncoder)?;
+
+        // A capture that produces nothing has stalled, since `keepalive-time`
+        // keeps a still screen producing frames: it is started again.
+        {
+            let this = self.clone();
+            let (running, stopping, frames_tx) =
+                (running.clone(), stopping.clone(), frames_tx.clone());
+            let settings = settings.clone();
+            std::thread::Builder::new()
+                .name("screen-watchdog".into())
+                .spawn(move || {
+                    this.watch_capture(
+                        &source, encoder, &settings, &running, &stopping, &frames_tx, &last,
+                    );
+                })
+                .map_err(|_| RefuseReason::NoEncoder)?;
+        }
 
         // The sharing notification and its Stop action, and the portal
         // session's end, which is the platform withdrawing consent.
@@ -645,6 +884,7 @@ impl Capture for LinuxScreen {
                 stopping.store(true, Ordering::SeqCst);
                 let portal = {
                     let mut r = lock(&running);
+                    r.generation.store(true, Ordering::SeqCst);
                     for child in &mut r.children {
                         let _ = child.kill();
                         let _ = child.wait();
@@ -1195,6 +1435,28 @@ mod tests {
             frame_rate: rate,
             viewer: "mac".to_owned(),
         }
+    }
+
+    #[test]
+    fn a_quiet_capture_is_restarted_three_times_then_the_share_ends() {
+        let t0 = Instant::now();
+        let s = Duration::from_secs;
+        let mut w = StallWatch::default();
+        assert_eq!(w.check(t0, s(1)), Stall::Fine);
+        assert_eq!(w.check(t0 + s(4), s(4)), Stall::Restart);
+        assert_eq!(w.check(t0 + s(9), s(4)), Stall::Restart);
+        assert_eq!(w.check(t0 + s(14), s(5)), Stall::Restart);
+        assert_eq!(w.check(t0 + s(19), s(4)), Stall::GiveUp);
+        // A capture that ran a minute after its restart has its count reset.
+        let mut w = StallWatch::default();
+        for i in 0..3 {
+            assert_eq!(w.check(t0 + s(5 * i), s(4)), Stall::Restart);
+        }
+        assert_eq!(w.check(t0 + s(10 + 59), s(0)), Stall::Fine);
+        assert_eq!(w.restarts, 3, "not yet a minute");
+        assert_eq!(w.check(t0 + s(10 + 60), s(0)), Stall::Fine);
+        assert_eq!(w.check(t0 + s(80), s(4)), Stall::Restart);
+        assert_eq!(w.restarts, 1);
     }
 
     #[test]

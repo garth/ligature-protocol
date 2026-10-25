@@ -75,6 +75,18 @@ keeps producing frames; its raw BGRx output feeds ffmpeg. VA-API is used when a 
 test encode on the render node succeeds, which it does not on this machine, so `libx264`
 (`ultrafast`, `zerolatency`) is what was measured.
 
+**A stalled capture is started again.** On the owner's machine a share froze about 25 seconds
+in: `pipewiresrc` held the stream's buffers and waited for one that never came, while
+xdg-desktop-portal-hyprland logged "Out of buffers", and nothing reached ffmpeg. The trigger
+was not found, and a second share did not repeat it. Since a still screen keeps producing
+frames, an encoder that writes nothing for four seconds means a stall, so each share has a
+watchdog thread that reads when the encoder last wrote. On a stall it stops the processes
+and starts them again from the same source: a new PipeWire remote on the same portal session
+(no picker), or a new screencopy helper. The new encoder begins with a keyframe, so the
+viewer recovers by itself. Three restarts without a minute of steady frames between them end
+the share with `error`. The nested test freezes the screencopy helper with `SIGSTOP` and
+expects the frames to resume with a keyframe, which they did after five seconds.
+
 **Frames are split at access unit delimiters.** ffmpeg writes an Annex B byte stream with a
 delimiter before every frame (`aud=1`, or `-aud 1` on VA-API) and the parameter sets before
 every keyframe (`repeat-headers=1`, or the `dump_extra` filter), and the daemon cuts the

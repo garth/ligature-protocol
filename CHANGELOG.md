@@ -70,6 +70,9 @@ release workflow publishes the section as the release notes with the installers.
 
 ### Fixed
 
+- Linux: a screen share whose capture stalls (seen as PipeWire's stream running out of buffers)
+  is started again on the same portal session after four seconds without a frame, so the
+  viewer's picture recovers instead of freezing; three stalls in a row end the share (LP-149).
 - A share whose capture had stopped sending frames outlived the viewer that closed it, and
   the next viewer was refused as busy; a viewer that goes now ends the share at once
   (LP-148).

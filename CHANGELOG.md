@@ -65,6 +65,10 @@ release workflow publishes the section as the release notes with the installers.
 
 ### Fixed
 
+- The macOS installer waits for the old launchd agent to be gone before loading the new one,
+  and retries the load, so an install or `lpctl upgrade` no longer leaves the daemon stopped
+  with only launchctl's "Bootstrap failed: 5"; if it still cannot load, it says so and exits
+  non-zero (LP-159).
 - After a device's daemon restarted, its peers could refuse its reconnects for up to a
   minute; a dial against a connection older than a crossing now replaces it, and a daemon
   that is stopped closes its connections so its peers reconnect at once (LP-158).

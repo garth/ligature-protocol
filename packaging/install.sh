@@ -99,8 +99,16 @@ Darwin)
     plist=$unit_dir/org.ligatureprotocol.ligatured.plist
     [ -e "$plist" ] || plist=$unit_dir/launchd/org.ligatureprotocol.ligatured.plist
     domain=gui/$(id -u)
-    if launchctl print "$domain/org.ligatureprotocol.ligatured" >/dev/null 2>&1; then
-        launchctl bootout "$domain/org.ligatureprotocol.ligatured" || true
+    job=$domain/org.ligatureprotocol.ligatured
+    if launchctl print "$job" >/dev/null 2>&1; then
+        launchctl bootout "$job" || true
+        # bootout returns before launchd has removed the job; bootstrapping
+        # the same label while it is still going fails with error 5 (LP-159).
+        waited=0
+        while launchctl print "$job" >/dev/null 2>&1 && [ "$waited" -lt 50 ]; do
+            sleep 0.2
+            waited=$((waited + 1))
+        done
     fi
     # The bundle: shipped in a release tarball, built from the binary in a
     # checkout.
@@ -125,7 +133,16 @@ Darwin)
     target=$HOME/Library/LaunchAgents/org.ligatureprotocol.ligatured.plist
     sed -e "s|HOME/Applications|$app_dir|g" -e "s|HOME|$HOME|g" "$plist" > "$target"
     if [ "$start" = yes ]; then
-        launchctl bootstrap "$domain" "$target"
+        tries=0
+        until launchctl bootstrap "$domain" "$target" 2>/dev/null; do
+            tries=$((tries + 1))
+            if [ "$tries" -ge 5 ]; then
+                echo "install.sh: the ligatured launchd agent did not load, so the daemon is not running." >&2
+                echo "install.sh: load it with: launchctl bootstrap $domain $target" >&2
+                exit 1
+            fi
+            sleep 1
+        done
         echo "loaded the ligatured launchd agent"
     else
         echo "agent written to $target; load it with: launchctl bootstrap $domain $target"

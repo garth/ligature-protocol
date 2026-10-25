@@ -205,34 +205,53 @@ async fn resolve_device(client: &mut Client, device: &str) -> Result<PublicKey, 
     }
 }
 
-/// The ffmpeg that decodes the share's H.264 into raw 0RGB pictures of its
-/// size, as fast as they come.
-fn decoder(started: &Started) -> std::io::Result<std::process::Child> {
-    Command::new("ffmpeg")
-        .args([
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-fflags",
-            "nobuffer",
-            "-flags",
-            "low_delay",
-            "-probesize",
-            "32",
-            "-analyzeduration",
-            "0",
-            "-f",
-            "h264",
-            "-i",
-            "pipe:0",
-            "-vf",
-            &format!("scale={}:{}", started.width, started.height),
+/// The arguments of the ffmpeg that decodes the share's H.264 into raw 0RGB
+/// pictures of its size.
+fn decoder_args(started: &Started) -> Vec<String> {
+    let mut args: Vec<String> = [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-flags",
+        "low_delay",
+        "-probesize",
+        "32",
+        "-analyzeduration",
+        "0",
+        "-f",
+        "h264",
+        "-i",
+        "pipe:0",
+        "-vf",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    args.push(format!("scale={}:{}", started.width, started.height));
+    args.extend(
+        [
             "-pix_fmt",
             "bgr0",
+            // Every decoded picture as it comes. A raw stream carries no
+            // timestamps, and VideoToolbox's has no frame timing either, so
+            // ffmpeg would otherwise fit the pictures to a rate it guessed and
+            // drop nearly all of them.
+            "-fps_mode",
+            "passthrough",
             "-f",
             "rawvideo",
             "pipe:1",
-        ])
+        ]
+        .map(str::to_owned),
+    );
+    args
+}
+
+/// The ffmpeg that decodes the share's H.264 into raw 0RGB pictures of its
+/// size, as fast as they come. Not `-fflags nobuffer`: it throws away the
+/// packets read while probing, so nothing decodes until the next keyframe.
+fn decoder(started: &Started) -> std::io::Result<std::process::Child> {
+    Command::new("ffmpeg")
+        .args(decoder_args(started))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
@@ -750,6 +769,77 @@ fn evdev_code(key: KeyCode) -> Option<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Encodes `frames` pictures of a test pattern at 30 a second, a
+    /// keyframe each second, as an Annex B stream; `None` without ffmpeg's
+    /// `libx264`.
+    fn encoded(frames: u32) -> Option<Vec<u8>> {
+        let out = Command::new("ffmpeg")
+            .args([
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=320x240:rate=30",
+                "-frames:v",
+                &frames.to_string(),
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-pix_fmt",
+                "yuv420p",
+                "-g",
+                "30",
+                "-bf",
+                "0",
+                "-f",
+                "h264",
+                "pipe:1",
+            ])
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .output()
+            .ok()?;
+        (out.status.success() && !out.stdout.is_empty()).then_some(out.stdout)
+    }
+
+    #[test]
+    fn the_decoder_turns_every_frame_into_a_picture() {
+        let Some(stream) = encoded(90) else {
+            eprintln!("skipped: no ffmpeg with libx264 here");
+            return;
+        };
+        let started = Started {
+            display: "1".to_owned(),
+            codec: lp_core::screen::Codec::H264,
+            width: 320,
+            height: 240,
+            frame_rate: 30,
+        };
+        let mut child = Command::new("ffmpeg")
+            .args(decoder_args(&started))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let mut stdin = child.stdin.take().unwrap();
+        let writer = std::thread::spawn(move || {
+            let _ = stdin.write_all(&stream);
+        });
+        let mut out = Vec::new();
+        child.stdout.take().unwrap().read_to_end(&mut out).unwrap();
+        writer.join().unwrap();
+        child.wait().unwrap();
+        assert_eq!(
+            out.len() / (320 * 240 * 4),
+            90,
+            "a picture for every frame, from the first"
+        );
+    }
 
     #[test]
     fn physical_keys_map_to_evdev_codes() {

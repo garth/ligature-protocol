@@ -112,7 +112,12 @@ closed when the share ends any way.
 **`lpview` decodes with ffmpeg and draws with softbuffer.** The viewer is a new binary crate
 with a winit window drawn through softbuffer, no GPU or toolkit dependency; ffmpeg decodes
 the frames the daemon sends as `screen.started` and `screen.frame` events into raw pictures
-at the share's size, which are scaled to the window with letterboxing. A first click on the
+at the share's size, which are scaled to the window with letterboxing. The decoder passes
+every picture through as it comes (`-fps_mode passthrough`) and does not use `-fflags
+nobuffer`: a raw stream has no timestamps and VideoToolbox's carries no frame timing, so
+ffmpeg fitted the Mac's pictures to a rate it guessed and kept 2 of 240, and `nobuffer`
+threw away the packets read while probing, so nothing showed before the second keyframe.
+Fed frame by frame at 30 a second the decoder lags two frames. A first click on the
 picture asks the daemon to drive (`input.drive`, an absolute entry where the click landed,
 not sent as a click); from then on positions over the picture, buttons, the wheel and keys
 go as `input.send` batches every 8 ms. Keys are mapped from winit's layout-independent key

@@ -356,8 +356,48 @@ async fn a_driven_device_never_follows_its_own_layout() {
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     assert!(!b.sync.is_driving());
     assert_eq!(b.capture.taken(), None);
+    // On Linux the compositor captured the input when the pointer crossed
+    // the barrier, before b decided to ignore the hit: b gives it back each
+    // time, or the desktop is locked out while it is driven (the lockout of
+    // 2026-10-24, the phone driving Linux into its right edge).
+    until("b gave the input back for both hits", || {
+        b.capture.releases() == vec![Some((Edge::Left, 0.5)), Some((Edge::Right, 0.5))]
+    })
+    .await;
     assert_eq!(b.sync.driven_by(), Some(*a.daemon.binding().public()));
     assert!(a.sync.is_driving());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_edge_hit_that_cannot_drive_gives_the_input_back() {
+    // On Linux the compositor has already captured the keyboard and mouse
+    // when it reports the edge hit: a drive that does not start must hand
+    // them back, or the desktop is locked out.
+    let (a, _b, c, _c_dir) = three().await;
+    a.sync.set_edge(Edge::Right, *c.binding().public()).unwrap();
+    a.capture.hit_edge(Edge::Right, 0.3);
+    until("a gave the input back", || {
+        a.capture.releases() == vec![Some((Edge::Right, 0.3))]
+    })
+    .await;
+    assert!(!a.sync.is_driving());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn input_captured_with_no_drive_is_given_back_at_once() {
+    let (a, _b, _c, _c_dir) = three().await;
+    // Captured events with nothing driven: the platform holds the input for
+    // no one. The first gives it back; the rest of the burst do not repeat it.
+    for pressed in [true, false] {
+        a.capture.feed(InputEvent::Key { code: 30, pressed });
+    }
+    until("a gave the input back", || {
+        a.capture.releases() == vec![None]
+    })
+    .await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert_eq!(a.capture.releases(), vec![None]);
+    assert!(!a.sync.is_driving());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

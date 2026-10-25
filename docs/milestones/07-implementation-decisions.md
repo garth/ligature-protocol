@@ -46,6 +46,16 @@ or where it was for a drive without an edge.
 moment both Control keys are down it sends `release` and gives the input back. The chord
 reaches the driven device as two presses, which its `end` lifts.
 
+**Nothing holds the input without a drive.** On Linux the compositor captures the keyboard
+and mouse the moment the pointer crosses a barrier, before the daemon decides anything, and
+the pointer of a device driving this one crosses barriers too. So every edge hit that does
+not become a drive gives the input back at once: a drive that does not start (the peer
+gone, or refusing) and a hit while this device is itself driven. And a captured event that
+arrives while nothing is driven gives it back at the first event, once per burst, whatever
+let it happen. On 2026-10-24 the phone drove the Linux machine to its right edge, which led
+to the Mac; the hit was ignored as the guard above says, the capture was never given back,
+and the desktop had no keyboard or mouse until a forced restart.
+
 **The layout is three rows.** `input_layout(edge, device)` in the store (schema step 3,
 LP-142), read at start and changed by `lpctl input layout set` and `unset`; the capture is
 re-armed with the mapped edges on every change. A row names a device key, never a name, so

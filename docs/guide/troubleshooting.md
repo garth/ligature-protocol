@@ -68,6 +68,16 @@ The daemon logs each connection and each refusal with the peer's key at `info`;
   sending, the daemon monitors the bus and needs nothing else.
 - `lpctl notify "test"` from a desktop is the quickest check of the whole path.
 
+## The keyboard and mouse stay with another device
+
+- Press both Control keys together: the keyboard and mouse come back to this device.
+- A desktop gives its keyboard and mouse back on its own when the pointer reaches an edge
+  but the other device cannot be driven, for example because it is asleep or out of reach.
+- If nothing responds, restart the daemon from another way in, such as a terminal on
+  another device: the compositor ends the capture when the daemon's session goes.
+  `systemctl --user restart ligatured` on Linux, or
+  `launchctl kickstart -k gui/$(id -u)/org.ligatureprotocol.ligatured` on a Mac.
+
 ## Input sharing does not start on the Mac
 
 - `lpctl caps` on another device shows whether the Mac offers input. When it offers none,

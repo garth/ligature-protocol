@@ -730,6 +730,9 @@ impl InputSync {
         };
         let mut events = capture.subscribe();
         let mut batch: Vec<InputEvent> = Vec::new();
+        // Captured input arrived with nothing driven and the capture was
+        // given back: the rest of that burst does not give it back again.
+        let mut stray_released = false;
         let mut frame = tokio::time::interval(FRAME);
         frame.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
@@ -740,15 +743,24 @@ impl InputSync {
                             // A driven device never follows its own layout
                             // (decision 7): the pointer at its edge is the
                             // controller's, which a capture that watches the
-                            // cursor sees as the user's own.
-                            if self.is_driving() || self.driven_by().is_some() {
+                            // cursor sees as the user's own. A compositor may
+                            // have captured the input already (the
+                            // InputCapture portal does when the pointer, the
+                            // controller's included, crosses a barrier), so
+                            // it is given back, or the desktop is locked out.
+                            if self.is_driving() {
+                                continue;
+                            }
+                            if self.driven_by().is_some() {
+                                tracing::info!(?edge, "the pointer reached an edge while driven; giving the input back");
+                                capture.release(Some((edge, at)));
+                                stray_released = true;
                                 continue;
                             }
                             let Some(peer) = lock(&self.layout).get(&edge).copied() else {
                                 continue;
                             };
-                            let (_, height) = capture.screen();
-                            let _ = height;
+                            stray_released = false;
                             match self.drive(peer, Enter::edge(edge.opposite(), at)).await {
                                 Ok(_) => {
                                     if let Err(e) = capture.take(edge) {
@@ -756,7 +768,15 @@ impl InputSync {
                                         self.release_local(Some((edge, at))).await;
                                     }
                                 }
-                                Err(e) => tracing::debug!(%peer, %e, "edge hit but no drive"),
+                                Err(e) => {
+                                    // A compositor may have captured the input
+                                    // already when it reports the hit (the
+                                    // InputCapture portal does): give it back,
+                                    // or the desktop is locked out.
+                                    tracing::info!(%peer, %e, "the pointer reached the edge but the drive did not start; giving the input back");
+                                    capture.release(Some((edge, at)));
+                                    stray_released = true;
+                                }
                             }
                         }
                         Ok(CaptureEvent::Lost) => {
@@ -766,12 +786,22 @@ impl InputSync {
                             }
                         }
                         Ok(CaptureEvent::Input(event)) => {
-                            if self.is_driving() {
-                                batch.push(event);
-                                if batch.len() >= MAX_BATCH {
-                                    let width = capture.screen().0;
-                                    let _ = self.send(std::mem::take(&mut batch), Some(width)).await;
+                            if !self.is_driving() {
+                                // The platform holds the keyboard and mouse
+                                // for no drive: give them back at once, so no
+                                // path can leave the desktop without them.
+                                if !stray_released {
+                                    stray_released = true;
+                                    tracing::warn!("captured input with nothing driven; giving it back");
+                                    capture.release(None);
                                 }
+                                continue;
+                            }
+                            stray_released = false;
+                            batch.push(event);
+                            if batch.len() >= MAX_BATCH {
+                                let width = capture.screen().0;
+                                let _ = self.send(std::mem::take(&mut batch), Some(width)).await;
                             }
                         }
                         Err(broadcast::error::RecvError::Lagged(n)) => {

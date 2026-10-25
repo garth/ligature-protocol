@@ -409,6 +409,11 @@ async fn network(
                                         .unwrap_or_else(std::sync::PoisonError::into_inner) =
                                         Some((w, h, pixels));
                                     if proxy.send_event(UserEvent::Frame).is_err() {
+                                        // The window is gone. Read on until
+                                        // `main` stops the decoder: closing its
+                                        // output first would have it report a
+                                        // broken pipe on every write.
+                                        let _ = std::io::copy(&mut out, &mut std::io::sink());
                                         return;
                                     }
                                 }

@@ -117,7 +117,14 @@ every picture through as it comes (`-fps_mode passthrough`) and does not use `-f
 nobuffer`: a raw stream has no timestamps and VideoToolbox's carries no frame timing, so
 ffmpeg fitted the Mac's pictures to a rate it guessed and kept 2 of 240, and `nobuffer`
 threw away the packets read while probing, so nothing showed before the second keyframe.
-Fed frame by frame at 30 a second the decoder lags two frames. A first click on the
+Fed frame by frame at 30 a second the decoder lags two frames. Closing the window kills
+the decoder before the process ends, which otherwise wrote on into a closed pipe and reported
+each failure. Keys: macOS reports Caps Lock only as its state changes, pressed when it turns
+on and released when it turns off, which left the Linux machine's Caps Lock on; on a Mac each
+change is sent as a press and a release. And every modifier sent as pressed is checked
+against the window's modifier state, so one whose release the window never reported is
+released on the driven device; the Linux machine sometimes got capitals from `lpview` on the
+Mac with Caps Lock off. A first click on the
 picture asks the daemon to drive (`input.drive`, an absolute entry where the click landed,
 not sent as a click); from then on positions over the picture, buttons, the wheel and keys
 go as `input.send` batches every 8 ms. Keys are mapped from winit's layout-independent key

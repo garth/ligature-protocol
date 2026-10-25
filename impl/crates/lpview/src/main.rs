@@ -34,6 +34,7 @@ use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition};
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
+use winit::keyboard::ModifiersState;
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
@@ -108,8 +109,10 @@ fn main() {
     let proxy = event_loop.create_proxy();
     let picture: Arc<Mutex<Picture>> = Arc::new(Mutex::new(None));
     let (commands, commands_rx) = mpsc::unbounded_channel::<Command_>();
+    let decoder_slot: DecoderSlot = Arc::new(Mutex::new(None));
     {
         let picture = picture.clone();
+        let decoder_slot = decoder_slot.clone();
         let options = OptionsForNet::from(&options);
         std::thread::spawn(move || {
             let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -123,6 +126,7 @@ fn main() {
                 proxy.clone(),
                 picture,
                 commands_rx,
+                decoder_slot,
             ));
             let message = match ended {
                 Ok(reason) => format!("the share ended ({reason})"),
@@ -143,6 +147,7 @@ fn main() {
         cursor: None,
         target: (0.0, 0.0, 1.0, 1.0),
         held_ctrl: (false, false),
+        held_modifiers: Vec::new(),
         ended: None,
         debug: std::env::var_os("LPVIEW_DEBUG").is_some(),
         watch_only: None,
@@ -150,6 +155,9 @@ fn main() {
     if let Err(e) = event_loop.run_app(&mut app) {
         eprintln!("lpview: {e}");
     }
+    // The window is gone: stop the decoder before the process ends, or it
+    // writes on into a closed pipe and reports each failure.
+    stop_decoder(&decoder_slot);
     if let Some(message) = app.ended {
         eprintln!("lpview: {message}");
     }
@@ -275,12 +283,28 @@ fn decoder(started: &Started) -> std::io::Result<std::process::Child> {
 }
 
 /// Runs the share and the drive until the share ends; returns why it ended.
+/// The running decoder, where both the network thread and `main` can stop it.
+type DecoderSlot = Arc<Mutex<Option<std::process::Child>>>;
+
+/// Kills and reaps the decoder, if one runs.
+fn stop_decoder(slot: &DecoderSlot) {
+    let child = slot
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take();
+    if let Some(mut c) = child {
+        let _ = c.kill();
+        let _ = c.wait();
+    }
+}
+
 async fn network(
     options: OptionsForNet,
     locations: Locations,
     proxy: EventLoopProxy<UserEvent>,
     picture: Arc<Mutex<Picture>>,
     mut commands: mpsc::UnboundedReceiver<Command_>,
+    decoder_slot: DecoderSlot,
 ) -> Result<String, Error> {
     let socket = locations.control_socket();
     let mut watch = Client::connect(&socket).await?;
@@ -356,7 +380,6 @@ async fn network(
     req.height = Some(options.height);
     req.frame_rate = Some(options.rate);
     let mut feed: Option<std::process::ChildStdin> = None;
-    let mut child: Option<std::process::Child> = None;
     let response = watch
         .call(req, |event: &Event| {
             if let Some(started) = &event.started {
@@ -387,7 +410,9 @@ async fn network(
                                 }
                             });
                         }
-                        child = Some(c);
+                        *decoder_slot
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(c);
                     }
                     Err(e) => eprintln!("lpview: cannot start ffmpeg to decode: {e}"),
                 }
@@ -403,10 +428,7 @@ async fn network(
         })
         .await?;
     drop(feed);
-    if let Some(mut c) = child {
-        let _ = c.kill();
-        let _ = c.wait();
-    }
+    stop_decoder(&decoder_slot);
     driver.abort();
     let ended: ScreenStopped = response.into_ok()?;
     Ok(ended.reason.to_string())
@@ -425,6 +447,8 @@ struct App {
     /// Where the picture is drawn in the window: x, y, width, height.
     target: (f64, f64, f64, f64),
     held_ctrl: (bool, bool),
+    /// Modifier keys sent as pressed and not yet released, by evdev code.
+    held_modifiers: Vec<u16>,
     ended: Option<String>,
     /// `LPVIEW_DEBUG` set: every window event is printed.
     debug: bool,
@@ -651,6 +675,24 @@ impl ApplicationHandler<UserEvent> for App {
                 };
                 self.send(vec![event]);
             }
+            WindowEvent::ModifiersChanged(modifiers) => {
+                // A modifier's release the window did not report as a key
+                // would leave it held on the driven device: whatever the
+                // window says is up is released there.
+                let stale = stale_modifiers(&self.held_modifiers, modifiers.state());
+                if !stale.is_empty() {
+                    self.held_modifiers.retain(|c| !stale.contains(c));
+                    self.send(
+                        stale
+                            .into_iter()
+                            .map(|code| InputEvent::Key {
+                                code,
+                                pressed: false,
+                            })
+                            .collect(),
+                    );
+                }
+            }
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.repeat {
                     return;
@@ -667,6 +709,29 @@ impl ApplicationHandler<UserEvent> for App {
                     KEY_RIGHTCTRL => self.held_ctrl.1 = pressed,
                     _ => {}
                 }
+                if cfg!(target_os = "macos") && code == KEY_CAPSLOCK {
+                    // macOS reports Caps Lock as its state changes, pressed
+                    // when it turns on and released when it turns off; the
+                    // driven device toggles on a press, so each change is a
+                    // whole tap.
+                    self.send(vec![
+                        InputEvent::Key {
+                            code,
+                            pressed: true,
+                        },
+                        InputEvent::Key {
+                            code,
+                            pressed: false,
+                        },
+                    ]);
+                    return;
+                }
+                if modifier_flag(code).is_some() {
+                    self.held_modifiers.retain(|c| *c != code);
+                    if pressed {
+                        self.held_modifiers.push(code);
+                    }
+                }
                 self.send(vec![InputEvent::Key { code, pressed }]);
                 if self.held_ctrl == (true, true) {
                     self.held_ctrl = (false, false);
@@ -676,6 +741,28 @@ impl ApplicationHandler<UserEvent> for App {
             _ => {}
         }
     }
+}
+
+/// Caps Lock's evdev code.
+const KEY_CAPSLOCK: u16 = 58;
+
+/// The modifier flag an evdev modifier key sets, `None` for other keys.
+fn modifier_flag(code: u16) -> Option<ModifiersState> {
+    match code {
+        42 | 54 => Some(ModifiersState::SHIFT),
+        KEY_LEFTCTRL | KEY_RIGHTCTRL => Some(ModifiersState::CONTROL),
+        56 | 100 => Some(ModifiersState::ALT),
+        125 | 126 => Some(ModifiersState::SUPER),
+        _ => None,
+    }
+}
+
+/// The held modifier keys whose flag `state` says is no longer down.
+fn stale_modifiers(held: &[u16], state: ModifiersState) -> Vec<u16> {
+    held.iter()
+        .copied()
+        .filter(|code| modifier_flag(*code).is_some_and(|flag| !state.contains(flag)))
+        .collect()
 }
 
 /// The Linux evdev code of a physical key, from winit's layout-independent
@@ -839,6 +926,20 @@ mod tests {
             .output()
             .ok()?;
         (out.status.success() && !out.stdout.is_empty()).then_some(out.stdout)
+    }
+
+    #[test]
+    fn a_modifier_the_window_says_is_up_is_released() {
+        let held = [42, 29, 125];
+        // Shift's release was lost; Control and Command are still down.
+        let state = ModifiersState::CONTROL | ModifiersState::SUPER;
+        assert_eq!(stale_modifiers(&held, state), vec![42]);
+        assert_eq!(
+            stale_modifiers(&held, ModifiersState::empty()),
+            vec![42, 29, 125]
+        );
+        assert!(stale_modifiers(&[], ModifiersState::empty()).is_empty());
+        assert_eq!(modifier_flag(30), None, "A is not a modifier");
     }
 
     #[test]

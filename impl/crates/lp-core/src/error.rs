@@ -30,6 +30,9 @@ pub enum Error {
     NotInitialised,
     /// The daemon already has an identity.
     AlreadyInitialised,
+    /// A request the daemon refused, as a client of its control socket sees
+    /// it: the text is the daemon's own message, shown as it is.
+    Refused(String),
 }
 
 impl core::fmt::Display for Error {
@@ -48,6 +51,7 @@ impl core::fmt::Display for Error {
                 f.write_str("not initialised: run lpctl init or pair this device")
             }
             Error::AlreadyInitialised => f.write_str("already initialised"),
+            Error::Refused(message) => f.write_str(message),
         }
     }
 }

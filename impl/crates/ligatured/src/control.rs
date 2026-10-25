@@ -281,11 +281,13 @@ impl Response {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Decode`] if there is no `ok` or it is not a `T`.
+    /// Returns [`Error::Refused`] with the daemon's message when it refused
+    /// the request, and [`Error::Decode`] if there is no `ok` or it is not a
+    /// `T`.
     pub fn into_ok<T: DeserializeOwned>(self) -> Result<T, Error> {
         match (self.ok, self.error) {
             (Some(v), _) => v.deserialized().map_err(|e| Error::Decode(e.to_string())),
-            (None, Some(e)) => Err(Error::Decode(format!("{}: {}", e.code, e.message))),
+            (None, Some(e)) => Err(Error::Refused(e.message)),
             (None, None) => Err(Error::Decode("response without ok or error".to_owned())),
         }
     }
@@ -1475,5 +1477,19 @@ impl Client {
     /// Returns the daemon's error as [`Error::Decode`] with its code.
     pub async fn request<T: DeserializeOwned>(&mut self, request: Request) -> Result<T, Error> {
         self.call(request, |_| None).await?.into_ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_refusal_reads_as_the_daemon_wrote_it() {
+        let refused = Error::Chain("z6Mk… does not accept input".to_owned());
+        let response = Response::error(7, ErrorBody::from_error(&refused));
+        let err = response.into_ok::<Empty>().unwrap_err();
+        assert!(matches!(err, Error::Refused(_)));
+        assert_eq!(err.to_string(), "trust chain: z6Mk… does not accept input");
     }
 }

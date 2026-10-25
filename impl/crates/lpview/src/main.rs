@@ -21,9 +21,11 @@ use std::time::Duration;
 
 use clap::Parser;
 use ligatured::control::{
-    Client, Devices, Empty, Event, InputDriven, Request, ScreenStopped, types,
+    Caps, Client, Devices, Empty, Event, InputDriven, Request, ScreenStopped, types,
 };
-use lp_core::input::{BTN_LEFT, BTN_MIDDLE, BTN_RIGHT, InputEvent, KEY_LEFTCTRL, KEY_RIGHTCTRL};
+use lp_core::input::{
+    BTN_LEFT, BTN_MIDDLE, BTN_RIGHT, InputEvent, InputParams, KEY_LEFTCTRL, KEY_RIGHTCTRL,
+};
 use lp_core::paths::{DATA_DIR_ENV, Locations, RUNTIME_DIR_ENV};
 use lp_core::screen::Started;
 use lp_core::{Error, PublicKey};
@@ -73,6 +75,8 @@ enum UserEvent {
     Frame,
     /// Driving began or ended.
     Driving(bool),
+    /// The device takes no input from a viewer: why, for the title.
+    WatchOnly(String),
     /// The share ended, with why.
     Ended(String),
 }
@@ -141,6 +145,7 @@ fn main() {
         held_ctrl: (false, false),
         ended: None,
         debug: std::env::var_os("LPVIEW_DEBUG").is_some(),
+        watch_only: None,
     };
     if let Err(e) = event_loop.run_app(&mut app) {
         eprintln!("lpview: {e}");
@@ -202,6 +207,17 @@ async fn resolve_device(client: &mut Client, device: &str) -> Result<PublicKey, 
             "{device} names {} devices; use the key",
             many.len()
         ))),
+    }
+}
+
+/// Why a viewer cannot drive a device with these input params, if it cannot:
+/// a viewer drives with absolute positions, which the device must accept.
+fn watch_only(input: Option<InputParams>) -> Option<&'static str> {
+    match input {
+        None => Some("it offers no input"),
+        Some(p) if !p.accepts => Some("it does not take input"),
+        Some(p) if !p.absolute => Some("it does not take absolute positions"),
+        Some(_) => None,
     }
 }
 
@@ -269,6 +285,15 @@ async fn network(
     let socket = locations.control_socket();
     let mut watch = Client::connect(&socket).await?;
     let peer = resolve_device(&mut watch, &options.device).await?;
+    let caps: Caps = watch.request(Request::new(types::CAPS, 0)).await?;
+    let input = caps
+        .peers
+        .iter()
+        .find(|p| p.peer == peer)
+        .and_then(|p| p.capabilities.iter().find_map(InputParams::from_descriptor));
+    if let Some(why) = watch_only(input) {
+        let _ = proxy.send_event(UserEvent::WatchOnly(why.to_owned()));
+    }
 
     // The drive, on a connection of its own: one batch of events every few
     // milliseconds while driving.
@@ -403,6 +428,8 @@ struct App {
     ended: Option<String>,
     /// `LPVIEW_DEBUG` set: every window event is printed.
     debug: bool,
+    /// Why the device cannot be driven, when it cannot.
+    watch_only: Option<String>,
 }
 
 impl App {
@@ -410,7 +437,10 @@ impl App {
         let state = match (&self.started, self.driving, self.view_only) {
             (None, _, _) => "connecting…".to_owned(),
             (Some(s), true, _) => format!("{} — driving; both Ctrl keys to let go", s.display),
-            (Some(s), false, true) => s.display.clone(),
+            (Some(s), false, true) => match &self.watch_only {
+                Some(why) => format!("{} — watch only: {why}", s.display),
+                None => s.display.clone(),
+            },
             (Some(s), false, false) => format!("{} — click to drive", s.display),
         };
         format!("{} · {state}", self.device)
@@ -530,6 +560,11 @@ impl ApplicationHandler<UserEvent> for App {
                 if let Some(w) = &self.window {
                     w.request_redraw();
                 }
+            }
+            UserEvent::WatchOnly(why) => {
+                self.view_only = true;
+                self.watch_only = Some(why);
+                self.retitle();
             }
             UserEvent::Driving(driving) => {
                 self.driving = driving;
@@ -804,6 +839,27 @@ mod tests {
             .output()
             .ok()?;
         (out.status.success() && !out.stdout.is_empty()).then_some(out.stdout)
+    }
+
+    #[test]
+    fn a_device_that_takes_no_absolute_input_is_only_watched() {
+        let params = |accepts, absolute| InputParams {
+            accepts,
+            provides: true,
+            absolute,
+            text: accepts,
+        };
+        assert_eq!(watch_only(None), Some("it offers no input"));
+        // The phone: it provides a touchpad and accepts nothing.
+        assert_eq!(
+            watch_only(Some(params(false, false))),
+            Some("it does not take input")
+        );
+        assert_eq!(
+            watch_only(Some(params(true, false))),
+            Some("it does not take absolute positions")
+        );
+        assert_eq!(watch_only(Some(params(true, true))), None);
     }
 
     #[test]

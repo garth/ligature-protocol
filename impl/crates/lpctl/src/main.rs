@@ -411,7 +411,7 @@ async fn run(options: &Options, locations: &Locations) -> Result<(), Error> {
                 .await?;
             match response.error {
                 None => println!("paired."),
-                Some(e) => return Err(Error::Chain(format!("{}: {}", e.code, e.message))),
+                Some(e) => return Err(Error::Refused(e.message)),
             }
         }
         Command::Revoke { key } => {

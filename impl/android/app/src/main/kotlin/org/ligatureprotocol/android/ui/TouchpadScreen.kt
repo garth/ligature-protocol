@@ -13,14 +13,9 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -35,10 +30,6 @@ import kotlin.math.abs
 
 /** The left mouse button's evdev code. */
 private const val BTN_LEFT: UShort = 272u
-
-/** Backspace and Enter, by evdev code. */
-private const val KEY_BACKSPACE: UShort = 14u
-private const val KEY_ENTER: UShort = 28u
 
 /** A touch that moves less than this is a tap. */
 private const val TAP_SLOP_PX = 12f
@@ -61,7 +52,6 @@ fun TouchpadScreen(
     onStop: () -> Unit,
 ) {
     BackHandler(onBack = onStop)
-    var typed by remember { mutableStateOf("") }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -87,20 +77,9 @@ fun TouchpadScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        OutlinedTextField(
-            value = typed,
-            onValueChange = { value ->
-                // What the keyboard produced goes straight to the desktop;
-                // the field never keeps it, so each change is new text.
-                if (value.length > typed.length) {
-                    onEvents(listOf(TouchEvent.Text(value.substring(typed.length))))
-                } else if (value.length < typed.length) {
-                    onEvents(press(KEY_BACKSPACE))
-                }
-                typed = ""
-            },
-            label = { Text("Type on $deviceName") },
-            singleLine = true,
+        RemoteKeyboardField(
+            label = "Type on $deviceName",
+            onEvents = onEvents,
             modifier = Modifier.fillMaxWidth(),
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -110,9 +89,6 @@ fun TouchpadScreen(
         }
     }
 }
-
-private fun press(code: UShort): List<TouchEvent> =
-    listOf(TouchEvent.Key(code, true), TouchEvent.Key(code, false))
 
 private fun click(code: UShort): List<TouchEvent> =
     listOf(TouchEvent.Button(code, true), TouchEvent.Button(code, false))

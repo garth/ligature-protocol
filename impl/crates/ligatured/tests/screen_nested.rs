@@ -20,7 +20,7 @@ use ligatured::screen::{ShareControl, Viewed};
 use ligatured::screen_linux::LinuxScreen;
 use lp_core::facts::Role;
 use lp_core::paths::Locations;
-use lp_core::screen::{Codec, SCREEN_TYPE, ScreenParams, Start, StopReason};
+use lp_core::screen::{Format, SCREEN_TYPE, ScreenParams, Start, StopReason};
 use lp_core::wire::Timestamp;
 use lp_identity::cross_signing::PersonKeys;
 use lp_identity::facts;
@@ -133,6 +133,7 @@ async fn a_nested_compositor_s_output_is_shared_encoded_and_decodes() {
         None,
         Some(ScreenParams {
             views: true,
+            decodes: vec![Format::H264_444, Format::H264],
             ..ScreenParams::default()
         }),
     );
@@ -165,7 +166,7 @@ async fn a_nested_compositor_s_output_is_shared_encoded_and_decodes() {
             &sharer_key,
             Start {
                 display: None,
-                codec: Codec::H264,
+                formats: Vec::new(),
                 width: 640,
                 height: 640,
                 frame_rate: 15,
@@ -174,6 +175,8 @@ async fn a_nested_compositor_s_output_is_shared_encoded_and_decodes() {
         .await
         .unwrap();
     eprintln!("started: {:?}", watching.started);
+    // x264 encodes 4:4:4, the viewer's first choice (ADR 0044).
+    assert_eq!(watching.started.format, Format::H264_444);
     let expect_h = (displays[0].height * 640 / displays[0].width) & !1;
     assert_eq!(
         (watching.started.width, watching.started.height),
@@ -243,7 +246,7 @@ async fn a_nested_compositor_s_output_is_shared_encoded_and_decodes() {
             "-select_streams",
             "v:0",
             "-show_entries",
-            "stream=codec_name,width,height,nb_read_frames",
+            "stream=codec_name,width,height,pix_fmt,nb_read_frames",
             "-of",
             "csv=p=0",
         ])
@@ -253,7 +256,7 @@ async fn a_nested_compositor_s_output_is_shared_encoded_and_decodes() {
     let probed = String::from_utf8_lossy(&probe.stdout).trim().to_owned();
     eprintln!("ffprobe: {probed}");
     assert!(
-        probed.starts_with(&format!("h264,640,{expect_h},")),
+        probed.starts_with(&format!("h264,640,{expect_h},yuv444p,")),
         "{probed}"
     );
     let decoded: u32 = probed.rsplit(',').next().unwrap().parse().unwrap();

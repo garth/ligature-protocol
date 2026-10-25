@@ -13,10 +13,21 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-use lp_core::screen::{RefuseReason, StopReason};
+use lp_core::screen::{Chroma, Format, RefuseReason, StopReason};
 use tokio::sync::mpsc;
 
 use crate::screen::{Captured, EncodedFrame, Settings};
+
+/// The picture formats an encoder produces, most preferred first (ADR
+/// 0044): x264 encodes 4:4:4, which keeps coloured text sharp, and 4:2:0;
+/// the hardware encoders 4:2:0 alone.
+#[must_use]
+pub fn encodes(encoder: Encoder) -> Vec<Format> {
+    match encoder {
+        Encoder::X264 => vec![Format::H264_444, Format::H264],
+        Encoder::Vaapi | Encoder::VideoToolbox => vec![Format::H264],
+    }
+}
 
 /// Bits per pixel per frame a hardware encoder aims for.
 const BITS_PER_PIXEL: f64 = 0.08;
@@ -161,7 +172,11 @@ pub fn encoder_args(encoder: Encoder, input: &RawInput, settings: &Settings) -> 
                 "-qp",
                 X264_QP,
                 "-pix_fmt",
-                "yuv420p",
+                match settings.format.chroma {
+                    Chroma::Yuv420 => "yuv420p",
+                    // High 4:4:4 Predictive, chosen by x264 for this input.
+                    Chroma::Yuv444 => "yuv444p",
+                },
                 "-x264-params",
                 "aud=1:repeat-headers=1",
             ]
@@ -663,7 +678,6 @@ impl LiveEncoder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lp_core::screen::Codec;
 
     #[test]
     fn videotoolbox_gets_delimiters_and_parameter_sets_from_bitstream_filters() {
@@ -674,7 +688,7 @@ mod tests {
         };
         let settings = Settings {
             display: "1".to_owned(),
-            codec: Codec::H264,
+            format: Format::H264,
             width: 1440,
             height: 900,
             frame_rate: 30,
@@ -691,6 +705,70 @@ mod tests {
         assert!(args.contains("-b:v 3110400 -maxrate 12441600 -bufsize 12441600"));
         assert!(args.contains("-bf 0"));
         assert!(args.ends_with("-f h264 pipe:1"));
+    }
+
+    /// A share picked at 4:4:4 comes out of x264 as a full-colour stream
+    /// that decodes (ADR 0044).
+    #[test]
+    fn a_4_4_4_share_is_a_full_colour_stream() {
+        use std::io::Write as _;
+        if probe_encoder().is_none() {
+            eprintln!("skipped: ffmpeg has no H.264 encoder here");
+            return;
+        }
+        let (w, h) = (64u32, 48u32);
+        let input = RawInput {
+            width: w,
+            height: h,
+            pix_fmt: "bgr0".to_owned(),
+        };
+        let settings = Settings {
+            display: "1".to_owned(),
+            format: Format::H264_444,
+            width: w,
+            height: h,
+            frame_rate: 30,
+            viewer: "test".to_owned(),
+        };
+        let mut child = Command::new("ffmpeg")
+            .args(encoder_args(Encoder::X264, &input, &settings))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("ffmpeg runs");
+        let mut stdin = child.stdin.take().unwrap();
+        let mut stdout = child.stdout.take().unwrap();
+        let reader = std::thread::spawn(move || {
+            let mut out = Vec::new();
+            let _ = stdout.read_to_end(&mut out);
+            out
+        });
+        for shade in [10u8, 120, 240] {
+            stdin.write_all(&vec![shade; (w * h * 4) as usize]).unwrap();
+            std::thread::sleep(Duration::from_millis(40));
+        }
+        drop(stdin);
+        let stream = reader.join().unwrap();
+        let _ = child.wait();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("full.h264");
+        std::fs::write(&path, &stream).unwrap();
+        let probe = Command::new("ffprobe")
+            .args(["-v", "error", "-count_frames", "-select_streams", "v:0"])
+            .args([
+                "-show_entries",
+                "stream=pix_fmt,profile,nb_read_frames",
+                "-of",
+                "csv=p=0",
+            ])
+            .arg(&path)
+            .output()
+            .expect("ffprobe runs");
+        let probed = String::from_utf8_lossy(&probe.stdout).trim().to_owned();
+        assert!(probed.contains("High 4:4:4"), "{probed}");
+        assert!(probed.contains("yuv444p"), "{probed}");
+        assert!(probed.ends_with(",3"), "every frame decodes: {probed}");
     }
 
     #[test]
@@ -721,7 +799,7 @@ mod tests {
         };
         let settings = Settings {
             display: "1".to_owned(),
-            codec: Codec::H264,
+            format: Format::H264,
             width: w,
             height: h,
             frame_rate: 30,

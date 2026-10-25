@@ -4,7 +4,9 @@
 //! A share is one stream opened by the viewer: `displays` to list, `start`
 //! answered by `started` or `refused`, `frame` chunks from the sharer,
 //! `keyframe` from the viewer, `stop` from either side. No chunk exceeds
-//! [`CHUNK_BYTES`], so no message exceeds the bound of ADR 0036.
+//! [`CHUNK_BYTES`], so no message exceeds the bound of ADR 0036. What the
+//! picture is sent as is a [`Format`], offered by the viewer and picked by the
+//! sharer from what each says it decodes and encodes (ADR 0044).
 
 use std::fmt;
 
@@ -43,6 +45,122 @@ impl fmt::Display for Codec {
     }
 }
 
+/// How a picture's colour is sampled against its brightness.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Chroma {
+    /// Colour at half the resolution each way, as every hardware codec takes.
+    Yuv420,
+    /// Colour at full resolution, which keeps coloured text sharp.
+    Yuv444,
+}
+
+impl Chroma {
+    /// The name on the wire.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Yuv420 => "4:2:0",
+            Self::Yuv444 => "4:4:4",
+        }
+    }
+}
+
+/// What goes on the wire for a share: a codec and how its colour is sampled
+/// (ADR 0044). It names what is sent, never the encoder or decoder that
+/// makes or takes it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Format {
+    /// The codec.
+    pub codec: Codec,
+    /// The chroma sampling; 4:2:0 when the map leaves it out.
+    pub chroma: Chroma,
+}
+
+impl Format {
+    /// H.264 at 4:2:0, which every device takes.
+    pub const H264: Self = Self {
+        codec: Codec::H264,
+        chroma: Chroma::Yuv420,
+    };
+    /// H.264 at 4:4:4.
+    pub const H264_444: Self = Self {
+        codec: Codec::H264,
+        chroma: Chroma::Yuv444,
+    };
+
+    /// Reads a format from its CBOR map; `None` when it has a key or a value
+    /// this device does not know, so the format is passed over.
+    #[must_use]
+    pub fn from_value(value: &ciborium::Value) -> Option<Self> {
+        let ciborium::Value::Map(entries) = value else {
+            return None;
+        };
+        let (mut codec, mut chroma) = (None, Chroma::Yuv420);
+        for (k, v) in entries {
+            match (k.as_text()?, v.as_text()?) {
+                ("codec", "h264") => codec = Some(Codec::H264),
+                ("chroma", "4:2:0") => chroma = Chroma::Yuv420,
+                ("chroma", "4:4:4") => chroma = Chroma::Yuv444,
+                _ => return None,
+            }
+        }
+        Some(Self {
+            codec: codec?,
+            chroma,
+        })
+    }
+
+    /// The format as its CBOR map.
+    #[must_use]
+    pub fn to_value(self) -> ciborium::Value {
+        use ciborium::Value;
+        Value::Map(vec![
+            (
+                Value::Text("codec".into()),
+                Value::Text(self.codec.as_str().into()),
+            ),
+            (
+                Value::Text("chroma".into()),
+                Value::Text(self.chroma.as_str().into()),
+            ),
+        ])
+    }
+
+    /// The formats of a CBOR array that this device knows, in order.
+    #[must_use]
+    pub fn known(values: &[ciborium::Value]) -> Vec<Self> {
+        values.iter().filter_map(Self::from_value).collect()
+    }
+}
+
+impl fmt::Display for Format {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {}", self.codec, self.chroma.as_str())
+    }
+}
+
+impl Serialize for Format {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.to_value().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Format {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = ciborium::Value::deserialize(deserializer)?;
+        Self::from_value(&value).ok_or_else(|| serde::de::Error::custom("an unknown format"))
+    }
+}
+
+/// The formats of a list, unknown ones passed over rather than failing the
+/// message.
+fn known_formats<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<Format>, D::Error> {
+    let values = Vec::<ciborium::Value>::deserialize(deserializer)?;
+    Ok(Format::known(&values))
+}
+
 /// The screen descriptor's `params`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScreenParams {
@@ -50,8 +168,10 @@ pub struct ScreenParams {
     pub shares: bool,
     /// The device decodes and shows a shared display.
     pub views: bool,
-    /// The codecs it encodes or decodes, most preferred first.
-    pub codecs: Vec<Codec>,
+    /// The formats it can encode as a sharer, most preferred first.
+    pub encodes: Vec<Format>,
+    /// The formats it can decode as a viewer, most preferred first.
+    pub decodes: Vec<Format>,
     /// The widest picture it takes as a viewer.
     pub max_width: u32,
     /// The tallest picture it takes as a viewer.
@@ -65,7 +185,8 @@ impl Default for ScreenParams {
         Self {
             shares: false,
             views: false,
-            codecs: vec![Codec::H264],
+            encodes: vec![Format::H264],
+            decodes: vec![Format::H264],
             max_width: 1920,
             max_height: 1080,
             max_frame_rate: 30,
@@ -88,14 +209,11 @@ impl ScreenParams {
                 match (k.as_text(), v) {
                     (Some("shares"), ciborium::Value::Bool(b)) => params.shares = *b,
                     (Some("views"), ciborium::Value::Bool(b)) => params.views = *b,
-                    (Some("codecs"), ciborium::Value::Array(items)) => {
-                        params.codecs = items
-                            .iter()
-                            .filter_map(|c| match c.as_text() {
-                                Some("h264") => Some(Codec::H264),
-                                _ => None,
-                            })
-                            .collect();
+                    (Some("encodes"), ciborium::Value::Array(items)) => {
+                        params.encodes = Format::known(items);
+                    }
+                    (Some("decodes"), ciborium::Value::Array(items)) => {
+                        params.decodes = Format::known(items);
                     }
                     (Some("maxWidth"), ciborium::Value::Integer(i)) => {
                         if let Some(v) = int(i) {
@@ -136,14 +254,12 @@ pub fn screen_descriptor(params: &ScreenParams) -> Descriptor {
         (Value::Text("shares".into()), Value::Bool(params.shares)),
         (Value::Text("views".into()), Value::Bool(params.views)),
         (
-            Value::Text("codecs".into()),
-            Value::Array(
-                params
-                    .codecs
-                    .iter()
-                    .map(|c| Value::Text(c.as_str().to_owned()))
-                    .collect(),
-            ),
+            Value::Text("encodes".into()),
+            Value::Array(params.encodes.iter().map(|f| f.to_value()).collect()),
+        ),
+        (
+            Value::Text("decodes".into()),
+            Value::Array(params.decodes.iter().map(|f| f.to_value()).collect()),
         ),
         (
             Value::Text("maxWidth".into()),
@@ -227,8 +343,10 @@ pub struct Start {
     /// The display, or the primary one when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display: Option<String>,
-    /// The codec.
-    pub codec: Codec,
+    /// The formats the viewer takes for this share, most preferred first;
+    /// the sharer picks the first it can encode (ADR 0044).
+    #[serde(deserialize_with = "known_formats")]
+    pub formats: Vec<Format>,
     /// The widest picture wanted.
     pub width: u32,
     /// The tallest picture wanted.
@@ -243,8 +361,8 @@ pub struct Start {
 pub struct Started {
     /// The display shared.
     pub display: String,
-    /// The codec.
-    pub codec: Codec,
+    /// The format the sharer picked from the viewer's offer.
+    pub format: Format,
     /// The picture's width.
     pub width: u32,
     /// The picture's height.
@@ -395,7 +513,8 @@ mod tests {
         let params = ScreenParams {
             shares: true,
             views: true,
-            codecs: vec![Codec::H264],
+            encodes: vec![Format::H264_444, Format::H264],
+            decodes: vec![Format::H264],
             max_width: 1280,
             max_height: 720,
             max_frame_rate: 60,
@@ -463,14 +582,14 @@ mod tests {
             }),
             ScreenMessage::Start(Start {
                 display: None,
-                codec: Codec::H264,
+                formats: vec![Format::H264_444, Format::H264],
                 width: 1280,
                 height: 720,
                 frame_rate: 30,
             }),
             ScreenMessage::Started(Started {
                 display: "DP-1".into(),
-                codec: Codec::H264,
+                format: Format::H264_444,
                 width: 1280,
                 height: 720,
                 frame_rate: 30,
@@ -500,6 +619,60 @@ mod tests {
         assert_eq!(json["reason"], "no-encoder");
         let json = serde_json::to_value(&messages[2]).unwrap();
         assert_eq!(json["frameRate"], 30);
-        assert_eq!(json["codec"], "h264");
+        assert_eq!(json["formats"][0]["codec"], "h264");
+        assert_eq!(json["formats"][0]["chroma"], "4:4:4");
+        let json = serde_json::to_value(&messages[3]).unwrap();
+        assert_eq!(json["format"]["chroma"], "4:4:4");
+    }
+
+    /// A format with a codec, a chroma or a key this device does not know is
+    /// passed over, in an offer and in a descriptor; one without a chroma is
+    /// 4:2:0 (ADR 0044).
+    #[test]
+    fn unknown_formats_are_passed_over_and_a_missing_chroma_is_4_2_0() {
+        use ciborium::Value;
+        let map = |pairs: &[(&str, &str)]| {
+            Value::Map(
+                pairs
+                    .iter()
+                    .map(|(k, v)| (Value::Text((*k).into()), Value::Text((*v).into())))
+                    .collect(),
+            )
+        };
+        let offered = vec![
+            map(&[("codec", "av1")]),
+            map(&[("codec", "h264"), ("chroma", "4:4:4"), ("bitDepth", "10")]),
+            map(&[("codec", "h264"), ("chroma", "4:2:2")]),
+            map(&[("codec", "h264"), ("chroma", "4:4:4")]),
+            map(&[("codec", "h264")]),
+        ];
+        assert_eq!(Format::known(&offered), [Format::H264_444, Format::H264]);
+        // In a start: decoded with the unknown ones left out.
+        let start = Value::Map(vec![
+            (
+                Value::Text("type".into()),
+                Value::Text("org.ligatureprotocol.capability.screen.start".into()),
+            ),
+            (Value::Text("formats".into()), Value::Array(offered.clone())),
+            (Value::Text("width".into()), Value::Integer(640.into())),
+            (Value::Text("height".into()), Value::Integer(480.into())),
+            (Value::Text("frameRate".into()), Value::Integer(30.into())),
+        ]);
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&start, &mut bytes).unwrap();
+        let decoded: ScreenMessage = ciborium::from_reader(bytes.as_slice()).unwrap();
+        let ScreenMessage::Start(start) = decoded else {
+            panic!("not a start: {decoded:?}");
+        };
+        assert_eq!(start.formats, [Format::H264_444, Format::H264]);
+        // In a descriptor: the same.
+        let mut d = Descriptor::new(SCREEN_TYPE, Scope::Device);
+        d.params = Some(Value::Map(vec![(
+            Value::Text("decodes".into()),
+            Value::Array(offered),
+        )]));
+        let params = ScreenParams::from_descriptor(&d).unwrap();
+        assert_eq!(params.decodes, [Format::H264_444, Format::H264]);
+        assert_eq!(params.encodes, [Format::H264], "the default");
     }
 }

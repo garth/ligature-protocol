@@ -29,7 +29,7 @@ use lp_core::input::{
     BTN_LEFT, BTN_MIDDLE, BTN_RIGHT, InputEvent, InputParams, KEY_LEFTCTRL, KEY_RIGHTCTRL,
 };
 use lp_core::paths::{DATA_DIR_ENV, Locations, RUNTIME_DIR_ENV};
-use lp_core::screen::{Display, Started};
+use lp_core::screen::{Display, Format, Started};
 use lp_core::{Error, PublicKey};
 use tokio::sync::mpsc;
 use winit::application::ApplicationHandler;
@@ -68,6 +68,11 @@ struct Options {
     /// `--height` are then ignored.
     #[arg(long)]
     actual_size: bool,
+    /// Offer only this chroma sampling: `4:2:0` to spend less of a slow link,
+    /// `4:4:4` to insist on full-colour text. By default both are offered,
+    /// 4:4:4 first, and the device picks the first it can encode.
+    #[arg(long, value_parser = ["4:2:0", "4:4:4"])]
+    chroma: Option<String>,
     /// The daemon's data directory (default: the platform's).
     #[arg(long, env = DATA_DIR_ENV)]
     data_dir: Option<PathBuf>,
@@ -201,6 +206,7 @@ struct OptionsForNet {
     height: u32,
     rate: u32,
     actual_size: bool,
+    formats: Option<Vec<Format>>,
 }
 
 impl From<&Options> for OptionsForNet {
@@ -212,6 +218,13 @@ impl From<&Options> for OptionsForNet {
             height: o.height,
             rate: o.rate,
             actual_size: o.actual_size,
+            formats: o.chroma.as_deref().map(|c| {
+                vec![if c == "4:4:4" {
+                    Format::H264_444
+                } else {
+                    Format::H264
+                }]
+            }),
         }
     }
 }
@@ -621,6 +634,7 @@ async fn network(
     req.display = options.display.clone();
     req.width = Some(width);
     req.height = Some(height);
+    req.formats = options.formats.clone();
     req.frame_rate = Some(options.rate);
     let mut feed: Option<std::process::ChildStdin> = None;
     let response = watch
@@ -740,7 +754,10 @@ impl App {
             },
             (Some(s), false, false) => format!("{} — click to drive", s.display),
         };
-        format!("{} · {state}", self.device)
+        match &self.started {
+            Some(s) => format!("{} · {state} · {}", self.device, s.format),
+            None => format!("{} · {state}", self.device),
+        }
     }
 
     fn retitle(&self) {
@@ -1512,9 +1529,9 @@ mod tests {
     }
 
     /// Encodes `frames` pictures of a test pattern at 30 a second, a
-    /// keyframe each second, as an Annex B stream; `None` without ffmpeg's
-    /// `libx264`.
-    fn encoded(frames: u32) -> Option<Vec<u8>> {
+    /// keyframe each second, as an Annex B stream in `pix_fmt`; `None`
+    /// without ffmpeg's `libx264`.
+    fn encoded(frames: u32, pix_fmt: &str) -> Option<Vec<u8>> {
         let out = Command::new("ffmpeg")
             .args([
                 "-hide_banner",
@@ -1531,7 +1548,7 @@ mod tests {
                 "-preset",
                 "ultrafast",
                 "-pix_fmt",
-                "yuv420p",
+                pix_fmt,
                 "-g",
                 "30",
                 "-bf",
@@ -1602,37 +1619,41 @@ mod tests {
 
     #[test]
     fn the_decoder_turns_every_frame_into_a_picture() {
-        let Some(stream) = encoded(90) else {
-            eprintln!("skipped: no ffmpeg with libx264 here");
-            return;
-        };
-        let started = Started {
-            display: "1".to_owned(),
-            codec: lp_core::screen::Codec::H264,
-            width: 320,
-            height: 240,
-            frame_rate: 30,
-        };
-        let mut child = Command::new("ffmpeg")
-            .args(decoder_args(&started))
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
-        let mut stdin = child.stdin.take().unwrap();
-        let writer = std::thread::spawn(move || {
-            let _ = stdin.write_all(&stream);
-        });
-        let mut out = Vec::new();
-        child.stdout.take().unwrap().read_to_end(&mut out).unwrap();
-        writer.join().unwrap();
-        child.wait().unwrap();
-        assert_eq!(
-            out.len() / (320 * 240 * 4),
-            90,
-            "a picture for every frame, from the first"
-        );
+        use lp_core::screen::Format;
+        // Both formats a desktop decodes (ADR 0044).
+        for (format, pix_fmt) in [(Format::H264, "yuv420p"), (Format::H264_444, "yuv444p")] {
+            let Some(stream) = encoded(90, pix_fmt) else {
+                eprintln!("skipped: no ffmpeg with libx264 here");
+                return;
+            };
+            let started = Started {
+                display: "1".to_owned(),
+                format,
+                width: 320,
+                height: 240,
+                frame_rate: 30,
+            };
+            let mut child = Command::new("ffmpeg")
+                .args(decoder_args(&started))
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap();
+            let mut stdin = child.stdin.take().unwrap();
+            let writer = std::thread::spawn(move || {
+                let _ = stdin.write_all(&stream);
+            });
+            let mut out = Vec::new();
+            child.stdout.take().unwrap().read_to_end(&mut out).unwrap();
+            writer.join().unwrap();
+            child.wait().unwrap();
+            assert_eq!(
+                out.len() / (320 * 240 * 4),
+                90,
+                "a picture for every frame, from the first, at {format}"
+            );
+        }
     }
 
     #[test]

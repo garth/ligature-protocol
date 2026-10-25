@@ -45,15 +45,15 @@ chunking rather than by a larger bound. What this milestone pins:
    section 3h, `schemas/capability.screen.schema.json`), `scope` `device`, offered under
    ADR 0040 as `input` is. The descriptor's `params` follow the two-direction convention:
    `shares` (this device captures and encodes a display), `views` (this device decodes
-   and shows one), `codecs` (what it encodes or decodes, `h264` first, listed in
-   preference order), `maxWidth` and `maxHeight` (the largest picture a viewer takes),
+   and shows one), `encodes` and `decodes` (the picture formats it encodes and decodes,
+   in preference order, ADR 0044), `maxWidth` and `maxHeight` (the largest picture a viewer takes),
    and `maxFrameRate`. The desktops advertise both directions; the phone advertises both
    too, its share behind the platform's consent (decision 6).
 2. **The share vocabulary.** On the stream, which the viewer opens: `displays` (viewer to
    sharer) answered by `displays` listing each display's `id`, `name`, `width`, `height`
    and whether it is primary; `start` (viewer to sharer: a display `id` or none for the
-   primary, the `codec`, the largest `width` and `height` it wants, the `frameRate` it
-   wants) answered by `started` (the `codec`, `width`, `height` and `frameRate` the
+   primary, the `formats` it takes, the largest `width` and `height` it wants, the
+   `frameRate` it wants) answered by `started` (the `format`, `width`, `height` and `frameRate` the
    sharer settled on, which may be smaller) or `refused` with a reason (no consent, no
    encoder, busy); `frame` messages (decision 4); `keyframe` (viewer to sharer: send one
    now, after a loss or a late join); `stop` from either side with a reason (`viewer`,
@@ -63,8 +63,10 @@ chunking rather than by a larger bound. What this milestone pins:
    with the parameter sets repeated in every keyframe, so a decoder can start at any
    keyframe and a viewer that joins late asks for one. Each platform's hardware encoder
    and decoder produce and take it (VA-API and software on Linux, VideoToolbox on macOS,
-   MediaCodec on Android), and it is the one codec all three are sure to have. `codecs`
-   is a list so a later milestone can add AV1 or VP9 without a new message. The sharer
+   MediaCodec on Android), and it is the one codec all three are sure to have. A share's
+   format is H.264 with its chroma sampling, 4:2:0 everywhere and 4:4:4 where both ends
+   handle it, offered by the viewer and picked by the sharer (ADR 0044), so a later
+   milestone can add AV1 or VP9 without a new message. The sharer
    scales the picture down to the viewer's `maxWidth` and `maxHeight` keeping its aspect,
    and never up.
 4. **Frames are chunked within the message bound.** A keyframe at a large resolution can

@@ -537,7 +537,8 @@ impl Node {
             .ok_or_else(|| LpError::Internal("screen is not attached".to_owned()))?;
         let start = lp_core::screen::Start {
             display: None,
-            codec: lp_core::screen::Codec::H264,
+            // All the phone decodes: MediaCodec's 4:2:0 (ADR 0044).
+            formats: Vec::new(),
             width: max_width,
             height: max_height,
             frame_rate,

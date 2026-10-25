@@ -23,12 +23,12 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use lp_core::input::Region;
-use lp_core::screen::{Codec, Display, RefuseReason, ScreenParams, StopReason};
+use lp_core::screen::{Display, RefuseReason, ScreenParams, StopReason};
 use lp_macos::screen::{self as sck, Ended, ScreenDisplay, StartError};
 use tokio::sync::mpsc;
 
 use crate::input::geometry::{Zone, region_of};
-use crate::screen::encode::{Encoder, LiveEncoder, RawInput, probe_encoder};
+use crate::screen::encode::{Encoder, LiveEncoder, RawInput, encodes, probe_encoder};
 use crate::screen::{Capture, Captured, Settings, Share, ShareControl};
 
 /// How often ffmpeg's encoders are looked at again, for an ffmpeg
@@ -115,7 +115,7 @@ impl Capture for MacScreen {
         ScreenParams {
             shares: lock(&self.encoder).is_some() && !sck::screen_displays().is_empty(),
             views: false,
-            codecs: vec![Codec::H264],
+            encodes: lock(&self.encoder).map(encodes).unwrap_or_default(),
             ..ScreenParams::default()
         }
     }

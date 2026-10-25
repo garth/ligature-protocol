@@ -353,3 +353,27 @@ device, so the pointer within 24 points of an edge pans the picture 16 points ev
 until it reaches the end or the pointer leaves the edge, and the driven pointer is moved to
 what is under the window's pointer after each step. A click maps through the scroll, since
 the picture's place in the window may begin left of or above it.
+
+## LP-162: the picture format, negotiated (ADR 0044)
+
+**Each side lists what it can do now.** `encodes` comes from the capture: x264 gives 4:4:4
+and 4:2:0, in that order, and VA-API, VideoToolbox and the phone's `MediaCodec` 4:2:0 alone,
+since none of their H.264 encoders takes 4:4:4 input. `decodes` comes from the viewer: a
+desktop daemon lists 4:4:4 then 4:2:0 when ffmpeg decodes H.264, since `lpview`'s software
+decoder takes both, and the phone 4:2:0, since its `MediaCodec` decoders seldom offer the
+High 4:4:4 profile.
+
+**The viewer offers, the sharer picks.** The screen sync offers what this device decodes, or
+the part of it the caller narrowed to (`lpview --chroma`, the control request's `formats`),
+and refuses before asking when nothing in the offer is in the sharer's descriptor. The
+sharer takes the first format of the offer its capture encodes at that moment, and refuses
+with `no-encoder` when there is none, which covers a descriptor that is out of date. A
+format with a codec, a chroma or a key this build does not know is passed over in an offer
+and in a descriptor, rather than failing the message.
+
+**4:4:4 is x264's own.** At 4:4:4 the encoder takes `-pix_fmt yuv444p`, and x264 picks the
+High 4:4:4 Predictive profile for it. A unit test encodes three frames at 4:4:4 and checks
+with ffprobe that the stream is High 4:4:4 Predictive in `yuv444p` and that every frame
+decodes; `lpview`'s decoder test decodes 90 frames at each format; the two-daemon test checks
+the pick (the viewer's order over the sharer's, a format the sharer stopped encoding refused,
+one it never listed not asked for).

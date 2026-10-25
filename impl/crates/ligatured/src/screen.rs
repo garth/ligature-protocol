@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 
 use lp_core::input::Region;
 use lp_core::screen::{
-    Codec, Display, Displays, Frame, RefuseReason, Refused, SCREEN_TYPE, ScreenMessage,
+    Display, Displays, Format, Frame, RefuseReason, Refused, SCREEN_TYPE, ScreenMessage,
     ScreenParams, Start, Started, Stop, StopReason, chunk_frame, fit, screen_descriptor,
 };
 use lp_core::{Error, PublicKey};
@@ -75,8 +75,8 @@ pub enum ShareControl {
 pub struct Settings {
     /// The display.
     pub display: String,
-    /// The codec.
-    pub codec: Codec,
+    /// The format picked from the viewer's offer (ADR 0044).
+    pub format: Format,
     /// The picture's width.
     pub width: u32,
     /// The picture's height.
@@ -91,7 +91,7 @@ impl Settings {
     fn started(&self) -> Started {
         Started {
             display: self.display.clone(),
-            codec: self.codec,
+            format: self.format,
             width: self.width,
             height: self.height,
             frame_rate: self.frame_rate,
@@ -112,8 +112,9 @@ pub struct Share {
 
 /// The sharer's platform: displays, and a share of one.
 pub trait Capture: Send + Sync {
-    /// Whether this device shares right now and with which codecs; `views`
-    /// and the viewer bounds are the sync's, not the capture's.
+    /// Whether this device shares right now and the formats it encodes;
+    /// `views`, `decodes` and the viewer bounds are the sync's, not the
+    /// capture's.
     fn params(&self) -> ScreenParams;
     /// The displays this device can share.
     fn displays(&self) -> Vec<Display>;
@@ -280,11 +281,12 @@ impl ScreenSync {
         match self.capture.as_ref().map(|c| c.params()) {
             Some(capture) => {
                 params.shares = capture.shares;
-                if !params.views {
-                    params.codecs = capture.codecs;
-                }
+                params.encodes = capture.encodes;
             }
-            None => params.shares = false,
+            None => {
+                params.shares = false;
+                params.encodes = Vec::new();
+            }
         }
         params
     }
@@ -382,13 +384,25 @@ impl ScreenSync {
             return Err(Error::Io("this device does not view".to_owned()));
         };
         let sharer = self.sharer_params(peer)?;
-        if !sharer.codecs.contains(&start.codec) || !viewer.codecs.contains(&start.codec) {
-            return Err(Error::Chain(format!(
-                "{} is not a codec both sides have",
-                start.codec
-            )));
+        // The offer: what this device decodes, in its order, or the part of
+        // it the caller narrowed to (ADR 0044).
+        let formats: Vec<Format> = if start.formats.is_empty() {
+            viewer.decodes.clone()
+        } else {
+            start
+                .formats
+                .iter()
+                .copied()
+                .filter(|f| viewer.decodes.contains(f))
+                .collect()
+        };
+        if !formats.iter().any(|f| sharer.encodes.contains(f)) {
+            return Err(Error::Chain(
+                "no picture format that this device decodes and the other encodes".to_owned(),
+            ));
         }
         let start = Start {
+            formats,
             width: start.width.min(viewer.max_width),
             height: start.height.min(viewer.max_height),
             frame_rate: start.frame_rate.min(viewer.max_frame_rate),
@@ -611,10 +625,16 @@ impl ScreenSync {
             refuse(&mut stream, RefuseReason::Consent).await;
             return;
         }
-        if !params.codecs.contains(&start.codec) {
+        // The first format of the viewer's offer this device encodes now.
+        let Some(format) = start
+            .formats
+            .iter()
+            .copied()
+            .find(|f| params.encodes.contains(f))
+        else {
             refuse(&mut stream, RefuseReason::NoEncoder).await;
             return;
-        }
+        };
         let displays = capture.displays();
         let display = match &start.display {
             Some(id) => displays.iter().find(|d| &d.id == id),
@@ -634,7 +654,7 @@ impl ScreenSync {
         let (width, height) = fit(chosen.width, chosen.height, start.width, start.height);
         let settings = Settings {
             display: chosen.id.clone(),
-            codec: start.codec,
+            format,
             width,
             height,
             frame_rate: start.frame_rate.clamp(1, MAX_FRAME_RATE),
@@ -864,11 +884,13 @@ pub fn probe_decoder() -> bool {
 }
 
 /// The viewer params a desktop daemon advertises: views when ffmpeg decodes
-/// H.264, which `lpview` uses.
+/// H.264, which `lpview` uses, at 4:4:4 first, since its software decoder
+/// takes it and it keeps coloured text sharp, and at 4:2:0.
 #[must_use]
 pub fn viewer_params() -> Option<ScreenParams> {
     probe_decoder().then(|| ScreenParams {
         views: true,
+        decodes: vec![Format::H264_444, Format::H264],
         ..ScreenParams::default()
     })
 }
@@ -882,6 +904,7 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 /// and a record of what was asked.
 pub struct FakeCapture {
     shares: Mutex<bool>,
+    encodes: Mutex<Vec<Format>>,
     displays: Vec<Display>,
     /// Running shares by display: where emitted frames go.
     running: Mutex<HashMap<String, mpsc::UnboundedSender<Captured>>>,
@@ -922,6 +945,7 @@ impl FakeCapture {
     fn with(displays: Vec<Display>, generate: bool) -> Self {
         Self {
             shares: Mutex::new(true),
+            encodes: Mutex::new(vec![Format::H264]),
             displays,
             running: Mutex::new(HashMap::new()),
             keyframe_requests: Arc::new(Mutex::new(0)),
@@ -934,6 +958,11 @@ impl FakeCapture {
     /// Switches sharing on or off, as a platform permission would.
     pub fn set_shares(&self, shares: bool) {
         *lock(&self.shares) = shares;
+    }
+
+    /// Sets the formats it says it encodes.
+    pub fn set_encodes(&self, formats: Vec<Format>) {
+        *lock(&self.encodes) = formats;
     }
 
     /// Refuses the next start with `reason`.
@@ -980,6 +1009,7 @@ impl Capture for FakeCapture {
     fn params(&self) -> ScreenParams {
         ScreenParams {
             shares: *lock(&self.shares),
+            encodes: lock(&self.encodes).clone(),
             ..ScreenParams::default()
         }
     }

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ligatureprotocol.org/schemas/capability.screen.schema.json",
   "title": "org.ligatureprotocol.capability.screen",
-  "description": "DRAFT. The screen capability (spec chapter 05 section 3h): device-scoped, one device's display watched live on another. The descriptor's params say whether the device shares (captures and encodes a display), views (decodes and shows one), which codecs it offers or takes in preference order, the largest picture and the highest frame rate a viewer takes. A share is one stream (purpose org.ligatureprotocol.capability.screen, ADR 0036) opened by the viewer: displays to list the sharer's displays, start answered by started or refused, then frame messages from the sharer, chunked so no message exceeds the bound of ADR 0036, keyframe from the viewer when it needs one, and stop from either side; the stream's end stops the share. Control of a shared display is the input capability on its own stream, with positions as fractions of the shared display.",
+  "description": "DRAFT. The screen capability (spec chapter 05 section 3h): device-scoped, one device's display watched live on another. The descriptor's params say whether the device shares (captures and encodes a display), views (decodes and shows one), the picture formats it encodes and decodes in preference order (ADR 0044), the largest picture and the highest frame rate a viewer takes. A share is one stream (purpose org.ligatureprotocol.capability.screen, ADR 0036) opened by the viewer: displays to list the sharer's displays, start answered by started or refused, then frame messages from the sharer, chunked so no message exceeds the bound of ADR 0036, keyframe from the viewer when it needs one, and stop from either side; the stream's end stops the share. Control of a shared display is the input capability on its own stream, with positions as fractions of the shared display.",
   "$defs": {
     "params": {
       "type": "object",
@@ -11,19 +11,24 @@
         "shares": {
           "type": "boolean",
           "default": false,
-          "description": "Whether this device captures and encodes a display. False while the platform has not granted the daemon capture, or has no encoder for any codec it lists."
+          "description": "Whether this device captures and encodes a display. False while the platform has not granted the daemon capture, or has no encoder for any format it lists."
         },
         "views": {
           "type": "boolean",
           "default": false,
           "description": "Whether this device decodes and shows a shared display."
         },
-        "codecs": {
+        "encodes": {
           "type": "array",
-          "items": { "$ref": "#/$defs/codec" },
-          "uniqueItems": true,
-          "default": ["h264"],
-          "description": "The codecs this device encodes (if it shares) or decodes (if it views), most preferred first."
+          "items": { "$ref": "#/$defs/format" },
+          "default": [{ "codec": "h264", "chroma": "4:2:0" }],
+          "description": "The picture formats this device can encode as a sharer now, most preferred first (ADR 0044)."
+        },
+        "decodes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/format" },
+          "default": [{ "codec": "h264", "chroma": "4:2:0" }],
+          "description": "The picture formats this device can decode as a viewer now, most preferred first (ADR 0044)."
         },
         "maxWidth": {
           "type": "integer",
@@ -45,10 +50,21 @@
         }
       }
     },
-    "codec": {
-      "type": "string",
-      "enum": ["h264"],
-      "description": "A video codec. h264: H.264 as an Annex B byte stream, the parameter sets repeated in every keyframe, so a decoder starts at any keyframe."
+    "format": {
+      "type": "object",
+      "description": "What a share's picture is sent as (ADR 0044): a codec and its chroma sampling, never the encoder or decoder. A device that does not know one of a format's keys or values passes over the whole format.",
+      "required": ["codec"],
+      "properties": {
+        "codec": {
+          "type": "string",
+          "description": "A codec the spec defines. h264: H.264 as an Annex B byte stream, the parameter sets repeated in every keyframe, so a decoder starts at any keyframe."
+        },
+        "chroma": {
+          "type": "string",
+          "default": "4:2:0",
+          "description": "How colour is sampled against brightness: 4:2:0 (colour at half the resolution each way) or 4:4:4 (full resolution, which keeps coloured text sharp)."
+        }
+      }
     },
     "displayId": {
       "type": "string",
@@ -106,14 +122,18 @@
     },
     "start": {
       "type": "object",
-      "description": "From the viewer: share this display (the primary one when no id is given) with this codec, no larger than this and no faster than this.",
-      "required": ["type", "codec", "width", "height", "frameRate"],
+      "description": "From the viewer: share this display (the primary one when no id is given) in the first of these formats the sharer can encode, no larger than this and no faster than this.",
+      "required": ["type", "formats", "width", "height", "frameRate"],
       "properties": {
         "type": {
           "const": "org.ligatureprotocol.capability.screen.start"
         },
         "display": { "$ref": "#/$defs/displayId" },
-        "codec": { "$ref": "#/$defs/codec" },
+        "formats": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/format" },
+          "description": "The formats the viewer takes for this share, most preferred first: what it decodes, or fewer if its user narrowed them."
+        },
         "width": {
           "type": "integer",
           "minimum": 1,
@@ -134,13 +154,13 @@
     "started": {
       "type": "object",
       "description": "From the sharer: the share runs with these settings, which may be smaller or slower than asked, never larger or faster. The picture keeps the display's aspect, so width and height together say how a position maps to it.",
-      "required": ["type", "display", "codec", "width", "height", "frameRate"],
+      "required": ["type", "display", "format", "width", "height", "frameRate"],
       "properties": {
         "type": {
           "const": "org.ligatureprotocol.capability.screen.started"
         },
         "display": { "$ref": "#/$defs/displayId" },
-        "codec": { "$ref": "#/$defs/codec" },
+        "format": { "$ref": "#/$defs/format" },
         "width": {
           "type": "integer",
           "minimum": 1,
@@ -169,7 +189,7 @@
         "reason": {
           "type": "string",
           "enum": ["consent", "no-encoder", "no-display", "busy"],
-          "description": "consent: the platform's consent was not given, or not in time. no-encoder: no encoder for the codec asked. no-display: no display with that id. busy: a share of this display already runs."
+          "description": "consent: the platform's consent was not given, or not in time. no-encoder: no encoder for any of the formats offered. no-display: no display with that id. busy: a share of this display already runs."
         }
       }
     },

@@ -180,6 +180,10 @@ pub struct Request {
     /// `screen.start`: the frame rate wanted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frame_rate: Option<u32>,
+    /// `screen.start`: the picture formats to offer, narrowing what this
+    /// device decodes; all of them when absent (ADR 0044).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub formats: Option<Vec<lp_core::screen::Format>>,
     /// `input.drive`: the entry point across the screen, a fraction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub x: Option<f64>,
@@ -958,7 +962,7 @@ async fn handle_screen(
     request: Request,
     out: tokio::sync::mpsc::Sender<Outgoing>,
 ) -> Option<Response> {
-    use lp_core::screen::{Codec, Start, StopReason};
+    use lp_core::screen::{Start, StopReason};
     let id = request.id;
     let Some(screen) = daemon.screen_sync() else {
         return Some(Response::error(
@@ -981,7 +985,7 @@ async fn handle_screen(
             };
             let start = Start {
                 display: request.display.clone(),
-                codec: Codec::H264,
+                formats: request.formats.clone().unwrap_or_default(),
                 width: request.width.unwrap_or(1920),
                 height: request.height.unwrap_or(1080),
                 frame_rate: request.frame_rate.unwrap_or(30),

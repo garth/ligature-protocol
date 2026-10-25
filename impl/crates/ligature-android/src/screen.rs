@@ -12,7 +12,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use lp_core::screen::{Codec, Display, RefuseReason, ScreenParams, StopReason};
+use lp_core::screen::{Display, Format, RefuseReason, ScreenParams, StopReason};
 use tokio::sync::mpsc;
 
 use ligatured::screen::{Capture, Captured, EncodedFrame, Settings, Share, ShareControl};
@@ -103,7 +103,8 @@ impl Capture for HostScreen {
         ScreenParams {
             shares: s.available && s.width > 0 && s.height > 0,
             views: false,
-            codecs: vec![Codec::H264],
+            // MediaCodec's encoders give 4:2:0 (ADR 0044).
+            encodes: vec![Format::H264],
             ..ScreenParams::default()
         }
     }

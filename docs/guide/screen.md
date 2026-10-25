@@ -23,6 +23,7 @@ keys**, or move to another window. Closing the window ends the share.
 | `--display <id>` | Shares that display instead of the primary one; `lpctl screen displays <device>` lists them |
 | `--width`, `--height`, `--rate` | The largest picture and the frame rate you want (1920 by 1080 at 30 a second by default); the sharer sends no larger than its own screen |
 | `--actual-size` | Shows the screen at its actual size instead of scaled to the window (below) |
+| `--chroma 4:2:0` or `4:4:4` | Asks for that colour sampling only (below); by default the best both devices handle |
 | `--view-only` | Watch without ever driving |
 
 A device that takes no input, such as the phone, is only watched.
@@ -45,6 +46,15 @@ it scrolls:
 
 `lpctl screen displays <device>` shows each display's scale, for example `2880x1800 at 2x`
 for a Retina display.
+
+### Colour detail
+
+Video usually keeps colour at half the resolution of brightness ("4:2:0"), which blurs the
+edges of coloured text. When both devices can handle it, `lpview` asks for full colour
+detail ("4:4:4"), and the window's title shows which one the share uses. A Linux machine
+encoding with `libx264` sends 4:4:4. A Mac encoding with VideoToolbox, and the phone, send
+4:2:0, since their hardware encoders do not produce 4:4:4. 4:4:4 takes about half as much
+again of the network, so on a slow link `--chroma 4:2:0` asks for the lighter one.
 
 ## What the sharing device asks
 

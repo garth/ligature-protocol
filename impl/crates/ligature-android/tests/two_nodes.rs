@@ -717,7 +717,7 @@ fn the_phone_watches_a_desktop_and_shares_its_own_screen() {
     use ligatured::screen::{EncodedFrame, FakeCapture, ShareControl, Viewed};
     use lp_core::facts::Role;
     use lp_core::paths::Locations;
-    use lp_core::screen::{Codec, Display, SCREEN_TYPE, ScreenParams, Start, StopReason};
+    use lp_core::screen::{Display, SCREEN_TYPE, ScreenParams, Start, StopReason};
     use lp_core::wire::Timestamp;
     use lp_identity::cross_signing::PersonKeys;
     use lp_identity::facts;
@@ -879,7 +879,7 @@ fn the_phone_watches_a_desktop_and_shares_its_own_screen() {
     );
     let start = Start {
         display: None,
-        codec: Codec::H264,
+        formats: Vec::new(),
         width: 1080,
         height: 2400,
         frame_rate: 30,

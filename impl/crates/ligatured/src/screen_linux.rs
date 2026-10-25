@@ -35,7 +35,7 @@ use std::time::{Duration, Instant};
 use lp_core::Error;
 use lp_core::frame;
 use lp_core::input::Region;
-use lp_core::screen::{Codec, Display, RefuseReason, ScreenParams, StopReason};
+use lp_core::screen::{Display, RefuseReason, ScreenParams, StopReason};
 use lp_identity::trust_store::TrustStore;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
@@ -43,7 +43,7 @@ use tokio::sync::mpsc;
 use crate::clipboard_linux::select_wayland_socket;
 #[cfg(test)]
 use crate::screen::encode::{AccessUnits, KEYFRAME_BACKSTOP, X264_QP, encoder_args, is_keyframe};
-use crate::screen::encode::{Encoder, LiveEncoder, RawInput, probe_encoder};
+use crate::screen::encode::{Encoder, LiveEncoder, RawInput, encodes, probe_encoder};
 use crate::screen::{Capture, Captured, Settings, Share, ShareControl};
 
 /// The store key of the portal's restore token.
@@ -791,7 +791,7 @@ impl Capture for LinuxScreen {
         ScreenParams {
             shares: probe.encoder.is_some() && can_capture,
             views: false,
-            codecs: vec![Codec::H264],
+            encodes: probe.encoder.map(encodes).unwrap_or_default(),
             ..ScreenParams::default()
         }
     }
@@ -1497,11 +1497,12 @@ mod helper {
 mod tests {
     use super::*;
     use crate::screen::encode::bit_rate;
+    use lp_core::screen::Format;
 
     fn settings(w: u32, h: u32, rate: u32) -> Settings {
         Settings {
             display: "DP-1".to_owned(),
-            codec: Codec::H264,
+            format: Format::H264,
             width: w,
             height: h,
             frame_rate: rate,
@@ -1582,7 +1583,20 @@ mod tests {
         // x264 holds its quantiser, so what did not change is not coded
         // again: no rate, and no cap that would move it.
         assert!(joined.contains("-preset superfast -tune zerolatency"));
-        assert!(joined.contains(&format!("-qp {X264_QP}")));
+        assert!(joined.contains(&format!("-qp {X264_QP} -pix_fmt yuv420p")));
+        // 4:4:4 picked: x264 takes the full-colour input (ADR 0044).
+        let full = Settings {
+            format: Format::H264_444,
+            ..settings(1280, 720, 30)
+        };
+        assert!(
+            encoder_args(Encoder::X264, &input, &full)
+                .join(" ")
+                .contains("-pix_fmt yuv444p")
+        );
+        assert_eq!(encodes(Encoder::X264), [Format::H264_444, Format::H264]);
+        assert_eq!(encodes(Encoder::Vaapi), [Format::H264]);
+        assert_eq!(encodes(Encoder::VideoToolbox), [Format::H264]);
         assert!(!joined.contains("-b:v"));
         assert!(!joined.contains("-maxrate"));
         assert!(joined.ends_with("-f h264 pipe:1"));

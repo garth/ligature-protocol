@@ -666,7 +666,7 @@ async fn screen(client: &mut Client, action: &ScreenAction) -> Result<(), Error>
                             started.width,
                             started.height,
                             started.frame_rate,
-                            started.codec,
+                            started.format,
                             out.display()
                         );
                     }

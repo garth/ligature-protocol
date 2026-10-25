@@ -14,7 +14,7 @@ use ligatured::screen::{EncodedFrame, FakeCapture, ScreenSync, ShareControl, Vie
 use lp_core::facts::Role;
 use lp_core::paths::Locations;
 use lp_core::screen::{
-    CHUNK_BYTES, Codec, Display, RefuseReason, SCREEN_TYPE, ScreenParams, Start, StopReason,
+    CHUNK_BYTES, Display, Format, RefuseReason, SCREEN_TYPE, ScreenParams, Start, StopReason,
 };
 use lp_core::wire::Timestamp;
 use lp_identity::cross_signing::PersonKeys;
@@ -86,6 +86,11 @@ fn displays() -> Vec<Display> {
 
 /// A sharer with two displays and a viewer that takes up to 1280 by 720.
 async fn pair() -> Pair {
+    pair_decoding(vec![Format::H264]).await
+}
+
+/// The same, the viewer decoding `decodes`.
+async fn pair_decoding(decodes: Vec<Format>) -> Pair {
     let alice = PersonKeys::generate().unwrap();
     let person = facts::person_fact(&alice, "Alice", 1, at(0)).unwrap();
     let mut daemons = Vec::new();
@@ -125,6 +130,7 @@ async fn pair() -> Pair {
         None,
         Some(ScreenParams {
             views: true,
+            decodes,
             max_width: 1280,
             max_height: 720,
             max_frame_rate: 30,
@@ -156,7 +162,7 @@ async fn pair() -> Pair {
 fn start(display: Option<&str>) -> Start {
     Start {
         display: display.map(str::to_owned),
-        codec: Codec::H264,
+        formats: Vec::new(),
         width: 1920,
         height: 1080,
         frame_rate: 60,
@@ -308,6 +314,80 @@ async fn displays_are_listed_and_a_share_fits_chunks_and_answers_keyframes() {
     assert_eq!(again.started.display, "DP-1");
     again.control.send(ShareControl::Stop).unwrap();
     assert_eq!(stopped_with(&mut again).await, StopReason::Viewer);
+}
+
+/// Whether the viewer has the sharer's descriptor listing `format` as encoded.
+fn offered(p: &Pair, format: Format) -> bool {
+    p.viewer
+        .registry()
+        .peers()
+        .into_iter()
+        .filter(|caps| caps.peer == *p.sharer.binding().public())
+        .flat_map(|caps| caps.capabilities)
+        .filter_map(|d| ScreenParams::from_descriptor(&d))
+        .any(|params| params.encodes.contains(&format))
+}
+
+/// The viewer offers what it decodes in its order, and the sharer picks the
+/// first it encodes now (ADR 0044).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_sharer_picks_the_first_format_of_the_viewer_s_offer_it_encodes() {
+    let p = pair_decoding(vec![Format::H264_444, Format::H264]).await;
+    let sharer_key = *p.sharer.binding().public();
+
+    // The sharer encodes 4:2:0 alone: the viewer's first choice is passed over.
+    let mut watching = p
+        .viewer_sync
+        .watch(&sharer_key, start(Some("DP-1")))
+        .await
+        .unwrap();
+    assert_eq!(watching.started.format, Format::H264);
+    watching.control.send(ShareControl::Stop).unwrap();
+    assert_eq!(stopped_with(&mut watching).await, StopReason::Viewer);
+
+    // It encodes both, 4:2:0 first: the viewer's order decides.
+    p.capture.set_encodes(vec![Format::H264, Format::H264_444]);
+    p.sharer_sync.advertise().await;
+    until("the viewer sees 4:4:4 offered", || {
+        offered(&p, Format::H264_444)
+    })
+    .await;
+    let mut watching = p
+        .viewer_sync
+        .watch(&sharer_key, start(Some("HDMI-A-1")))
+        .await
+        .unwrap();
+    assert_eq!(watching.started.format, Format::H264_444);
+    watching.control.send(ShareControl::Stop).unwrap();
+    assert_eq!(stopped_with(&mut watching).await, StopReason::Viewer);
+    until("both shares stopped", || p.capture.stops() == 2).await;
+
+    // Narrowed to 4:4:4, but the sharer's encoder changed since its
+    // descriptor: the sharer refuses rather than send what was not offered.
+    p.capture.set_encodes(vec![Format::H264]);
+    let narrowed = Start {
+        formats: vec![Format::H264_444],
+        ..start(Some("DP-1"))
+    };
+    let err = p
+        .viewer_sync
+        .watch(&sharer_key, narrowed.clone())
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("no-encoder"), "{err}");
+
+    // Once the descriptor says so, the viewer does not ask at all.
+    p.sharer_sync.advertise().await;
+    until("the viewer sees 4:4:4 withdrawn", || {
+        !offered(&p, Format::H264_444)
+    })
+    .await;
+    let err = p
+        .viewer_sync
+        .watch(&sharer_key, narrowed)
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("no picture format"), "{err}");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

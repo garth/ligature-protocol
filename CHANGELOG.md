@@ -10,6 +10,10 @@ release workflow publishes the section as the release notes with the installers.
 
 ### Added
 
+- A shared screen's picture format is agreed between the two devices: a Linux machine sends
+  full colour detail (4:4:4), which keeps coloured text sharp, to a desktop that decodes it,
+  and 4:2:0 to the phone; `lpview --chroma` narrows the choice (ADR 0044) (LP-162).
+
 - `lpview --actual-size` shows a shared screen at the size it has on its device, pixel for
   pixel and adjusted for a high-DPI screen at either end, scrolling when it is larger than
   the window; displays now report their scale (ADR 0045) (LP-164).

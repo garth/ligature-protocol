@@ -271,11 +271,19 @@ from it. It is device-scoped, offered as input is
 ([ADR 0040](../adr/0040-binding-stands-in-for-principal.md)), and between one person's
 own devices the protocol asks nothing: the platform's own consent, where the platform has
 one, is the gate (chapter 08). The descriptor's `params` say `shares` (this device captures
-and encodes a display), `views` (it decodes and shows one), `codecs` (what it encodes or
-decodes, most preferred first; `h264` is the first and so far the only one, as an Annex B
-byte stream with the parameter sets repeated in every keyframe so a decoder can start at
-any keyframe), and as a viewer `maxWidth`, `maxHeight` and `maxFrameRate`, the largest and
-fastest picture it takes.
+and encodes a display), `views` (it decodes and shows one), `encodes` and `decodes` (the
+picture formats it can encode as a sharer and decode as a viewer now, most preferred first),
+and as a viewer `maxWidth`, `maxHeight` and `maxFrameRate`, the largest and fastest picture
+it takes.
+
+A **format** names what a share's picture is sent as, never the encoder or decoder that
+makes or takes it ([ADR 0044](../adr/0044-screen-formats-are-negotiated.md)): a map of
+`codec` and `chroma`. The codec `h264` is H.264 as an Annex B byte stream with the parameter
+sets repeated in every keyframe, so a decoder can start at any keyframe; `chroma` is `4:2:0`
+(colour at half the resolution each way, the default when absent) or `4:4:4` (colour at
+full resolution, which keeps coloured text sharp). A device that does not know one of a
+format's keys or values passes over that format, so a codec or a sampling is added by
+defining its name here, without a new message.
 
 A **share** is one stream with the capability type as its purpose, opened by the viewer.
 `displays` without a list asks the sharer what it has and is answered by `displays` with the
@@ -283,10 +291,12 @@ list, each display an `id` stable for the session, a `name`, its `width` and `he
 pixels, whether it is `primary`, and its `scale`, the pixels per logical point the platform
 draws it at (1 when absent), so a viewer can ask for and show the picture at the size it has
 on the sharer ([ADR 0045](../adr/0045-a-display-reports-its-scale.md)). `start` names a
-display (the primary one when it names none), the `codec` and the largest `width` and
-`height` and fastest `frameRate` the viewer wants; the sharer answers `started` with what it
-settled on, which may be smaller or slower and never larger or faster, the picture scaled
-down keeping the display's aspect, or `refused` with a reason (`consent`, `no-encoder`,
+display (the primary one when it names none), the `formats` the viewer takes for this share
+in its order of preference (what it decodes, or fewer if its user narrowed them), and the
+largest `width` and `height` and fastest `frameRate` it wants; the sharer picks the first of
+the formats it can encode now and answers `started` with that `format` and what it settled
+on, which may be smaller or slower and never larger or faster, the picture scaled down
+keeping the display's aspect, or `refused` with a reason (`consent`, `no-encoder`,
 `no-display`, `busy`) and ends the stream. Then `frame` messages carry the encoded picture:
 each is one chunk of one frame with the frame's `seq`, its capture time `at` in microseconds
 since the share started, whether it is a `key` frame, whether this chunk is the `last`, and

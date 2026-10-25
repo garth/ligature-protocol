@@ -821,11 +821,17 @@ pub fn barriers_for(edges: &[Edge], zones: &[Zone]) -> Vec<EdgeBarrier> {
                 zone.x + zone.width as i32 - 1,
                 zone.y + zone.height as i32 - 1,
             );
+            // The portal takes a barrier only on a zone's boundary: the left
+            // and top edges at x and y, the right and bottom at x + width and
+            // y + height, one past the last pixel (xdg-desktop-portal-hyprland
+            // refuses a barrier on the last pixel as inside the output).
             let line = match edge {
                 Edge::Left if zone.x == left => (zone.x, zone.y, zone.x, zy2),
-                Edge::Right if zone.x + zone.width as i32 == right => (zx2, zone.y, zx2, zy2),
+                Edge::Right if zone.x + zone.width as i32 == right => (right, zone.y, right, zy2),
                 Edge::Top if zone.y == top => (zone.x, zone.y, zx2, zone.y),
-                Edge::Bottom if zone.y + zone.height as i32 == bottom => (zone.x, zy2, zx2, zy2),
+                Edge::Bottom if zone.y + zone.height as i32 == bottom => {
+                    (zone.x, bottom, zx2, bottom)
+                }
                 _ => continue,
             };
             out.push(EdgeBarrier {
@@ -1254,7 +1260,9 @@ mod tests {
             1,
             "only the second zone's right edge is the layout's"
         );
-        assert_eq!(right[0].line, (4479, 0, 4479, 1439));
+        // Hyprland's portal takes a barrier only on a zone's boundary: the
+        // right edge is at x + width, not on the last pixel.
+        assert_eq!(right[0].line, (4480, 0, 4480, 1439));
         let left: Vec<_> = b.iter().filter(|b| b.edge == Edge::Left).collect();
         assert_eq!(left[0].line, (0, 0, 0, 1079));
         let top: Vec<_> = b.iter().filter(|b| b.edge == Edge::Top).collect();
@@ -1262,6 +1270,10 @@ mod tests {
         assert_eq!(top[0].line, (0, 0, 1919, 0));
         let ids: Vec<u32> = b.iter().map(|b| b.id).collect();
         assert_eq!(ids, vec![1, 2, 3, 4]);
+        // The bottom edge likewise at y + height, on the taller zone only.
+        let bottom = barriers_for(&[Edge::Bottom], &zones);
+        assert_eq!(bottom.len(), 1);
+        assert_eq!(bottom[0].line, (1920, 1440, 4479, 1440));
         assert!(barriers_for(&[Edge::Right], &[]).is_empty());
     }
 

@@ -109,7 +109,10 @@ keyboard only when the first key is injected.
 **Not yet exercised: a live capture.** The portal session, its zones and the libei
 connection were checked against this machine's session with no edge mapped (no barrier,
 nothing captured); arming an edge on the owner's desktop and crossing it is the run with the
-real devices (LP-146), since a captured pointer cannot be tested unattended.
+real devices (LP-146), since a captured pointer cannot be tested unattended. The first
+attempt in that run found the right and bottom barriers refused: Hyprland's portal takes a
+barrier only on a zone's boundary, which for those edges is one past the last pixel
+(`x + width`, `y + height`), and they had been on the last pixel.
 
 ## LP-145: the phone as a touchpad and keyboard
 

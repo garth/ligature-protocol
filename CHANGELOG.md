@@ -65,6 +65,9 @@ release workflow publishes the section as the release notes with the installers.
 
 ### Fixed
 
+- After a device's daemon restarted, its peers could refuse its reconnects for up to a
+  minute; a dial against a connection older than a crossing now replaces it, and a daemon
+  that is stopped closes its connections so its peers reconnect at once (LP-158).
 - Android: a paste of a promised part or file no longer holds up every other node call
   while it is fetched, the fetch stops after five minutes or when the reader cancels, the
   node starts and stops off the main thread, and a call that lands after the node has

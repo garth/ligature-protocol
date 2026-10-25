@@ -19,6 +19,11 @@ use crate::screen::{Captured, EncodedFrame, Settings};
 /// Bits per pixel per frame the encoder aims for.
 const BITS_PER_PIXEL: f64 = 0.08;
 
+/// ffmpeg's expression for a keyframe at the first frame and then at the
+/// first frame a second or more after the last keyframe, by wall time: the
+/// frames come only when the screen changes, so a count of frames is no clock.
+pub const KEYFRAME_EVERY_SECOND: &str = "expr:isnan(prev_forced_t)+gte(t-prev_forced_t,1)";
+
 /// The H.264 encoder ffmpeg offers here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Encoder {
@@ -50,7 +55,10 @@ pub struct RawInput {
 }
 
 /// The arguments of the ffmpeg that encodes raw frames on stdin into an
-/// H.264 byte stream on stdout, scaled to the share's size.
+/// H.264 byte stream on stdout, scaled to the share's size. Frames come as
+/// the screen changes, at most at the share's rate and at least once a
+/// second: each is stamped with the wall time it arrived and encoded once,
+/// never repeated to fill the rate, and a keyframe comes every second.
 #[must_use]
 pub fn encoder_args(encoder: Encoder, input: &RawInput, settings: &Settings) -> Vec<String> {
     let rate = settings.frame_rate.max(1);
@@ -73,6 +81,8 @@ pub fn encoder_args(encoder: Encoder, input: &RawInput, settings: &Settings) -> 
             &format!("{}x{}", input.width, input.height),
             "-framerate",
             &rate_s,
+            "-use_wallclock_as_timestamps",
+            "1",
             "-i",
             "pipe:0",
         ]
@@ -129,14 +139,18 @@ pub fn encoder_args(encoder: Encoder, input: &RawInput, settings: &Settings) -> 
             .map(str::to_owned),
         ),
     }
+    // The longest run without a keyframe, should the forced ones not come.
+    let gop = (rate * 2).to_string();
     args.extend(
         [
+            "-force_key_frames",
+            KEYFRAME_EVERY_SECOND,
             "-g",
-            &rate_s,
-            "-keyint_min",
-            &rate_s,
+            &gop,
             "-bf",
             "0",
+            "-fps_mode",
+            "passthrough",
             "-b:v",
             &br.to_string(),
             "-maxrate",
@@ -358,11 +372,79 @@ mod tests {
             viewer: "linux".to_owned(),
         };
         let args = encoder_args(Encoder::VideoToolbox, &input, &settings).join(" ");
-        assert!(args.contains("-pix_fmt bgra -video_size 2880x1800 -framerate 30 -i pipe:0"));
+        assert!(args.contains(
+            "-pix_fmt bgra -video_size 2880x1800 -framerate 30 \
+             -use_wallclock_as_timestamps 1 -i pipe:0"
+        ));
         assert!(args.contains("-vf scale=1440:900,format=nv12 -c:v h264_videotoolbox"));
         assert!(args.contains("-bsf:v dump_extra=freq=keyframe,h264_metadata=aud=insert"));
-        assert!(args.contains("-g 30"));
+        assert!(args.contains("-g 60"));
         assert!(args.contains("-bf 0"));
         assert!(args.ends_with("-f h264 pipe:1"));
+    }
+
+    /// Frames fed at uneven times, as a screen that changes now and then
+    /// gives them: each comes out once, none is added, and keyframes come at
+    /// the start and then a second or more apart by wall time.
+    #[test]
+    fn frames_are_encoded_as_they_come_with_a_keyframe_every_second() {
+        use std::io::Write as _;
+        if probe_encoder().is_none() {
+            eprintln!("skipped: ffmpeg has no H.264 encoder here");
+            return;
+        }
+        let (w, h) = (64u32, 48u32);
+        let input = RawInput {
+            width: w,
+            height: h,
+            pix_fmt: "bgr0".to_owned(),
+        };
+        let settings = Settings {
+            display: "1".to_owned(),
+            codec: Codec::H264,
+            width: w,
+            height: h,
+            frame_rate: 30,
+            viewer: "test".to_owned(),
+        };
+        let mut child = Command::new("ffmpeg")
+            .args(encoder_args(Encoder::X264, &input, &settings))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("ffmpeg runs");
+        let mut stdin = child.stdin.take().unwrap();
+        let mut stdout = child.stdout.take().unwrap();
+        let reader = std::thread::spawn(move || {
+            let mut out = Vec::new();
+            let _ = stdout.read_to_end(&mut out);
+            out
+        });
+        // Seconds from the start at which a frame arrives.
+        let times = [0.0, 0.05, 0.1, 0.6, 1.2, 1.25, 2.4];
+        let start = std::time::Instant::now();
+        for (i, t) in times.iter().enumerate() {
+            let due = std::time::Duration::from_secs_f64(*t);
+            if let Some(wait) = due.checked_sub(start.elapsed()) {
+                std::thread::sleep(wait);
+            }
+            let shade = u8::try_from(i * 30).unwrap();
+            stdin.write_all(&vec![shade; (w * h * 4) as usize]).unwrap();
+        }
+        drop(stdin);
+        let stream = reader.join().unwrap();
+        let _ = child.wait();
+        let mut units = AccessUnits::default();
+        let mut frames = units.push(&stream);
+        frames.extend(units.finish());
+        let keys: Vec<f64> = frames
+            .iter()
+            .zip(times)
+            .filter(|(f, _)| is_keyframe(f))
+            .map(|(_, t)| t)
+            .collect();
+        assert_eq!(frames.len(), times.len(), "one frame out for each in");
+        assert_eq!(keys, [0.0, 1.2, 2.4], "keyframes a second apart");
     }
 }

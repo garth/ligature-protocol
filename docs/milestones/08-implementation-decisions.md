@@ -70,16 +70,16 @@ without ffmpeg's H.264 encoder does not advertise `shares`, one without its deco
 advertise `views`, and the probe that decides runs once at start (`screen sharing tools
 probed` in the log). On the portal path `gst-launch-1.0` runs `pipewiresrc` on the portal's
 PipeWire remote, passed as an inherited descriptor because `pre_exec` would need unsafe
-code, scaling and pacing to the agreed size and rate with `keepalive-time` so a still screen
-keeps producing frames; its raw BGRx output feeds ffmpeg. VA-API is used when a two-frame
+code, and scaling to the agreed size; its raw BGRx output feeds ffmpeg. How often a frame
+goes is the next decision. VA-API is used when a two-frame
 test encode on the render node succeeds, which it does not on this machine, so `libx264`
 (`ultrafast`, `zerolatency`) is what was measured.
 
 **A stalled capture is started again.** On the owner's machine a share froze about 25 seconds
 in: `pipewiresrc` held the stream's buffers and waited for one that never came, while
 xdg-desktop-portal-hyprland logged "Out of buffers", and nothing reached ffmpeg. The trigger
-was not found, and a second share did not repeat it. Since a still screen keeps producing
-frames, an encoder that writes nothing for four seconds means a stall, so each share has a
+was not found, and a second share did not repeat it. Since a still screen still produces a
+frame a second, an encoder that writes nothing for four seconds means a stall, so each share has a
 watchdog thread that reads when the encoder last wrote. On a stall it stops the processes
 and starts them again from the same source: a new PipeWire remote on the same portal session
 (no picker), or a new screencopy helper. The new encoder begins with a keyframe, so the
@@ -91,9 +91,24 @@ expects the frames to resume with a keyframe, which they did after five seconds.
 delimiter before every frame (`aud=1`, or `-aud 1` on VA-API) and the parameter sets before
 every keyframe (`repeat-headers=1`, or the `dump_extra` filter), and the daemon cuts the
 stream at the delimiters; a unit with an IDR slice is a keyframe. A keyframe comes every
-second (`-g` at the frame rate) because a child process cannot be asked for one: the sync's
-keyframe request is logged and answered by the next periodic one, so a dropped frame costs
-at most a second of picture.
+second by wall time (`-force_key_frames` on frames stamped with the time they arrived)
+because a child process cannot be asked for one: the sync's keyframe request is logged and
+answered by the next periodic one, so a dropped frame costs at most a second of picture.
+
+**A frame goes when the screen changes, and once a second while it is still.** Streaming a
+still screen at the full rate made the viewer decode and draw 30 pictures a second of nothing:
+the owner saw `lpview` at about 40% of a core watching an idle Linux screen. Skipping a repeated
+picture in the viewer did not help, since x264 refines a still image frame after frame and 149
+of 150 decoded pictures of one still image differed from the one before. So the sender stops
+padding. On Linux the compositor sends a frame when the screen changes, `videorate` with
+`drop-only` and `max-rate` drops any beyond the share's rate and adds none, and
+`keepalive-time` sends the last frame again once a second; on the Mac the pacer does the same
+(below). ffmpeg stamps each frame with its arrival (`-use_wallclock_as_timestamps`), encodes it
+once (`-fps_mode passthrough`) and forces a keyframe a second or more after the last, with a
+cap of twice the rate in frames should a forced one not come. A unit test feeds frames at
+uneven times and expects one frame out for each and keyframes a second apart; GStreamer, fed
+60 frames in two seconds, passed 20 at a cap of 10. The screencopy helper still copies at the
+agreed rate.
 
 **`wlr-screencopy` is the fallback, and the way the share is tested.** Where the portal or
 GStreamer's PipeWire element is missing, or `LIGATURE_SCREEN_CAPTURE=screencopy` is set,

@@ -42,7 +42,7 @@ use crate::clipboard_linux::select_wayland_socket;
 #[cfg(test)]
 use crate::screen::encode::bit_rate;
 #[cfg(test)]
-use crate::screen::encode::{AccessUnits, is_keyframe};
+use crate::screen::encode::{AccessUnits, KEYFRAME_EVERY_SECOND, is_keyframe};
 use crate::screen::encode::{Encoder, RawInput, encoder_args, probe_encoder, read_frames};
 use crate::screen::{Capture, Captured, Settings, Share, ShareControl};
 
@@ -59,8 +59,13 @@ const PROBE_EVERY: Duration = Duration::from_secs(5);
 const PORTAL_REPROBE_ROUNDS: u32 = 12;
 /// The largest frame between the daemon and its screen helper's listing.
 const HELPER_MAX_FRAME: usize = 64 * 1024;
+/// How often `pipewiresrc` sends the last picture again while the screen is
+/// still, in milliseconds: once a second, so a still screen costs the
+/// viewer a picture a second rather than the share's full rate, and the
+/// watchdog still sees the capture alive.
+const KEEPALIVE_MS: u32 = 1000;
 /// A share whose encoder has written nothing for this long has stalled: a
-/// still screen keeps producing frames (`keepalive-time`).
+/// still screen still produces a frame a second ([`KEEPALIVE_MS`]).
 const STALL: Duration = Duration::from_secs(4);
 /// How often a share's watchdog looks.
 const WATCH_EVERY: Duration = Duration::from_secs(1);
@@ -193,17 +198,21 @@ fn region_of(outputs: &[OutputInfo], pick: impl Fn(&OutputInfo) -> bool) -> Opti
 }
 
 /// The GStreamer pipeline that turns the portal's PipeWire stream into raw
-/// BGRx frames of the share's size and rate on stdout. `keepalive-time`
-/// makes a still screen keep producing frames.
+/// BGRx frames of the share's size on stdout. The compositor sends a frame
+/// when the screen changes; `videorate` drops any beyond the share's rate
+/// and never adds one, and `keepalive-time` sends the last again once a
+/// second while the screen is still.
 #[must_use]
 pub fn pipewire_args(fd: i32, node: u32, settings: &Settings) -> Vec<String> {
-    let keepalive = 1000 / settings.frame_rate.max(1);
     format!(
-        "-q pipewiresrc fd={fd} path={node} do-timestamp=true keepalive-time={keepalive} \
-         ! videoconvert ! videoscale ! videorate \
-         ! video/x-raw,format=BGRx,width={},height={},framerate={}/1 \
+        "-q pipewiresrc fd={fd} path={node} do-timestamp=true keepalive-time={KEEPALIVE_MS} \
+         ! videorate drop-only=true max-rate={} \
+         ! videoconvert ! videoscale \
+         ! video/x-raw,format=BGRx,width={},height={} \
          ! fdsink fd=1 sync=false",
-        settings.width, settings.height, settings.frame_rate
+        settings.frame_rate.max(1),
+        settings.width,
+        settings.height
     )
     .split_whitespace()
     .map(str::to_owned)
@@ -1496,10 +1505,15 @@ mod tests {
         };
         let args = encoder_args(Encoder::X264, &input, &settings(1280, 720, 30));
         let joined = args.join(" ");
-        assert!(joined.contains("-pix_fmt bgr0 -video_size 2560x1440 -framerate 30 -i pipe:0"));
+        assert!(joined.contains(
+            "-pix_fmt bgr0 -video_size 2560x1440 -framerate 30 \
+             -use_wallclock_as_timestamps 1 -i pipe:0"
+        ));
         assert!(joined.contains("-vf scale=1280:720 -c:v libx264"));
         assert!(joined.contains("aud=1:repeat-headers=1"));
-        assert!(joined.contains("-g 30 -keyint_min 30 -bf 0"));
+        assert!(joined.contains(&format!("-force_key_frames {KEYFRAME_EVERY_SECOND}")));
+        assert!(joined.contains("-bf 0"));
+        assert!(joined.contains("-fps_mode passthrough"));
         assert!(joined.ends_with("-f h264 pipe:1"));
         let vaapi = encoder_args(Encoder::Vaapi, &input, &settings(1280, 720, 30)).join(" ");
         assert!(vaapi.contains("-vaapi_device /dev/dri/renderD128"));
@@ -1509,8 +1523,12 @@ mod tests {
         assert_eq!(bit_rate(7680, 4320, 60), 20_000_000);
         let gst = pipewire_args(7, 42, &settings(1280, 720, 25)).join(" ");
         assert!(gst.contains("pipewiresrc fd=7 path=42"));
-        assert!(gst.contains("keepalive-time=40"));
-        assert!(gst.contains("width=1280,height=720,framerate=25/1"));
+        // A still screen is sent again once a second, a changing one at most
+        // at the agreed rate, never padded to it.
+        assert!(gst.contains("keepalive-time=1000"));
+        assert!(gst.contains("videorate drop-only=true max-rate=25"));
+        assert!(gst.contains("format=BGRx,width=1280,height=720 !"));
+        assert!(!gst.contains("framerate"));
     }
 
     #[test]

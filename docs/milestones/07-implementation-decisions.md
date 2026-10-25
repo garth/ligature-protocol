@@ -198,7 +198,10 @@ withdrawing one removes it, and a withdrawal mid-drive ends the drive as a lost 
 
 **Built here, run on the Mac.** The code is type-checked and linted for
 `aarch64-apple-darwin` on the Linux machine, with a stand-in C compiler since there is no
-macOS SDK there; it is built, linked and run on the Mac. To be recorded from that run:
-whether the cursor hides, whether posted scroll follows the natural-scrolling setting a
-second time, whether the permissions survive a rebuilt ad hoc signature, and what secure
-input (a password field) does to the keyboard while driving.
+macOS SDK there; it is built, linked and run on the Mac. On the Mac, on 2026-10-24, the
+Linux machine and the phone drove the Mac, and the Mac drove the Linux machine across its
+edge with its cursor hidden, so the `SetsCursorInBackground` lookup works. The input round
+trip from Linux was 7.8 ms median once the agent ran as `Interactive` (LP-150); as
+`Background` it was 272 ms. Still to be recorded: whether posted scroll follows the
+natural-scrolling setting a second time, whether the permissions survive a rebuilt ad hoc
+signature, and what secure input (a password field) does to the keyboard while driving.

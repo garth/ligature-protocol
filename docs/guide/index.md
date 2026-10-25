@@ -31,8 +31,8 @@ feature they have today.
 
 1. [Install](install.md) the apps on each device.
 2. [First steps](first-steps.md): create your keys on one device and pair the others.
-3. The features: the [clipboard](clipboard.md), [notifications](notifications.md) and
-   [files](files.md).
+3. The features: the [clipboard](clipboard.md), [notifications](notifications.md),
+   [files](files.md) and one [keyboard and mouse](input.md) across your desktops.
 4. [Your devices](devices.md): seeing them, naming them, revoking one, starting over.
 5. [Upgrading and uninstalling](upgrade-uninstall.md).
 6. [Troubleshooting](troubleshooting.md) when devices do not find each other or something

@@ -20,6 +20,10 @@ use tokio::net::{UnixListener, UnixStream};
 
 use crate::daemon::Daemon;
 
+/// How long a closed connection's queued output gets to be written before
+/// its writer is stopped.
+const WRITER_FLUSH: std::time::Duration = std::time::Duration::from_millis(500);
+
 /// Type names of the control messages.
 pub mod types {
     /// Prefix of every control type.
@@ -741,7 +745,17 @@ async fn connection(daemon: Arc<Daemon>, stream: UnixStream) -> Result<(), Error
         input.release_local(None).await;
     }
     drop(out);
-    let _ = writer_task.await;
+    // What is queued gets a moment to be written. A stream that still holds a
+    // sender (a share, a transfer's progress) must not keep the writer, and
+    // through it the stream, alive for a client that is gone: aborting it
+    // closes the channel, which those streams watch.
+    let mut writer_task = writer_task;
+    if tokio::time::timeout(WRITER_FLUSH, &mut writer_task)
+        .await
+        .is_err()
+    {
+        writer_task.abort();
+    }
     failed.map_or(Ok(()), Err)
 }
 
@@ -1037,7 +1051,16 @@ fn stream_share(
             let _ = watching.control.send(crate::screen::ShareControl::Stop);
             return;
         }
-        while let Some(viewed) = watching.frames.recv().await {
+        loop {
+            let viewed = tokio::select! {
+                viewed = watching.frames.recv() => viewed,
+                () = out.closed() => {
+                    // The client went while no frame was on its way.
+                    let _ = watching.control.send(crate::screen::ShareControl::Stop);
+                    return;
+                }
+            };
+            let Some(viewed) = viewed else { break };
             match viewed {
                 crate::screen::Viewed::Frame {
                     seq,

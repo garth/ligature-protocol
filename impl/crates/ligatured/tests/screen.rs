@@ -372,3 +372,50 @@ async fn a_share_ends_from_the_sharer_from_consent_and_from_a_dropped_connection
     .await;
     assert!(p.viewer_sync.status().watching.is_empty());
 }
+
+/// A viewer's control client that goes away while the capture sends nothing
+/// (a stalled capture, a still screen without keepalive) ends the watch and
+/// the share at once, so the display can be watched again rather than being
+/// refused as busy.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_client_that_goes_while_no_frames_come_ends_the_share() {
+    use ligatured::control::{Client, Request, serve, types};
+    let p = pair().await;
+    let dir = tempfile::tempdir().unwrap();
+    let socket = dir.path().join("control.sock");
+    let _server = serve(p.viewer.clone(), &socket).unwrap();
+    let mut client = Client::connect(&socket).await.unwrap();
+    let mut req = Request::new(types::SCREEN_START, 0);
+    req.key = Some(*p.sharer.binding().public());
+    req.display = Some("DP-1".to_owned());
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let watch = tokio::spawn(async move {
+        let mut started_tx = Some(started_tx);
+        let _ = client
+            .call(req, |event| {
+                if event.started.is_some()
+                    && let Some(tx) = started_tx.take()
+                {
+                    let _ = tx.send(());
+                }
+                None
+            })
+            .await;
+    });
+    tokio::time::timeout(Duration::from_secs(5), started_rx)
+        .await
+        .expect("started in time")
+        .unwrap();
+    assert_eq!(p.capture.running(), vec!["DP-1".to_owned()]);
+    // The client goes; the capture has sent no frame.
+    watch.abort();
+    let _ = watch.await;
+    until("the viewer stopped watching", || {
+        p.viewer_sync.status().watching.is_empty()
+    })
+    .await;
+    until("the sharer stopped sharing", || {
+        p.capture.stops() == 1 && p.sharer_sync.status().sharing.is_empty()
+    })
+    .await;
+}

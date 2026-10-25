@@ -14,7 +14,11 @@ watch a device and receives the encoded frames as they were sent: over the contr
 own 1 MiB frame, in order, the response coming when the share ends; on the phone through the
 node. The viewer feeds the bytes to its platform's decoder and draws. `lpctl screen start`
 writes the same bytes to a file, which `ffplay -f h264` plays, so a share is checked without
-a viewer program.
+a viewer program. A viewer that closes its connection ends the watch, and through it the
+share, at once, frames or not: a closed connection's writer is given half a second to flush
+and then stopped, and the share's carriage watches for that. It used to notice only when the
+next frame failed to reach the viewer, so a share whose capture had stalled outlived its
+viewer and refused the next as `busy`.
 
 **Two traits again, either side optional.** `ligatured::screen::Capture` is the sharer's
 platform: it lists displays and starts a share, which hands back a channel of encoded frames

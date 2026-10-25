@@ -70,6 +70,9 @@ release workflow publishes the section as the release notes with the installers.
 
 ### Fixed
 
+- A share whose capture had stopped sending frames outlived the viewer that closed it, and
+  the next viewer was refused as busy; a viewer that goes now ends the share at once
+  (LP-148).
 - The macOS installer waits for the old launchd agent to be gone before loading the new one,
   and retries the load, so an install or `lpctl upgrade` no longer leaves the daemon stopped
   with only launchctl's "Bootstrap failed: 5"; if it still cannot load, it says so and exits

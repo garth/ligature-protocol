@@ -1,7 +1,8 @@
 # Milestone 8: a device's screen viewed, then controlled, from another of the person's devices
 
-**Status:** Accepted by the owner on 2026-10-24; in progress as the tasks LP-147 to LP-152
-under the epic LP-113, the macOS task (LP-150) waiting on LP-94. Raised on 2026-10-23
+**Status:** Accepted by the owner on 2026-10-24; implemented as LP-147 to LP-151 under the
+epic LP-113, with the negotiated picture format of ADR 0044 (proposed) as LP-162, and the run
+with the real devices and the close are LP-152. Raised on 2026-10-23
 from the feasibility assessment of the candidate capability families: viewing is feasible
 on all three platforms, with the phone as viewer the easy end, and control is the `input`
 family of milestone 7 with absolute positions; the new work is capture, encoding, transport

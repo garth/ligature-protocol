@@ -53,7 +53,19 @@ read and found with xkbcommon against the seat's keymap and the locale's compose
 ([ADR 0043](../adr/0043-keys-carry-their-meaning.md)). The portal must not be started before
 the session has named its desktop and Wayland display: started earlier by the daemon, which
 runs from the user's service manager, it settles on fallbacks for the whole login and offers
-no InputCapture, so the daemon waits for the session's environment before touching it.
+no InputCapture or ScreenCast, so the daemon waits for the session's environment before
+touching it.
+
+Displays (chapter 05 section 3h) are captured through the ScreenCast portal. Its own picker
+chooses what is shared, so a viewer's choice of display is a request, and the restore token
+it hands back is kept so the picker shows once. The PipeWire stream is read by GStreamer's
+`pipewiresrc` and encoded by ffmpeg (VA-API where a test encode works, `libx264`
+otherwise), child processes the daemon feeds and reads, so neither library is needed for
+the rest of the daemon. Hyprland shows no indicator of a screen cast, so the daemon posts a
+notification with a Stop action for the share's life. `pipewiresrc` can stop delivering
+while the portal logs "Out of buffers"; the daemon starts a capture that has gone quiet
+again on the same portal session. Where the portal is missing, `wlr-screencopy` copies an
+output instead.
 
 Open question: the minimum set of compositors and portals to support (Hyprland is the first
 target), and how the system service drives audio and display without a session of its own.
@@ -111,7 +123,10 @@ extra components. What a third-party daemon may offer is bounded by platform per
   process, so the first share is refused and the daemon is restarted after the user allows
   it. While a share runs the menu bar shows the system's own sharing indicator, and
   stopping the share there ends it with `consent`. ScreenCaptureKit delivers a frame only
-  when the display changed, so a still screen's frame is repeated at the agreed rate.
+  when the display changed, so a still screen's frame is repeated once a second. A launchd
+  agent of process type `Background` is throttled so as not to disturb the user, which
+  halved the frame rate and slowed input to a quarter of a second, so the agent is
+  `Interactive`.
 - **Keys**: the Keychain stores the local store's keys; the Secure Enclave holds only
   P-256 keys, so an Ed25519 key is software-held and may be wrapped by one
   ([ADR 0027](../adr/0027-ed25519.md)).
@@ -179,6 +194,14 @@ protocol of its own. LineageOS is the first target (no Google services, sideload
   drives the desktops and is never driven: a touchpad screen turns gestures into pointer
   motion, clicks and scrolling, and a text field types through the phone's own keyboard
   and input method, which gives characters rather than keys.
+- **Displays.** Only an app may capture the screen, after the user consents in the media
+  projection dialog for every share; the dialog shares one app unless the user picks the
+  entire screen. An app in the background may not open the dialog, so a viewer's request
+  becomes a notification whose tap opens it. The capture runs in a foreground service of
+  the media projection type while Android shows its cast indicator, and `MediaCodec`
+  encodes it; stopping the cast from the system ends the share with `consent`. A shared
+  desktop is decoded by `MediaCodec` into a surface on the app's watch screen, where touch
+  drives it.
 - **SMS, telephony.** SMS and telephony need their own permissions and, for SMS, store
   policy approval; neither is offered yet.
 - **Keys.** The Android Keystore holds no Ed25519 keys on most devices (section 3a); the

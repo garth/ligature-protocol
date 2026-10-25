@@ -13,7 +13,7 @@
 //! code, and a press carries what it means from winit's logical key (ADR
 //! 0043), so the device types what this keyboard's layout says.
 
-use std::io::{Read as _, Write as _};
+use std::io::{Read, Write as _};
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -299,6 +299,40 @@ fn decoder(started: &Started) -> std::io::Result<std::process::Child> {
         .spawn()
 }
 
+/// The decoder's pictures, read one at a time, with a picture identical to
+/// the one before passed over: a still screen still comes at the agreed
+/// rate, and the same picture again needs no drawing.
+struct Pictures {
+    raw: Vec<u8>,
+    last: Vec<u8>,
+    have: bool,
+}
+
+impl Pictures {
+    /// Pictures of `size` bytes each.
+    fn new(size: usize) -> Self {
+        Self {
+            raw: vec![0; size],
+            last: vec![0; size],
+            have: false,
+        }
+    }
+
+    /// Reads the next picture: `Some` with its bytes when it differs from the
+    /// one before, `None` when it is the same.
+    fn next(&mut self, r: &mut impl Read) -> std::io::Result<Option<&[u8]>> {
+        r.read_exact(&mut self.raw)?;
+        if self.have && self.raw == self.last {
+            return Ok(None);
+        }
+        // Both buffers keep the picture's size, so the next read fills a
+        // whole picture whichever it lands in.
+        std::mem::swap(&mut self.raw, &mut self.last);
+        self.have = true;
+        Ok(Some(&self.last))
+    }
+}
+
 /// Draws a picture of `pw` by `ph` pixels into a window buffer of `ww` by
 /// `wh`, scaled to fit with its shape kept and centred, the margins black.
 /// Returns where it lies: left, top, width and height in window pixels.
@@ -309,6 +343,10 @@ fn blit(
     (ww, wh): (u32, u32),
 ) -> (f64, f64, f64, f64) {
     let (fw, fh) = (f64::from(ww), f64::from(wh));
+    if pw == 0 || ph == 0 || pixels.len() < pw as usize * ph as usize {
+        buffer.fill(0);
+        return (0.0, 0.0, fw, fh);
+    }
     let scale = (fw / f64::from(pw)).min(fh / f64::from(ph));
     let (dw, dh) = (f64::from(pw) * scale, f64::from(ph) * scale);
     let (dx, dy) = ((fw - dw) / 2.0, (fh - dh) / 2.0);
@@ -459,18 +497,10 @@ async fn network(
                             let picture = picture.clone();
                             let proxy = proxy.clone();
                             std::thread::spawn(move || {
-                                let size = w as usize * h as usize * 4;
-                                let mut raw = vec![0u8; size];
-                                let mut last: Vec<u8> = Vec::new();
-                                while out.read_exact(&mut raw).is_ok() {
-                                    // A still screen still comes at the agreed
-                                    // rate: the same picture again is not
-                                    // drawn again.
-                                    if raw == last {
-                                        continue;
-                                    }
-                                    std::mem::swap(&mut raw, &mut last);
-                                    let pixels: Vec<u32> = last
+                                let mut pictures = Pictures::new(w as usize * h as usize * 4);
+                                while let Ok(new) = pictures.next(&mut out) {
+                                    let Some(new) = new else { continue };
+                                    let pixels: Vec<u32> = new
                                         .as_chunks::<4>()
                                         .0
                                         .iter()
@@ -1054,6 +1084,22 @@ fn evdev_code(key: KeyCode) -> Option<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_picture_the_same_as_the_last_is_passed_over() {
+        // Three pictures of two bytes: A, A again, B, then the end.
+        let mut stream: &[u8] = &[1, 2, 1, 2, 3, 4];
+        let mut pictures = Pictures::new(2);
+        let first = pictures.next(&mut stream).unwrap().map(<[u8]>::to_vec);
+        assert_eq!(first, Some(vec![1, 2]));
+        assert_eq!(pictures.next(&mut stream).unwrap(), None, "the same again");
+        let third = pictures.next(&mut stream).unwrap().map(<[u8]>::to_vec);
+        assert_eq!(third, Some(vec![3, 4]), "a whole picture after a swap");
+        assert!(pictures.next(&mut stream).is_err(), "the end of the stream");
+        // A first picture of all zeros is still drawn.
+        let mut zeros: &[u8] = &[0, 0];
+        assert!(Pictures::new(2).next(&mut zeros).unwrap().is_some());
+    }
 
     #[test]
     fn a_picture_is_scaled_to_fit_centred_with_black_margins() {

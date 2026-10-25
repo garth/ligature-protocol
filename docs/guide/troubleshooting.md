@@ -68,6 +68,17 @@ The daemon logs each connection and each refusal with the peer's key at `info`;
   sending, the daemon monitors the bus and needs nothing else.
 - `lpctl notify "test"` from a desktop is the quickest check of the whole path.
 
+## Input sharing does not start on the Mac
+
+- `lpctl caps` on another device shows whether the Mac offers input. When it offers none,
+  Ligature is not allowed under Accessibility and Input Monitoring in System Settings,
+  Privacy & Security; some macOS versions list the Accessibility switch under Device Control
+  and Data Access.
+- A switch that shows as on can belong to a previous version: macOS ties these permissions
+  to the app's signature, which changes with every version. Clear them as
+  [Upgrading](upgrade-uninstall.md#upgrading) shows and allow them again.
+- The log says what the daemon sees: `grep -i "input capture" ~/Library/Logs/ligature/ligatured.log`.
+
 ## A file does not arrive
 
 - The receiver decides where files land and how many at once; `lpctl files offers` prints

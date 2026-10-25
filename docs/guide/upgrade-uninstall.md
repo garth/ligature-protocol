@@ -22,6 +22,20 @@ check is `lpctl`'s alone: the daemon never contacts anything, the request carrie
 about you or your devices, and setting `LIGATURE_NO_UPDATE_CHECK=1` switches it off. The
 result is kept in `update-check.json` in the data directory.
 
+**macOS permissions after an upgrade**: the app is signed ad hoc, so to macOS every new
+version is a new app. Accessibility, Input Monitoring and Screen Recording are asked for
+again, and a switch left on in System Settings for the previous version no longer applies,
+even though it still shows as on. Clear the old entries and restart the daemon, then allow
+each one when macOS asks:
+
+```sh
+tccutil reset Accessibility org.ligatureprotocol.ligatured
+tccutil reset PostEvent org.ligatureprotocol.ligatured
+tccutil reset ListenEvent org.ligatureprotocol.ligatured
+tccutil reset ScreenCapture org.ligatureprotocol.ligatured
+launchctl kickstart -k gui/$(id -u)/org.ligatureprotocol.ligatured
+```
+
 **Android**: install the new APK over the old one. The release APK is signed with the
 project's key, so the update keeps the app's identity and data. The version code grows with
 every release, including from a pre-release to the release of the same number.

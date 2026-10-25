@@ -215,6 +215,8 @@ Linux machine and the phone drove the Mac, and the Mac drove the Linux machine a
 edge with its cursor hidden, so the `SetsCursorInBackground` lookup works. The input round
 trip from Linux was 7.8 ms median once the agent ran as `Interactive` (LP-150); as
 `Background` it was 272 ms. Scrolling went the expected way in both directions, so the sign
-change holds and posted scroll is not inverted a second time. Still to be recorded: whether
-the permissions survive a rebuilt ad hoc signature, and what secure input (a password field)
-does to the keyboard while driving.
+change holds and posted scroll is not inverted a second time. The permissions do not
+survive a rebuild: macOS ties them to the ad hoc signature, so a switch left on for the
+previous build shows as on and does not apply, and the entries are reset with `tccutil` and
+granted again, as the upgrade guide says. Still to be recorded: what secure input (a
+password field) does to the keyboard while driving.

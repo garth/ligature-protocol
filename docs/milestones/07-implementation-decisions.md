@@ -202,6 +202,7 @@ macOS SDK there; it is built, linked and run on the Mac. On the Mac, on 2026-10-
 Linux machine and the phone drove the Mac, and the Mac drove the Linux machine across its
 edge with its cursor hidden, so the `SetsCursorInBackground` lookup works. The input round
 trip from Linux was 7.8 ms median once the agent ran as `Interactive` (LP-150); as
-`Background` it was 272 ms. Still to be recorded: whether posted scroll follows the
-natural-scrolling setting a second time, whether the permissions survive a rebuilt ad hoc
-signature, and what secure input (a password field) does to the keyboard while driving.
+`Background` it was 272 ms. Scrolling went the expected way in both directions, so the sign
+change holds and posted scroll is not inverted a second time. Still to be recorded: whether
+the permissions survive a rebuilt ad hoc signature, and what secure input (a password field)
+does to the keyboard while driving.

@@ -10,7 +10,7 @@
 //!   cargo test -p ligatured --test input_nested -- --ignored --nocapture
 //! ```
 //!
-//! The compositor's configuration binds F9 and `eacute` to touch marker files
+//! The compositor's configuration binds F9, Shift+F11, F11 and `eacute` to touch marker files
 //! under `/tmp/lp-nested/`, which is how a key and a typed character are seen.
 
 #![cfg(target_os = "linux")]
@@ -83,7 +83,7 @@ async fn a_drive_moves_the_nested_compositor_s_pointer_and_types_into_it() {
     let display = std::env::var("LP_NESTED_DISPLAY").expect("LP_NESTED_DISPLAY");
     let instance = std::env::var("LP_NESTED_HYPR").expect("LP_NESTED_HYPR");
     let runtime_dir = std::path::PathBuf::from(std::env::var("XDG_RUNTIME_DIR").unwrap());
-    for marker in ["f9", "eacute", "f10", "q"] {
+    for marker in ["f9", "eacute", "f10", "q", "shift_f11", "f11"] {
         let _ = std::fs::remove_file(Path::new("/tmp/lp-nested").join(marker));
     }
 
@@ -200,6 +200,20 @@ async fn a_drive_moves_the_nested_compositor_s_pointer_and_types_into_it() {
         Path::new("/tmp/lp-nested/f9").exists()
     })
     .await;
+    // Shift held while F11 is tapped: the compositor sees the Shift
+    // modifier only if the virtual keyboard reports it (LP-143), so the
+    // Shift+F11 binding fires and the plain F11 one does not.
+    for (code, pressed) in [(42, true), (87, true), (87, false), (42, false)] {
+        capture.feed(InputEvent::Key { code, pressed });
+    }
+    until("Shift+F11 reached the compositor", || {
+        Path::new("/tmp/lp-nested/shift_f11").exists()
+    })
+    .await;
+    assert!(
+        !Path::new("/tmp/lp-nested/f11").exists(),
+        "F11 arrived without Shift"
+    );
     // A character the seat's layout has, through the temporary keymap.
     controller_sync
         .send(

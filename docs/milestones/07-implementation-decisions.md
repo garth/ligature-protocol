@@ -109,6 +109,18 @@ buttons, and discrete and smooth scroll map to the pointer's requests; the helpe
 every key and button it holds when the drive ends and when the daemon goes away. The screen
 it reports is the layout's logical bounding box from `xdg-output`.
 
+**The virtual keyboard reports its modifiers.** Hyprland takes a virtual keyboard's modifier
+state from its `modifiers` messages alone, never from its key events, and merges it with the
+other keyboards' for the applications and its own bindings. The helper sent keys only, so
+Shift reached nothing as a modifier: the owner, driving the Linux machine from `lpview` on the
+Mac, could not type shifted characters, and with the session's `shift:both_capslock_cancel`
+a Shift press sometimes locked Caps. The helper now keeps the modifier state and reports it
+after every modifier key. Each modifier key's role comes from the keysym on its first level
+in the seat's keymap (Shift, Control, Alt or Meta as Mod1, Super as Mod4, ISO_Level3_Shift as
+Mod5; Caps Lock and Num Lock lock Lock and Mod2), not from the keymap's `modifier_map`, which
+as Hyprland serialises it puts Left Shift in Lock alone under that option. The nested test
+binds Shift+F11 and F11: with the report the first fires, without it the second did.
+
 **Text is a short-lived keyboard of its own.** Hyprland reads a virtual keyboard's keymap
 when it is set and applies the configured layout at creation, so a keymap swapped on the
 running keyboard is not what a `wtype`-style sequence needs; instead a `text` event creates

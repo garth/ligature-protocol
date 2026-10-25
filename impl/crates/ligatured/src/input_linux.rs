@@ -291,6 +291,180 @@ impl Inject for LinuxInject {
 // ---------------------------------------------------------------------------
 // Injection: the helper process.
 
+/// The core modifier bits of an XKB modifier mask: the first eight modifiers
+/// have these indices in every keymap.
+pub mod mod_bits {
+    /// Shift.
+    pub const SHIFT: u32 = 1;
+    /// Lock (Caps Lock).
+    pub const LOCK: u32 = 1 << 1;
+    /// Control.
+    pub const CONTROL: u32 = 1 << 2;
+    /// Mod1, Alt.
+    pub const MOD1: u32 = 1 << 3;
+    /// Mod2, Num Lock.
+    pub const MOD2: u32 = 1 << 4;
+    /// Mod4, Super.
+    pub const MOD4: u32 = 1 << 6;
+    /// Mod5, the third level (AltGr).
+    pub const MOD5: u32 = 1 << 7;
+}
+
+/// What a modifier key does to the modifier state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModRole {
+    /// Sets these bits while it is held.
+    Held(u32),
+    /// Toggles these bits, locked, each time it is pressed.
+    Locks(u32),
+}
+
+/// The role of a key from the keysym on its first level.
+fn role_of(keysym: &str) -> Option<ModRole> {
+    use mod_bits::{CONTROL, LOCK, MOD1, MOD2, MOD4, MOD5, SHIFT};
+    Some(match keysym {
+        "Shift_L" | "Shift_R" => ModRole::Held(SHIFT),
+        "Control_L" | "Control_R" => ModRole::Held(CONTROL),
+        "Alt_L" | "Alt_R" | "Meta_L" | "Meta_R" => ModRole::Held(MOD1),
+        "Super_L" | "Super_R" | "Hyper_L" | "Hyper_R" => ModRole::Held(MOD4),
+        "ISO_Level3_Shift" | "Mode_switch" => ModRole::Held(MOD5),
+        "Caps_Lock" => ModRole::Locks(LOCK),
+        "Num_Lock" => ModRole::Locks(MOD2),
+        _ => return None,
+    })
+}
+
+/// The modifier keys of a keymap and their roles, by evdev code, read from
+/// what each key produces on its first level (the keymap's own
+/// `modifier_map` is not used: as a compositor serialises it, an option such
+/// as `shift:both_capslock_cancel` puts Left Shift in Lock alone). A keymap
+/// that cannot be read gives the US roles.
+#[must_use]
+pub fn modifier_roles(keymap: &str) -> HashMap<u16, ModRole> {
+    // `<NAME> = keycode;` in the keycodes section; the evdev code is the
+    // keycode less 8.
+    let mut codes: HashMap<&str, u16> = HashMap::new();
+    for line in keymap.lines() {
+        let line = line.trim();
+        let Some(rest) = line.strip_prefix('<') else {
+            continue;
+        };
+        let Some((name, rest)) = rest.split_once('>') else {
+            continue;
+        };
+        let Some(number) = rest.trim().strip_prefix('=') else {
+            continue;
+        };
+        if let Ok(code) = number.trim().trim_end_matches(';').trim().parse::<u16>()
+            && code >= 8
+        {
+            codes.insert(name, code - 8);
+        }
+    }
+    let mut roles = HashMap::new();
+    let mut rest = keymap;
+    while let Some(at) = rest.find("key <") {
+        let after = &rest[at + 5..];
+        let Some(close) = after.find('>') else { break };
+        let name = &after[..close];
+        let body = &after[close + 1..];
+        let block = &body[..body.find('}').unwrap_or(body.len())];
+        // `{ [ a, A ] }`, or `symbols[1]= [ a, A ]` in a longer block.
+        let from = block
+            .find("symbols[1]")
+            .and_then(|p| block[p..].find('=').map(|e| p + e + 1))
+            .unwrap_or(0);
+        if let Some(open) = block[from..].find('[') {
+            let keysym = block[from + open + 1..]
+                .split([',', ']'])
+                .next()
+                .unwrap_or("")
+                .trim();
+            if let (Some(code), Some(role)) = (codes.get(name), role_of(keysym)) {
+                roles.insert(*code, role);
+            }
+        }
+        rest = body;
+    }
+    if roles.is_empty() {
+        us_modifier_roles()
+    } else {
+        roles
+    }
+}
+
+/// The modifier keys of the US keymap by evdev code.
+#[must_use]
+pub fn us_modifier_roles() -> HashMap<u16, ModRole> {
+    use mod_bits::{CONTROL, LOCK, MOD1, MOD2, MOD4};
+    HashMap::from([
+        (42, ModRole::Held(mod_bits::SHIFT)),
+        (54, ModRole::Held(mod_bits::SHIFT)),
+        (29, ModRole::Held(CONTROL)),
+        (97, ModRole::Held(CONTROL)),
+        (56, ModRole::Held(MOD1)),
+        (100, ModRole::Held(MOD1)),
+        (125, ModRole::Held(MOD4)),
+        (126, ModRole::Held(MOD4)),
+        (58, ModRole::Locks(LOCK)),
+        (69, ModRole::Locks(MOD2)),
+    ])
+}
+
+/// The modifier state of a virtual keyboard, which the client must report
+/// itself (`zwp_virtual_keyboard_v1.modifiers`): the compositor takes it
+/// from that message alone, not from the key events, and merges it with the
+/// other keyboards' for the applications.
+#[derive(Debug, Default)]
+pub struct ModState {
+    roles: HashMap<u16, ModRole>,
+    held: Vec<u16>,
+    locked: u32,
+}
+
+impl ModState {
+    /// A state for a keymap's modifier roles, nothing held or locked.
+    #[must_use]
+    pub fn new(roles: HashMap<u16, ModRole>) -> Self {
+        Self {
+            roles,
+            held: Vec::new(),
+            locked: 0,
+        }
+    }
+
+    /// A key went down or up: the depressed and locked masks to report, if
+    /// it is a modifier key.
+    pub fn key(&mut self, code: u16, pressed: bool) -> Option<(u32, u32)> {
+        match *self.roles.get(&code)? {
+            ModRole::Held(_) => {
+                self.held.retain(|c| *c != code);
+                if pressed {
+                    self.held.push(code);
+                }
+            }
+            ModRole::Locks(bits) => {
+                if pressed {
+                    self.locked ^= bits;
+                }
+            }
+        }
+        Some((self.depressed(), self.locked))
+    }
+
+    /// The bits of the modifier keys held.
+    #[must_use]
+    pub fn depressed(&self) -> u32 {
+        self.held
+            .iter()
+            .filter_map(|c| match self.roles.get(c) {
+                Some(ModRole::Held(bits)) => Some(*bits),
+                _ => None,
+            })
+            .fold(0, |a, b| a | b)
+    }
+}
+
 /// The keymap text that types `text`: one key per distinct character, the
 /// characters named as Unicode keysyms, which `xkbcommon` reads without any
 /// system data. Returns the keymap and the evdev code of each character.
@@ -363,7 +537,8 @@ mod helper {
     use wayland_protocols_wlr::virtual_pointer::v1::client::zwlr_virtual_pointer_v1::ZwlrVirtualPointerV1;
 
     use super::{
-        HelperMessage, US_KEYMAP, WHEEL_STEP, read_frame, text_keymap, types, write_frame,
+        HelperMessage, ModState, US_KEYMAP, WHEEL_STEP, modifier_roles, read_frame, text_keymap,
+        types, write_frame,
     };
 
     /// The extent absolute motion is expressed against: fractions times this.
@@ -386,6 +561,8 @@ mod helper {
         keyboard_manager: ZwpVirtualKeyboardManagerV1,
         seat: WlSeat,
         keyboard: Option<ZwpVirtualKeyboardV1>,
+        /// The virtual keyboard's modifier state, which it reports itself.
+        mods: ModState,
         /// The seat's keymap, as `wl_keyboard` delivered it, or the US one.
         seat_keymap: Option<Vec<u8>>,
         outputs: HashMap<u32, Output>,
@@ -421,6 +598,7 @@ mod helper {
                     .clone()
                     .unwrap_or_else(|| US_KEYMAP.as_bytes().to_vec());
                 set_keymap(&kb, &keymap);
+                self.mods = ModState::new(modifier_roles(&String::from_utf8_lossy(&keymap)));
                 self.keyboard = Some(kb);
             }
             self.keyboard.as_ref().expect("just created")
@@ -487,6 +665,13 @@ mod helper {
                 InputEvent::Key { code, pressed } => {
                     let kb = self.ensure_keyboard(qh).clone();
                     kb.key(t, u32::from(*code), u32::from(*pressed));
+                    // The compositor takes a virtual keyboard's modifiers
+                    // from this message alone, never from its keys: without
+                    // it Shift shifts nothing, and with
+                    // `shift:both_capslock_cancel` a Shift can lock Caps.
+                    if let Some((depressed, locked)) = self.mods.key(*code, *pressed) {
+                        kb.modifiers(depressed, 0, locked, 0);
+                    }
                     self.note_held(event);
                 }
                 InputEvent::Text { text } => {
@@ -720,6 +905,7 @@ mod helper {
             keyboard_manager,
             seat,
             keyboard: None,
+            mods: ModState::default(),
             seat_keymap: None,
             outputs: HashMap::new(),
             xdg_outputs: HashMap::new(),
@@ -1301,6 +1487,92 @@ mod tests {
         assert_eq!(back_position(Edge::Right, 0.5, &zones), (4477.0, 720.0));
         assert_eq!(back_position(Edge::Left, 0.0, &zones), (2.0, 0.0));
         assert_eq!(back_position(Edge::Bottom, 1.0, &zones), (4480.0, 1437.0));
+    }
+
+    #[test]
+    fn modifier_roles_come_from_what_each_key_produces() {
+        // As this machine's compositor serialises its keymap with the
+        // options compose:caps, shift:both_capslock_cancel and
+        // altwin:swap_alt_win: Left Shift is in Lock's modifier_map, the Alt
+        // and Win keys are swapped, Caps Lock composes.
+        let keymap = "xkb_keymap {\n\
+            xkb_keycodes \"evdev\" {\n\
+            \t<LCTL>               = 37;\n\
+            \t<LFSH>               = 50;\n\
+            \t<RTSH>               = 62;\n\
+            \t<LALT>               = 64;\n\
+            \t<CAPS>               = 66;\n\
+            \t<NMLK>               = 77;\n\
+            \t<LWIN>               = 133;\n\
+            \talias <ALGR>         = <RALT>;\n\
+            };\n\
+            xkb_symbols \"pc\" {\n\
+            \tkey <LCTL>               {\t[       Control_L ] };\n\
+            \tkey <LFSH>               {\n\
+            \t\ttype= \"ALPHABETIC\",\n\
+            \t\tsymbols[1]= [         Shift_L,       Caps_Lock ]\n\
+            \t};\n\
+            \tkey <RTSH>               {\n\
+            \t\ttype= \"ALPHABETIC\",\n\
+            \t\tsymbols[1]= [         Shift_R,       Caps_Lock ]\n\
+            \t};\n\
+            \tkey <CAPS>               {\n\
+            \t\ttype= \"TWO_LEVEL\",\n\
+            \t\tsymbols[1]= [       Multi_key,       Multi_key ]\n\
+            \t};\n\
+            \tkey <LALT>               {\n\
+            \t\ttype= \"ONE_LEVEL\",\n\
+            \t\tsymbols[1]= [         Super_L ]\n\
+            \t};\n\
+            \tkey <NMLK>               {\t[        Num_Lock ] };\n\
+            \tkey <LWIN>               {\t[           Alt_L,          Meta_L ] };\n\
+            \tmodifier_map Shift { <RTSH> };\n\
+            \tmodifier_map Lock { <LFSH> };\n\
+            };\n\
+            };\n";
+        let roles = modifier_roles(keymap);
+        assert_eq!(
+            roles[&42],
+            ModRole::Held(mod_bits::SHIFT),
+            "Left Shift shifts"
+        );
+        assert_eq!(roles[&54], ModRole::Held(mod_bits::SHIFT));
+        assert_eq!(roles[&29], ModRole::Held(mod_bits::CONTROL));
+        assert_eq!(
+            roles[&56],
+            ModRole::Held(mod_bits::MOD4),
+            "Alt is Super, swapped"
+        );
+        assert_eq!(
+            roles[&125],
+            ModRole::Held(mod_bits::MOD1),
+            "Win is Alt, swapped"
+        );
+        assert_eq!(roles[&69], ModRole::Locks(mod_bits::MOD2));
+        assert_eq!(roles.get(&58), None, "Caps Lock composes here");
+        assert_eq!(modifier_roles("not a keymap"), us_modifier_roles());
+    }
+
+    #[test]
+    fn the_state_reports_held_and_locked_modifiers() {
+        let mut m = ModState::new(us_modifier_roles());
+        assert_eq!(m.key(30, true), None, "A is no modifier");
+        assert_eq!(m.key(42, true), Some((mod_bits::SHIFT, 0)));
+        assert_eq!(
+            m.key(29, true),
+            Some((mod_bits::SHIFT | mod_bits::CONTROL, 0))
+        );
+        assert_eq!(m.key(42, false), Some((mod_bits::CONTROL, 0)));
+        assert_eq!(m.key(29, false), Some((0, 0)));
+        // Both Shift keys: one up leaves Shift set.
+        m.key(42, true);
+        m.key(54, true);
+        assert_eq!(m.key(42, false), Some((mod_bits::SHIFT, 0)));
+        assert_eq!(m.key(54, false), Some((0, 0)));
+        // Caps Lock locks on a press and unlocks on the next.
+        assert_eq!(m.key(58, true), Some((0, mod_bits::LOCK)));
+        assert_eq!(m.key(58, false), Some((0, mod_bits::LOCK)));
+        assert_eq!(m.key(58, true), Some((0, 0)));
     }
 
     #[test]

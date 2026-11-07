@@ -80,14 +80,21 @@ fun MainScreen(
             Text("Starting the node…")
             return@Column
         }
-        StatusCard(status, state.backgroundRead, state.notificationAccess)
+        StatusCard(status, state.autoSend, state.notificationAccess)
         state.pairing?.let { pairing ->
             PairingCard(pairing, onConfirmPairing, onAbortPairing, onDismissPairing, onCopy, onShare)
         }
         if (!status.initialised) {
             if (state.pairing == null) SetupCard(onCreatePerson, onStartJoin)
         } else {
-            ClipboardCard(status, onSendClipboard, onReceiveClipboard, state.backgroundRead, state.lastClipboard)
+            ClipboardCard(
+                status,
+                onSendClipboard,
+                onReceiveClipboard,
+                state.autoSend,
+                onDriveSettings,
+                state.lastClipboard,
+            )
             NotificationsCard(state.notificationAccess, state.apps, onNotificationSettings, onToggleApp)
             if (state.inputTargets.isNotEmpty()) TouchpadCard(state.inputTargets, onTouchpad)
             if (state.screenTargets.isNotEmpty()) WatchCard(state.screenTargets, onWatch)
@@ -124,7 +131,7 @@ fun MainScreen(
 }
 
 @Composable
-private fun StatusCard(status: Status, backgroundRead: Boolean, notificationAccess: Boolean) {
+private fun StatusCard(status: Status, autoSend: Boolean, notificationAccess: Boolean) {
     Card {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (status.initialised) {
@@ -141,7 +148,7 @@ private fun StatusCard(status: Status, backgroundRead: Boolean, notificationAcce
                 style = MaterialTheme.typography.bodySmall,
             )
             Text(
-                if (backgroundRead) "Clipboard: automatic (background read allowed)"
+                if (autoSend) "Clipboard: automatic"
                 else "Clipboard: receives automatically, sends on request",
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -247,14 +254,15 @@ private fun ClipboardCard(
     status: Status,
     onSend: () -> Unit,
     onReceive: () -> Unit,
-    backgroundRead: Boolean,
+    autoSend: Boolean,
+    onDriveSettings: () -> Unit,
     lastClipboard: String?,
 ) {
     Card {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Clipboard", style = MaterialTheme.typography.titleMedium)
             Text(
-                if (backgroundRead) {
+                if (autoSend) {
                     "Copies on this phone go to your other devices as they happen, and theirs arrive here."
                 } else {
                     "What you copy on your other devices arrives here by itself. To send this " +
@@ -262,6 +270,15 @@ private fun ClipboardCard(
                         "settings, the action on the notification, or share text to Ligature."
                 },
             )
+            if (!autoSend) {
+                Text(
+                    "To send copies by themselves, turn Ligature on under Accessibility: Android " +
+                        "tells only the app in focus about a copy, so Ligature watches for the " +
+                        "system's copy indicator and takes the focus for a moment.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                TextButton(onClick = onDriveSettings) { Text("Accessibility settings") }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onSend, enabled = status.clipboardPeers.isNotEmpty()) {
                     Text("Send clipboard now")

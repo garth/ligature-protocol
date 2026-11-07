@@ -176,3 +176,17 @@ transfer notification shows it like any transfer. The node knows which device to
 the phone node and checks the laptop's host got the image as a promise item fetched only on
 `clipboard_item`, then a file selection saved into the laptop's downloads with
 `save_clipboard_files`, and `request_clipboard` reaching one peer.
+
+## LP-166: sending from the phone by itself
+
+On LineageOS 24 (Android 17) the clip listener does not fire for an unfocused app:
+`ClipboardService` logs that it denies the app and the callback never runs, so a focus window
+alone has nothing to start it. The trigger is the accessibility service (LP-167): SystemUI's
+clipboard indicator arrives as a window state change of class `android.widget.FrameLayout` with
+no text, where the notification shade is the same class with text. Only the count of the text
+items is looked at. `ClipboardFocus` then adds a one-pixel focusable window of the accessibility
+overlay type, which needs no display-over-other-apps permission, reads in the window's focus
+callback and removes it afterwards, since removing it inside the callback crashes in
+`ViewRootImpl`. `ClipEchoGuard` tells a change the node made from the user's, as neither the
+listener nor the indicator can say, and a read this path makes passes over what is marked
+`EXTRA_IS_SENSITIVE`, where a read the user asked for does not.

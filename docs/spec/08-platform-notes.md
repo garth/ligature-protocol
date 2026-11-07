@@ -159,10 +159,16 @@ protocol of its own. LineageOS is the first target (no Google services, sideload
 - **Clipboard.** Since Android 10 an app may read the clipboard only while its window has
   focus or it is the default keyboard; the change listener fires only when a read would
   be allowed. Writing is unrestricted. A phone therefore always receives (the daemon sets
-  the primary clip from the background) and sends in one of two ways: automatically, when
+  the primary clip from the background) and sends in one of three ways: automatically, when
   the app holds `READ_CLIPBOARD_IN_BACKGROUND`, a signature-level permission granted only
   to a build signed with the platform key, which means a ROM built from source, since the
-  LineageOS project's own builds are signed with keys it keeps; or on the user's request,
+  LineageOS project's own builds are signed with keys it keeps; automatically, while the user
+  has the accessibility service on, which sees SystemUI's clipboard indicator appear (the
+  listener does not fire for an unfocused app, as LineageOS 24 on Android 17 confirmed), adds
+  an invisible window to take the focus for a moment, reads and sends. Android shows its own
+  toast for each such read. A second copy while the indicator is still up, about six seconds,
+  makes no new event and waits for the next, and a clip the copying app marked sensitive is
+  passed over. Or on the user's request,
   from a quick-settings tile, a notification action, the app's own screen or the share
   sheet, each of which gives the app a moment of focus or hands it the text directly. The
   capability is advertised in both cases: what differs is when a `set` goes out, not
@@ -218,11 +224,6 @@ protocol of its own. LineageOS is the first target (no Google services, sideload
   policy approval; neither is offered yet.
 - **Keys.** The Android Keystore holds no Ed25519 keys on most devices (section 3a); the
   key file is software-held under the app's private directory.
-
-Open question: how an unmodified ROM gets the automatic path, since a platform-signed
-build needs a self-built ROM: an app allowed to display over other apps may start its send
-activity from the clip listener, which fires in the background on LineageOS 24; a
-notification on every copy is the tap-once fallback; an input method is the last resort.
 
 ## 4. iOS and iPadOS
 

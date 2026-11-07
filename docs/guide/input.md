@@ -77,7 +77,8 @@ driven only once you turn that on. On the app's main screen, under **Remote cont
 **Accessibility settings** and turn on Ligature. If Android says the setting is restricted,
 which it does for an app you installed yourself, open the app's page in Settings, choose
 **Allow restricted settings** from its menu, and try again. Turn it off the same way to stop
-your devices driving the phone. Ligature reads nothing on the screen for this.
+your devices driving the phone. Ligature cannot read what is on the screen through this. The
+same switch sends what you copy on the phone to your devices ([The clipboard](clipboard.md#android)).
 
 Then the phone is a device you can drive, from `lpview` or across an edge like any other:
 

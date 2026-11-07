@@ -39,6 +39,11 @@ Gradle build.
   the service only with `READ_CLIPBOARD_IN_BACKGROUND` on a platform-signed build, which an
   official LineageOS build cannot be (`NodeHolder` checks the permission before reading).
   Nothing else reads it: the share sheet sends what was shared.
+  With `DriveService` on it is automatic on any ROM: the listener does not fire out of focus, so
+  the service takes SystemUI's empty `FrameLayout` window event as the copy (the shade is the
+  same class with text), and `ClipboardFocus` adds a focusable accessibility overlay to read. A
+  copy on the owner's phone reaches their real clipboards even off the LAN, through the peers'
+  `get` on reconnect: never test one there.
 - Files land in MediaStore's Downloads as pending rows, finished after the hash check; a
   clashing name gets a numbered suffix chosen by the app (`Transfers.freeName`), since
   MediaStore's own renaming is not relied on. The clipboard's files are fetched into

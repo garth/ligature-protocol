@@ -10,6 +10,10 @@ release workflow publishes the section as the release notes with the installers.
 
 ### Added
 
+- What you copy on the phone is sent by itself once you turn Ligature on under Accessibility,
+  on any ROM. Android shows a toast for each read, and a clip the copying app marks as sensitive
+  is not sent this way (LP-166).
+
 - The phone can be driven from your other devices, once you turn Ligature on under
   Accessibility: a pointer on the screen, clicks as taps, the right button for Back and the
   middle for Home, the wheel to scroll, and typing into the field in focus. A request to watch

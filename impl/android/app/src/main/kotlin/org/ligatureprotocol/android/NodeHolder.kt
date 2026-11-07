@@ -70,7 +70,7 @@ data class UiState(
     val devices: List<Device> = emptyList(),
     val pairing: PairingState? = null,
     val lastError: String? = null,
-    val backgroundRead: Boolean = false,
+    val autoSend: Boolean = false,
     /** The accessibility service is on, so another device may drive this phone. */
     val drivable: Boolean = false,
     /** The last text the node set here or sent from here. */
@@ -106,6 +106,8 @@ object NodeHolder : Host {
     private var pairing: Pairing? = null
 
     private lateinit var appContext: Context
+
+    private val echoGuard = ClipEchoGuard()
 
     @Volatile
     private var listenerConnected = false
@@ -156,7 +158,7 @@ object NodeHolder : Host {
         _state.update {
             it.copy(
                 running = true,
-                backgroundRead = hasBackgroundRead(appContext),
+                autoSend = sendsAutomatically(appContext),
                 lastError = null,
                 notificationAccess = NotificationListener.hasAccess(appContext),
                 apps = apps(appContext),
@@ -378,9 +380,16 @@ object NodeHolder : Host {
      * the worker, and [onDone] is then called there with how many devices
      * offer the clipboard, or null when the clipboard holds nothing readable.
      */
-    fun readAndSend(context: Context, onDone: (Int?) -> Unit = {}) {
+    /**
+     * Reads the clipboard, which needs the focus or the background permission,
+     * and sends it. A send nobody asked for ([automatic]) passes over what the
+     * copying app marked sensitive, such as a password manager's copy.
+     */
+    fun readAndSend(context: Context, automatic: Boolean = false, onDone: (Int?) -> Unit = {}) {
         val n = node ?: return onDone(0)
-        val clip = readClip(context) ?: return onDone(null)
+        val clip = readClip(context, skipSensitive = automatic)
+        Log.d(TAG, "clipboard read: ${if (clip == null) "nothing" else "a clip"}, automatic=$automatic")
+        if (clip == null) return onDone(null)
         async {
             val read = openClip(context, clip)
             if (read == null) {
@@ -484,7 +493,7 @@ object NodeHolder : Host {
     fun setDrivable(on: Boolean, text: Boolean) {
         drivable = on
         canType = text
-        _state.update { it.copy(drivable = on) }
+        _state.update { it.copy(drivable = on, autoSend = on || (::appContext.isInitialized && hasBackgroundRead(appContext))) }
         async { runCatching { node?.setDrivable(on, text) } }
     }
 
@@ -521,7 +530,11 @@ object NodeHolder : Host {
     /** Re-reads whether access is granted and the app list, for the screen. */
     fun refreshNotificationAccess(context: Context) {
         _state.update {
-            it.copy(notificationAccess = NotificationListener.hasAccess(context), apps = apps(context))
+            it.copy(
+                autoSend = sendsAutomatically(context),
+                notificationAccess = NotificationListener.hasAccess(context),
+                apps = apps(context),
+            )
         }
     }
 
@@ -580,10 +593,15 @@ object NodeHolder : Host {
      * provider is what a peer sent and is not read back. Nothing is opened
      * here; [openClip] does that, off the caller's thread.
      */
-    private fun readClip(context: Context): Triple<String?, String?, List<Uri>>? {
+    private fun readClip(context: Context, skipSensitive: Boolean): Triple<String?, String?, List<Uri>>? {
         val manager = context.getSystemService(ClipboardManager::class.java)
         val clip = runCatching { manager.primaryClip }.getOrNull() ?: return null
         if (clip.itemCount == 0) return null
+        if (skipSensitive && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            clip.description.extras?.getBoolean(ClipDescription.EXTRA_IS_SENSITIVE) == true
+        ) {
+            return null
+        }
         var text: String? = null
         var html: String? = null
         val uris = ArrayList<Uri>()
@@ -611,6 +629,13 @@ object NodeHolder : Host {
         return ClipRead(text, html, contents, handles)
     }
 
+    /** Whether the clipboard change just seen is one the node itself made. */
+    fun isOwnClipChange(): Boolean = echoGuard.isEcho(System.currentTimeMillis())
+
+    /** Whether what is copied here goes out without a tap. */
+    fun sendsAutomatically(context: Context): Boolean =
+        hasBackgroundRead(context) || DriveService.isOn
+
     fun hasBackgroundRead(context: Context): Boolean =
         context.checkSelfPermission("android.permission.READ_CLIPBOARD_IN_BACKGROUND") ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
@@ -632,6 +657,7 @@ object NodeHolder : Host {
                 putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, false)
             }
         }
+        echoGuard.expect(System.currentTimeMillis())
         return runCatching { manager.setPrimaryClip(clip) }.isSuccess
     }
 
@@ -655,6 +681,7 @@ object NodeHolder : Host {
                 putBoolean(ClipDescription.EXTRA_IS_REMOTE_DEVICE, true)
             }
         }
+        echoGuard.expect(System.currentTimeMillis())
         val ok = runCatching { manager.setPrimaryClip(clip) }.isSuccess
         val files = value.items.filter { it.file }
         if (ok && files.isNotEmpty()) {

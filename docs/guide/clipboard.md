@@ -43,8 +43,20 @@ content the app serves, so pasting it in another app fetches the bytes from the 
 copied them. Because few Android apps paste files, a copied file list also raises a
 notification whose **Save** puts the files in Downloads.
 
-Sending is on your request, because Android lets an app read the clipboard only while it has
-the focus. Any of these sends what is on the clipboard:
+Android lets an app read the clipboard only while it has the focus, and tells an app without it
+nothing about a copy. So to send every copy as it happens, turn Ligature on under Accessibility
+(**Accessibility settings** on the app's screen; [Driving the phone](input.md#driving-the-phone)
+has the steps, and the same switch lets your devices control the phone). Ligature then watches
+for the system's copy indicator, takes the focus for a moment, and sends. Android sets a few
+limits on this:
+
+- Android shows **Ligature pasted from your clipboard** each time, since it tells you about
+  every read. Nothing else on the screen changes, and an open keyboard stays open.
+- A second copy within about six seconds of the first, while the system's indicator is still up,
+  is not noticed, so tap **Send clipboard** for that one.
+- What the copying app marks as sensitive, as a password manager should, is not sent by itself.
+
+Without that switch, sending is on your request. Any of these sends what is on the clipboard:
 
 - the **Send clipboard** quick-settings tile,
 - the **Send clipboard** action on the Ligature notification,

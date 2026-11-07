@@ -144,7 +144,8 @@ pasted on the others, with no server, account or internet connection. The clipbo
 carries rich text, images and files too: small content is pushed as it is copied, and large
 content is announced and fetched only when an application pastes it. The phone receives
 by itself and sends with a tap (a quick-settings tile, the notification, the share sheet),
-because Android lets only a focused app read the clipboard. A notification posted on the
+because Android lets only a focused app read the clipboard, or by itself once Ligature is on
+under Accessibility. A notification posted on the
 phone or the Linux machine appears on the other devices, with the app's name and icon and
 the device it came from, and dismissing it anywhere clears it elsewhere where the platform
 allows; the Mac displays but cannot read its own. Revoking a device stops it connecting,

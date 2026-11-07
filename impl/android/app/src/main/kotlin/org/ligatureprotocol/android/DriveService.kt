@@ -34,6 +34,7 @@ class DriveService : AccessibilityService() {
     private var lastX = 0f
     private var lastY = 0f
     private var pointer: View? = null
+    private var lastCopyRead = 0L
 
     override fun onServiceConnected() {
         current = this
@@ -50,7 +51,22 @@ class DriveService : AccessibilityService() {
         return super.onUnbind(intent)
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event == null ||
+            !isCopyIndicator(event.eventType, event.packageName, event.className, event.text.size)
+        ) {
+            return
+        }
+        val now = SystemClock.uptimeMillis()
+        if (now - lastCopyRead < COPY_DEBOUNCE_MS) return
+        if (NodeHolder.isOwnClipChange()) {
+            Log.d("ligature", "the copy indicator, for a clip the node set")
+            return
+        }
+        lastCopyRead = now
+        Log.d("ligature", "the copy indicator: reading the clipboard")
+        ClipboardFocus.read(this) { NodeHolder.readAndSend(this, automatic = true) }
+    }
 
     override fun onInterrupt() = Unit
 
@@ -225,6 +241,25 @@ class DriveService : AccessibilityService() {
         private const val MOVE_MS = 8L
         private const val SWIPE_MS = 200L
         private const val POINTER_DP = 20
+        private const val COPY_DEBOUNCE_MS = 500L
+        private const val SYSTEM_UI = "com.android.systemui"
+
+        /**
+         * Whether this event is SystemUI showing its clipboard indicator. Android
+         * tells an app out of focus nothing else of a copy: its listener does not
+         * fire. The notification shade is the same kind of window but carries
+         * text, of which only the count is looked at.
+         */
+        internal fun isCopyIndicator(
+            type: Int,
+            packageName: CharSequence?,
+            className: CharSequence?,
+            texts: Int,
+        ): Boolean =
+            type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+                packageName?.toString() == SYSTEM_UI &&
+                className?.toString() == "android.widget.FrameLayout" &&
+                texts == 0
 
         @Volatile
         private var current: DriveService? = null

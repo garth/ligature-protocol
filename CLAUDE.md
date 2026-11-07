@@ -16,7 +16,8 @@ Status is alpha, with release packages for Linux, macOS and Android on the GitHu
 page (tags `vX.Y.Z-alpha`). The spec is a draft, the Rust workspace implements milestones 1 to 5
 (pairing, the clipboard with text, HTML, images and files, notifications and file transfer
 between a Linux machine, a Mac and an Android phone on one LAN; the phone receives the
-clipboard automatically and sends on a tap, since Android lets only a focused app read it;
+clipboard automatically and sends on a tap, since Android lets only a focused app read it, or
+by itself with its accessibility service on, as `main` does;
 large clipboard content is fetched only when pasted; the Mac displays
 notifications but cannot read its own; files land in each device's download folder, from
 `lpctl files` on the desktops and the share sheet on the phone). On `main`, not yet in a
@@ -144,8 +145,9 @@ The reference implementation is Rust and is also the production implementation
   `02-android-clipboard.md` is done, every exit criterion run on a LineageOS phone with the
   two desktops, and `02-implementation-decisions.md`
   records the Android choices (the daemon as a library behind UniFFI; the clipboard read by
-  the app when Android allows and automatic only with `READ_CLIPBOARD_IN_BACKGROUND`, which
-  only a platform-signed build holds and an official LineageOS build cannot be; a
+  the app when Android allows and automatic with `READ_CLIPBOARD_IN_BACKGROUND`, which
+  only a platform-signed build holds and an official LineageOS build cannot be, or since LP-166
+  with the accessibility service on; a
   `connectedDevice` foreground service with the multicast lock). `03-notifications.md`
   (notifications flow between every device that emits or displays them: one family with
   two directions, dismissal fanned out directly, Linux emitting by monitoring the session

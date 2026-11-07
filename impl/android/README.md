@@ -96,6 +96,10 @@ depends on what Android allows:
   request: the **Send clipboard** quick-settings tile, the action on the notification,
   **Send clipboard now** on the main screen, or **Send to my devices** in the share sheet.
   Opening the app also sends what is on the clipboard.
+- **With `DriveService` on under Accessibility** (any ROM): the service sees SystemUI's
+  clipboard indicator appear, takes the focus for a moment with an invisible window, reads and
+  sends. Android shows its toast for each read, a copy within about six seconds of the last is
+  not noticed, and a clip marked sensitive is passed over.
 - **Platform-signed build** (a LineageOS you build yourself, or any ROM whose platform key
   you hold): the app declares `android.permission.READ_CLIPBOARD_IN_BACKGROUND`, which is
   granted only to apps signed with the platform certificate. With it every copy is sent as

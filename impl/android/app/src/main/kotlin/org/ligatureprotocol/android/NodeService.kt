@@ -20,9 +20,10 @@ import androidx.core.content.ContextCompat
  * Keeps the node alive: a foreground service of type `connectedDevice` that
  * holds the Wi-Fi multicast lock (mDNS needs it) and starts the node from the
  * app's files directory. Receiving the clipboard needs nothing more: the
- * node sets the primary clip from here. Sending is automatic only when the
- * background-read permission is held; otherwise the notification's action,
- * the quick-settings tile and the share sheet send it.
+ * node sets the primary clip from here. Sending is automatic while the user
+ * has [DriveService] on or the background-read permission is held; otherwise
+ * the notification's action, the quick-settings tile and the share sheet send
+ * it.
  */
 class NodeService : Service() {
     private var multicastLock: WifiManager.MulticastLock? = null
@@ -79,9 +80,15 @@ class NodeService : Service() {
     private val retryStart = Runnable { networkUp() }
 
     private val clipListener = ClipboardManager.OnPrimaryClipChangedListener {
+        if (NodeHolder.isOwnClipChange()) {
+            Log.d("ligature", "clipboard changed by the node")
+            return@OnPrimaryClipChangedListener
+        }
+        Log.d("ligature", "clipboard changed")
         // Fires only when Android lets this app read: in the foreground, or
-        // with READ_CLIPBOARD_IN_BACKGROUND on a platform-signed build.
-        NodeHolder.readAndSend(this)
+        // with READ_CLIPBOARD_IN_BACKGROUND on a platform-signed build. A copy
+        // anywhere else is seen by DriveService, if the user has it on.
+        NodeHolder.readAndSend(this, automatic = true)
     }
 
     override fun onCreate() {

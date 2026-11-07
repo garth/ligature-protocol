@@ -46,6 +46,7 @@ class NodeService : Service() {
             NodeHolder.restartDiscovery()
             return
         }
+        mainThread.removeCallbacks(retryStart)
         // Opening the store (with its verification pass) and binding the
         // sockets is disk and network work: off the main thread (LP-127).
         starting = true
@@ -60,9 +61,12 @@ class NodeService : Service() {
             mainThread.post {
                 starting = false
                 if (!started) {
-                    stopSelf()
+                    // Nobody may open the app to start it again: keep trying,
+                    // and a new network tries at once (networkUp).
+                    mainThread.postDelayed(retryStart, retryDelayMs(failedStarts++))
                     return@post
                 }
+                failedStarts = 0
                 clipboard = getSystemService(ClipboardManager::class.java).also {
                     it.addPrimaryClipChangedListener(clipListener)
                 }
@@ -71,6 +75,8 @@ class NodeService : Service() {
     }
 
     private var starting = false
+    private var failedStarts = 0
+    private val retryStart = Runnable { networkUp() }
 
     private val clipListener = ClipboardManager.OnPrimaryClipChangedListener {
         // Fires only when Android lets this app read: in the foreground, or
@@ -100,6 +106,7 @@ class NodeService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
 
     override fun onDestroy() {
+        mainThread.removeCallbacks(retryStart)
         connectivity?.unregisterNetworkCallback(networkCallback)
         clipboard?.removePrimaryClipChangedListener(clipListener)
         // The node's shutdown waits up to two seconds for its tasks: not on
@@ -128,7 +135,9 @@ class NodeService : Service() {
             .setSmallIcon(R.drawable.ic_tile)
             .setContentTitle(getString(R.string.notification_title))
             .setContentIntent(open)
-            .setOngoing(true)
+            .setCategory(Notification.CATEGORY_SERVICE)
+            .setShowWhen(false)
+            .setVisibility(Notification.VISIBILITY_SECRET)
             .addAction(
                 Notification.Action.Builder(null, getString(R.string.notification_action_send), send).build(),
             )
@@ -136,8 +145,18 @@ class NodeService : Service() {
     }
 
     companion object {
-        const val CHANNEL_ID = "node"
+        /** The service's channel, at the lowest importance Android allows it. */
+        const val CHANNEL_ID = "node-quiet"
+
+        /** The channel before LP-165: an app cannot lower a channel it made. */
+        const val OLD_CHANNEL_ID = "node"
         private const val NOTIFICATION_ID = 1
+        private const val FIRST_RETRY_MS = 5_000L
+        private const val LONGEST_RETRY_MS = 300_000L
+
+        /** How long to wait after [failures] failed starts in a row, for ever. */
+        fun retryDelayMs(failures: Int): Long =
+            if (failures >= 6) LONGEST_RETRY_MS else minOf(FIRST_RETRY_MS shl failures, LONGEST_RETRY_MS)
 
         fun start(context: Context) {
             ContextCompat.startForegroundService(context, Intent(context, NodeService::class.java))

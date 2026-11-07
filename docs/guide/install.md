@@ -118,9 +118,13 @@ The daemon runs as a per-user launchd agent that starts at login.
 1. Allow installs from the source you use (your browser or file manager) and open the APK.
     The release APK is signed with the project's key; an update installs over the previous
     version and keeps your identity.
-2. Open Ligature. It starts the node as a foreground service, which shows a persistent
-    notification, and asks to post notifications on Android 13 and later: allow it, since
-    transfers, received files and the clipboard's **Save** all arrive as notifications.
+2. Open Ligature once. It starts the node as a service and asks to post notifications on
+    Android 13 and later: allow it, since transfers, received files and the clipboard's
+    **Save** all arrive as notifications. From then on the node starts by itself when the
+    phone boots and after an update, and the app need not be open. Android requires a
+    notification while a service like this runs, so "Ligature is running" sits in the silent
+    group; swipe it away if you like, and the node keeps running. It comes back the next
+    time the node starts.
 3. Tap **Battery settings** when the screen offers it and allow unrestricted battery use.
     Without it Android stops the node when the phone has been idle for a while.
 4. For your other devices' notifications to leave the phone, tap **Notification access** and

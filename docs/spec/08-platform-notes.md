@@ -145,9 +145,13 @@ The app supplies what the platform keeps from a library and nothing else; it spe
 protocol of its own. LineageOS is the first target (no Google services, sideloaded;
 [ADR 0033](../adr/0033-supported-platforms.md)). What the platform allows:
 
-- **Running.** A foreground service of type `connectedDevice` with a persistent
-  notification keeps the daemon alive and is restarted at boot; the user may still have
-  to exempt the app from battery optimisation. mDNS needs the Wi-Fi multicast lock, which
+- **Running.** A foreground service of type `connectedDevice` keeps the daemon alive, with
+  nothing depending on the app's screen: it starts at boot and after an update of the app,
+  which kills it, and a start that fails is tried again until it succeeds. Android requires
+  a notification for such a service and raises its channel to low importance at the least,
+  so it sits in the silent group; the user may swipe it away and the service keeps running,
+  until its next start posts it again. The user may still have to exempt the app from
+  battery optimisation. mDNS needs the Wi-Fi multicast lock, which
   the service holds while it runs, and a responder started before Wi-Fi has an address
   hears nothing, so the node starts on the first available network and restarts discovery
   on every change of network. The QUIC endpoint, discovery, gossip and manifests are the

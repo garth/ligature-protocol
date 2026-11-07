@@ -8,9 +8,11 @@
   the reason it stopped. `systemctl --user restart ligatured` starts it again.
 - macOS: `launchctl print gui/$(id -u)/org.ligatureprotocol.ligatured | head` and
   `~/Library/Logs/ligature/ligatured.log`.
-- Android: the persistent "Ligature is running" notification is the node; without it the
-  service is stopped. Open the app to start it, and allow unrestricted battery use so
-  Android does not stop it again.
+- Android: `Ligature is running` is the node's notification, but you may have swiped it away,
+  so its absence proves nothing; the node's card on the app's screen shows the connected
+  devices. Opening the app starts the node if it has stopped. Allow unrestricted battery use
+  so Android does not stop it again, and note that **Force stop** in the app's settings keeps
+  it stopped, even across a reboot, until the app is opened.
 
 ## Devices do not see each other
 

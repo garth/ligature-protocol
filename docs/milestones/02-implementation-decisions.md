@@ -68,9 +68,12 @@ that grants it is system-only, so no sideloaded app reaches it on an official RO
 **Service.** `NodeService` is a foreground service of type `connectedDevice` (declared
 from API 29; required from API 34, where `CHANGE_WIFI_MULTICAST_STATE` is its
 prerequisite). It holds the `WifiManager.MulticastLock` so the driver delivers mDNS,
-starts the node and stops it on destroy. `BootReceiver` starts it at boot; the main
-activity, the tile and the share target start it if it is not running. The user is asked
-to allow unrestricted battery use.
+starts the node and stops it on destroy, and tries a failed start again, every five seconds
+at first and every five minutes at most. `BootReceiver` starts it at boot and after an update
+of the app; the main activity, the tile and the share target start it if it is not running.
+The user is asked to allow unrestricted battery use. Its channel asks for minimum importance,
+which Android raises to low for a foreground service, and its notification is not marked
+ongoing, so the user may swipe it away while the service runs (LP-165).
 
 **State and locations.** The node's data directory is `files/ligature/` in the app's
 private storage, so `keys.cbor` and `store.sqlite` are reachable by this app alone; the

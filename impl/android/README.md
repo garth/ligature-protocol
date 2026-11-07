@@ -51,9 +51,11 @@ release), so each version installs over the one before it (LP-85, LP-127).
 
 ## First run
 
-1. Open Ligature. It starts the node as a foreground service (a persistent notification)
-   and asks for notification permission on Android 13 and later. Allow unrestricted
-   battery use when the screen offers it, or Android will stop the node in the background.
+1. Open Ligature once. It asks for notification permission on Android 13 and later and starts
+   the node as a foreground service, which from then on starts itself at boot and after an
+   update (its notification sits in the silent group and may be swiped away). Allow
+   unrestricted battery use when the screen offers it, or Android will stop the node in the
+   background.
 2. On a device that already has your keys, nothing to do yet. On the phone, tap **Show
    pairing offer**. Send the offer text to that device (**Share** or **Copy**, or scan the
    QR code with anything that can read one) and run there:
@@ -147,5 +149,5 @@ too.
 | Node, keys, store | `files/ligature/` in the app's private storage (`keys.cbor` 0600, `store.sqlite`) |
 | Logs | logcat, tag `ligature` |
 | Device name | the name under Settings → About phone, else the model |
-| Service | `NodeService`, foreground type `connectedDevice`, started at boot and when the app opens |
+| Service | `NodeService`, foreground type `connectedDevice`, started at boot, after an update and when the app opens; a failed start is retried |
 | Bindings | generated into `app/build/generated/uniffi/`, never committed |

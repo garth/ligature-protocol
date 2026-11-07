@@ -13,11 +13,13 @@ class LigatureApp : Application() {
             NotificationChannel(
                 NodeService.CHANNEL_ID,
                 getString(R.string.notification_channel),
-                NotificationManager.IMPORTANCE_LOW,
+                NotificationManager.IMPORTANCE_MIN,
             ).apply {
                 setShowBadge(false)
             },
         )
+        // Android refuses while a foreground service still shows on it.
+        runCatching { manager.deleteNotificationChannel(NodeService.OLD_CHANNEL_ID) }
         Transfers.createChannel(this)
     }
 }

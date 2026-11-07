@@ -124,8 +124,9 @@ touchpad: one finger moves the pointer, a tap clicks, a touch held still presses
 until the finger lifts, two fingers scroll, and the field at the bottom types what the
 phone's keyboard produces, with Backspace, Enter and right-click buttons. The pointer starts
 in the middle of the desktop's screen. Done or Back ends the drive and lifts every key and
-button on the desktop; so does the desktop or the connection going away. The phone cannot
-be driven from a desktop: Android lets an app inject nothing (chapter 08).
+button on the desktop; so does the desktop or the connection going away. The phone is driven
+in turn while `DriveService` is on under Accessibility, the only way Android lets an app
+inject (chapter 08).
 
 ## Screen
 
@@ -150,4 +151,5 @@ too.
 | Logs | logcat, tag `ligature` |
 | Device name | the name under Settings → About phone, else the model |
 | Service | `NodeService`, foreground type `connectedDevice`, started at boot, after an update and when the app opens; a failed start is retried |
+| Being driven | `DriveService`, an accessibility service the user turns on; the node's `HostInput` translates events into `DriveAction`s |
 | Bindings | generated into `app/build/generated/uniffi/`, never committed |

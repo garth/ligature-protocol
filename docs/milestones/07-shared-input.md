@@ -27,9 +27,7 @@ service exists (decision 2).
 
 ## 2. Non-goals for this milestone
 
-Controlling the phone from a desktop (Android lets a third-party app dispatch gestures
-through an accessibility service and nothing more precise without privileged access; the
-phone sends and never accepts); game controllers, pens, touch screens and tablets; remote
+Game controllers, pens, touch screens and tablets; remote
 desktop viewing, which is milestone 8; a graphical layout editor, which is LP-88's
 configuration app; clipboard and drag-and-drop between the desktops (the clipboard
 already crosses, drag-and-drop does not and is not attempted); a QUIC datagram path
@@ -50,7 +48,8 @@ What this milestone pins:
    and mouse and sends them), `absolute` (this device accepts pointer positions as
    fractions of its screen beside relative motion, which milestone 8 uses) and `text`
    (this device can type a string of characters, decision 6). The desktops advertise all
-   four; the phone advertises `provides` only.
+   four; the phone advertises `provides`, and the others while its accessibility service is
+   on (LP-167).
 2. **A binding stands in for the principal on a single-user device.** Chapter 10 gives a
    device-scoped capability to the device principal, which on Linux is a system service
    and on macOS a launchd daemon, neither of which exists yet. Until they do, the account

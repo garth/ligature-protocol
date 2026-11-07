@@ -1,5 +1,6 @@
 package org.ligatureprotocol.android
 
+import org.ligatureprotocol.core.DriveAction
 import org.ligatureprotocol.core.TouchEvent
 
 /**
@@ -20,4 +21,19 @@ internal fun coalesceTouch(events: List<TouchEvent>): List<TouchEvent> {
         }
     }
     return out
+}
+
+/**
+ * Adds [action] to the gestures waiting for the one under way: only the newest
+ * move of a run is worth making, and swipes in a row add up, so a fast pointer
+ * or wheel never leaves the finger behind.
+ */
+internal fun coalesceDrive(queue: MutableList<DriveAction>, action: DriveAction) {
+    val last = queue.lastOrNull()
+    when {
+        action is DriveAction.TouchMove && last is DriveAction.TouchMove -> queue[queue.size - 1] = action
+        action is DriveAction.Swipe && last is DriveAction.Swipe ->
+            queue[queue.size - 1] = DriveAction.Swipe(last.x, last.y, last.dx + action.dx, last.dy + action.dy)
+        else -> queue.add(action)
+    }
 }

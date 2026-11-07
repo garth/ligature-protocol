@@ -71,6 +71,8 @@ data class UiState(
     val pairing: PairingState? = null,
     val lastError: String? = null,
     val backgroundRead: Boolean = false,
+    /** The accessibility service is on, so another device may drive this phone. */
+    val drivable: Boolean = false,
     /** The last text the node set here or sent from here. */
     val lastClipboard: String? = null,
     /** Whether the user granted notification access. */
@@ -108,6 +110,12 @@ object NodeHolder : Host {
     @Volatile
     private var listenerConnected = false
 
+    @Volatile
+    private var drivable = false
+
+    @Volatile
+    private var canType = false
+
     /**
      * One thread for every node call that waits on the network or the disk
      * (revoking, asking for clipboards, opening shared files, starting and
@@ -144,6 +152,7 @@ object NodeHolder : Host {
             metrics.density.toDouble(),
         )
         if (listenerConnected) node?.setNotificationsEmitting(true)
+        node?.setDrivable(drivable, canType)
         _state.update {
             it.copy(
                 running = true,
@@ -471,6 +480,24 @@ object NodeHolder : Host {
     // Notifications (milestone 3).
 
     /** The listener connected or disconnected: the capability's `emits` follows. */
+    /** The accessibility service came or went: another device may drive this phone. */
+    fun setDrivable(on: Boolean, text: Boolean) {
+        drivable = on
+        canType = text
+        _state.update { it.copy(drivable = on) }
+        async { runCatching { node?.setDrivable(on, text) } }
+    }
+
+    /** This screen's size in pixels, as it is turned now. */
+    fun screenPixels(context: Context): Pair<Int, Int> {
+        val metrics = android.util.DisplayMetrics()
+        @Suppress("DEPRECATION") // The size of the whole screen, from any context.
+        context.getSystemService(android.hardware.display.DisplayManager::class.java)
+            .getDisplay(android.view.Display.DEFAULT_DISPLAY)
+            .getRealMetrics(metrics)
+        return metrics.widthPixels to metrics.heightPixels
+    }
+
     fun setNotificationsEmitting(emitting: Boolean) {
         listenerConnected = emitting
         async {
@@ -589,6 +616,13 @@ object NodeHolder : Host {
             android.content.pm.PackageManager.PERMISSION_GRANTED
 
     // Host: called from the node's threads.
+
+    override fun drive(action: org.ligatureprotocol.core.DriveAction) = DriveService.perform(action)
+
+    override fun driveScreen(): org.ligatureprotocol.core.DriveScreen {
+        val (width, height) = screenPixels(appContext)
+        return org.ligatureprotocol.core.DriveScreen(width.toUInt(), height.toUInt())
+    }
 
     override fun setClipboard(text: String): Boolean {
         val manager = appContext.getSystemService(ClipboardManager::class.java)

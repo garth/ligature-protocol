@@ -7,8 +7,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use ligature_android::{
-    Config, DownloadTarget, Event, Host, HostClipValue, LocalNotification, LogLevel, Node,
-    NotificationCopy, OutgoingFile, PublishedDownload, TransferInfo,
+    Config, DownloadTarget, DriveAction, DriveScreen, Event, Host, HostClipValue,
+    LocalNotification, LogLevel, Node, NotificationCopy, OutgoingFile, PublishedDownload,
+    TransferInfo,
 };
 
 #[derive(Default)]
@@ -31,6 +32,8 @@ struct FakeHost {
     share_requests: Mutex<Vec<(String, u32, u32, u32)>>,
     share_keyframes: Mutex<u32>,
     share_stops: Mutex<u32>,
+    /// What a drive of this phone asked of it.
+    driven: Mutex<Vec<DriveAction>>,
 }
 
 impl FakeHost {
@@ -161,6 +164,17 @@ impl Host for FakeHost {
 
     fn screen_share_stop(&self) {
         *self.share_stops.lock().unwrap() += 1;
+    }
+
+    fn drive(&self, action: DriveAction) {
+        self.driven.lock().unwrap().push(action);
+    }
+
+    fn drive_screen(&self) -> DriveScreen {
+        DriveScreen {
+            width: 1000,
+            height: 2000,
+        }
     }
 
     fn screen_share_keyframe(&self) {
@@ -705,6 +719,155 @@ fn the_phone_is_a_touchpad_for_a_desktop() {
     until("the drive ended with the connection", || {
         phone.input_driving().is_none()
     });
+    phone.stop();
+    runtime.shutdown_timeout(Duration::from_secs(2));
+}
+
+/// A desktop drives the phone (LP-167): only once the app's accessibility
+/// service is on, and what it sends becomes actions for the service.
+#[test]
+fn a_desktop_drives_the_phone_once_its_service_is_on() {
+    use ligature_android::BTN_LEFT;
+    use ligatured::input::Touchpad;
+    use lp_core::facts::Role;
+    use lp_core::input::{Enter, INPUT_TYPE, InputEvent, InputParams};
+    use lp_core::paths::Locations;
+    use lp_core::wire::Timestamp;
+    use lp_identity::cross_signing::PersonKeys;
+    use lp_identity::facts;
+
+    let at = |offset: i64| Timestamp::from_unix(1_760_000_000 + offset).unwrap();
+    let phone_dir = tempfile::tempdir().unwrap();
+    let phone_host = Arc::new(FakeHost::with_downloads());
+    let phone = Node::start(config(&phone_dir, "phone"), phone_host.clone()).unwrap();
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let desktop_dir = tempfile::tempdir().unwrap();
+    let (desktop, input, addr) = {
+        let _guard = runtime.enter();
+        let loc = Locations::resolve(Some(desktop_dir.path()), None);
+        let (d, events) =
+            ligatured::daemon::Daemon::open(loc, "127.0.0.1:0".parse().unwrap(), Some("desktop"))
+                .unwrap();
+        let input = d.attach_input(Some(Touchpad::new()), None);
+        ligatured::run::spawn_connection_events(d.clone(), events);
+        let addr = d.manager().endpoint().local_addr().unwrap();
+        (d, input, addr)
+    };
+    let alice = PersonKeys::generate().unwrap();
+    let person = facts::person_fact(&alice, "Alice", 1, at(0)).unwrap();
+    let phone_role = facts::role_fact(
+        &alice,
+        Role::Binding,
+        *phone.daemon().binding().public(),
+        true,
+        at(1),
+    )
+    .unwrap();
+    let desktop_role = facts::role_fact(
+        &alice,
+        Role::Binding,
+        *desktop.binding().public(),
+        true,
+        at(2),
+    )
+    .unwrap();
+    for d in [phone.daemon(), &desktop] {
+        d.store().insert(&person).unwrap();
+        d.store().insert(&phone_role).unwrap();
+        d.store().insert(&desktop_role).unwrap();
+        d.update_keys(|k| k.set_joined(*alice.person(), Some(&alice.self_signing)))
+            .unwrap();
+    }
+    let dial = phone.daemon().clone();
+    runtime
+        .block_on(async move { dial.manager().connect(addr).await })
+        .unwrap();
+    let phone_key = *phone.daemon().binding().public();
+    let phone_params = || {
+        desktop
+            .registry()
+            .peers()
+            .into_iter()
+            .find(|caps| caps.peer == phone_key)
+            .and_then(|caps| {
+                caps.capabilities
+                    .iter()
+                    .find_map(InputParams::from_descriptor)
+            })
+    };
+    until("the desktop sees the phone's input", || {
+        desktop.registry().peers_offering(INPUT_TYPE).len() == 1 && phone_params().is_some()
+    });
+    assert!(
+        !phone_params().unwrap().accepts,
+        "with the service off the phone only provides"
+    );
+    assert!(
+        runtime
+            .block_on(input.drive(phone_key, Enter::absolute(0.5, 0.5)))
+            .is_err(),
+        "a drive is refused with the service off"
+    );
+    assert!(phone_host.driven.lock().unwrap().is_empty());
+
+    phone.set_drivable(true, true);
+    until("the phone offers to be driven", || {
+        phone_params().is_some_and(|p| p.accepts && p.absolute && p.text)
+    });
+    let ready = runtime
+        .block_on(input.drive(phone_key, Enter::absolute(0.5, 0.5)))
+        .unwrap();
+    assert_eq!((ready.width, ready.height), (1000, 2000));
+    runtime
+        .block_on(input.send(
+            vec![
+                InputEvent::Position { x: 0.1, y: 0.1 },
+                InputEvent::Button {
+                    code: BTN_LEFT,
+                    pressed: true,
+                },
+                InputEvent::Text {
+                    text: "hi".to_owned(),
+                },
+            ],
+            None,
+        ))
+        .unwrap();
+    until("the events arrive as actions", || {
+        phone_host.driven.lock().unwrap().len() == 4
+    });
+    assert_eq!(
+        phone_host.driven.lock().unwrap().clone(),
+        vec![
+            DriveAction::Begin {
+                x: 500.0,
+                y: 1000.0
+            },
+            DriveAction::Pointer { x: 100.0, y: 200.0 },
+            DriveAction::TouchDown { x: 100.0, y: 200.0 },
+            DriveAction::Text {
+                text: "hi".to_owned()
+            },
+        ]
+    );
+
+    // The desktop going away lifts the finger it left down.
+    desktop.shutdown();
+    until("the drive ended with the connection", || {
+        phone_host.driven.lock().unwrap().last() == Some(&DriveAction::End)
+    });
+    assert!(
+        phone_host
+            .driven
+            .lock()
+            .unwrap()
+            .contains(&DriveAction::TouchUp { x: 100.0, y: 200.0 })
+    );
     phone.stop();
     runtime.shutdown_timeout(Duration::from_secs(2));
 }

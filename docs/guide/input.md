@@ -3,7 +3,7 @@
 One keyboard and mouse can drive all your desktops. Push the pointer off an edge of one
 screen and it carries on onto the device you put beside that edge, typing and clicking
 there until it comes back the way it went. The phone can also be a touchpad and keyboard for
-any of your desktops.
+any of your desktops, and can be driven itself once you allow it.
 
 ## Placing your devices
 
@@ -67,9 +67,30 @@ On the app's main screen, under **Touchpad**, tap **Drive** followed by the desk
   **Right click** are buttons of their own;
 - **Done**, or leaving the screen, ends the drive.
 
-The phone drives desktops but is never driven: Android gives no app a way to inject touches
-or keys into other apps. A desktop that the phone is driving still follows its own layout,
-so the phone can push the pointer on across an edge to the next desktop.
+A desktop that the phone is driving still follows its own layout, so the phone can push the
+pointer on across an edge to the next desktop.
+
+## Driving the phone
+
+Android lets an app act on the screen only as an accessibility service, so the phone can be
+driven only once you turn that on. On the app's main screen, under **Remote control**, tap
+**Accessibility settings** and turn on Ligature. If Android says the setting is restricted,
+which it does for an app you installed yourself, open the app's page in Settings, choose
+**Allow restricted settings** from its menu, and try again. Turn it off the same way to stop
+your devices driving the phone. Ligature reads nothing on the screen for this.
+
+Then the phone is a device you can drive, from `lpview` or across an edge like any other:
+
+- a dot on the screen is the pointer, and the left button is a finger at it, so a click is a
+  tap and a held button drags;
+- the right button is Back and the middle button is Home; Escape is Back as well;
+- the wheel scrolls, as a swipe;
+- typing goes to the text field in focus, so click into a field first, and Control or Command
+  shortcuts such as select all work there.
+
+Android sets some limits on this. Keys reach a text field and nothing else, so an app's own
+keyboard shortcuts outside a field do nothing, and typing needs Android 13. Holding a key does
+not repeat it. If you touch the screen during a drag, Android cancels the drag.
 
 ## What each platform needs
 

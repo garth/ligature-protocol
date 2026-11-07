@@ -38,6 +38,7 @@ object ScreenShare {
     private const val TAG = "ligature"
     const val CHANNEL_ID = "screen"
     private const val REQUEST_NOTIFICATION = 7001
+    private const val WAKE_CONSENT = "consent"
     /** How long a request stays answerable: the node gives up after 60 s. */
     private const val REQUEST_LIFETIME_MS = 55_000L
 
@@ -71,7 +72,10 @@ object ScreenShare {
         createChannel(context)
         val open = Intent(context, ScreenConsentActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        if (foreground) {
+        // Android lets an app open an activity from the background while the
+        // user has its accessibility service on.
+        if (foreground || DriveService.isOn) {
+            if (!foreground) ScreenWake.hold(context, WAKE_CONSENT)
             runCatching { context.startActivity(open) }.onSuccess { return }
         }
         val tap = PendingIntent.getActivity(
@@ -93,12 +97,14 @@ object ScreenShare {
 
     /** The request, if it is still answerable; it is answered only once. */
     fun take(): Request? {
+        ScreenWake.release(WAKE_CONSENT)
         val r = pending ?: return null
         pending = null
         return r.takeIf { System.currentTimeMillis() - it.at < REQUEST_LIFETIME_MS }
     }
 
     fun clearRequest(context: Context) {
+        ScreenWake.release(WAKE_CONSENT)
         pending = null
         context.getSystemService(NotificationManager::class.java).cancel(REQUEST_NOTIFICATION)
     }
@@ -187,6 +193,7 @@ class ScreenShareService : Service() {
         }
         try {
             begin(resultCode, data, width, height, rate)
+            ScreenWake.hold(this, WAKE_SHARE)
             NodeHolder.screenShareAnswered(true)
         } catch (e: Exception) {
             Log.w("ligature", "screen share did not start", e)
@@ -296,6 +303,7 @@ class ScreenShareService : Service() {
     }
 
     override fun onDestroy() {
+        ScreenWake.release(WAKE_SHARE)
         if (!ended) NodeHolder.screenShareEnded("sharer")
         release()
         if (current === this) current = null
@@ -330,6 +338,7 @@ class ScreenShareService : Service() {
     }
 
     companion object {
+        private const val WAKE_SHARE = "share"
         private const val NOTIFICATION = 7002
         private const val EXTRA_RESULT_CODE = "resultCode"
         private const val EXTRA_DATA = "data"

@@ -214,8 +214,9 @@ account's daemon offers the family in its own manifest, standing in for the prin
 and mouse and sends them), `absolute` (it takes an entry and positions as fractions of its
 screen, what a touchpad or a remote-desktop viewer sends) and `text` (it types a string of
 characters, for a controller whose keyboard produces characters rather than keys). A
-desktop advertises all four; a phone advertises `provides` only, since its platform lets
-an application inject nothing (chapter 08).
+desktop advertises all four; a phone advertises `provides`, and the others too while its
+user has its accessibility service on, the only way its platform lets an application inject
+(chapter 08).
 
 A **drive** is one stream with the capability type as its purpose, opened by the controller. Its
 first message is `enter`: the `edge` of the driven screen the pointer crosses and `at`, its position

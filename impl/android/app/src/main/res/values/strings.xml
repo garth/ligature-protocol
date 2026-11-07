@@ -5,6 +5,7 @@
     <string name="tile_label">Send clipboard</string>
     <string name="notification_channel">Ligature node</string>
     <string name="notification_title">Ligature is running</string>
+    <string name="drive_service_description">Lets your other paired devices control this phone: their mouse moves a pointer and taps here, and their keyboard types into the field in focus. Ligature reads nothing on the screen for this. Your devices can do this only while it is on.</string>
     <string name="notification_action_send">Send clipboard</string>
     <plurals name="sent_to">
         <item quantity="one">Sent to %1$d device</item>

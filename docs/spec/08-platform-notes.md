@@ -194,14 +194,22 @@ protocol of its own. LineageOS is the first target (no Google services, sideload
   the descriptor. Each transfer is a
   notification with a progress bar and a cancel. The phone takes one file at a time
   (`maxStreams` 1) and sends up to four at once (chapter 05 section 3d).
-- **Remote input.** Android lets an app inject no input into the system, so the phone
-  drives the desktops and is never driven: a touchpad screen turns gestures into pointer
-  motion, clicks and scrolling, and a text field types through the phone's own keyboard
-  and input method, which gives characters rather than keys.
+- **Remote input.** The phone drives the desktops: a touchpad screen turns gestures into
+  pointer motion, clicks and scrolling, and a text field types through the phone's own
+  keyboard and input method, which gives characters rather than keys. It is driven only
+  through an accessibility service, which the user turns on in Settings and which is the one
+  way Android lets an app inject, so it accepts input only while that is on, and the
+  descriptor follows. A touch screen has no pointer or buttons: the app draws a pointer, the
+  left button is a finger at it, the right is Back and the middle is Home, and scrolling is a
+  swipe. Characters and keys go through the service's input connection (Android 13), so they
+  reach a focused text field and nothing else, and a held key does not repeat. A person's
+  own touch cancels a finger the service holds down. The screen is kept on for the drive.
 - **Displays.** Only an app may capture the screen, after the user consents in the media
   projection dialog for every share; the dialog shares one app unless the user picks the
   entire screen. An app in the background may not open the dialog, so a viewer's request
-  becomes a notification whose tap opens it. The capture runs in a foreground service of
+  becomes a notification whose tap opens it, unless the user has the accessibility service
+  on, which lifts that limit: then the dialog opens at once and the screen wakes for it. The
+  service never answers the dialog. The capture runs in a foreground service of
   the media projection type while Android shows its cast indicator, and `MediaCodec`
   encodes it; stopping the cast from the system ends the share with `consent`. A shared
   desktop is decoded by `MediaCodec` into a surface on the app's watch screen, where touch

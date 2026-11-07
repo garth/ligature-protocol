@@ -128,7 +128,9 @@ shows nothing while driven beyond the pointer moving, and lifts every key and bu
 holds when the drive ends however it ends, so a dropped connection leaves nothing
 pressed. What this family cannot defend against is a compromised peer of the same person:
 it is the person, as far as the protocol can tell, and the remedy is the rebuild of
-chapter 07.
+chapter 07. A phone is driven only while its user has turned on its accessibility service
+(chapter 08); that service carries out what the node asks and reads nothing on the screen,
+and it is the user's to turn off.
 
 A shared screen (chapter 05 section 3h) is the most sensitive thing the protocol carries:
 everything on it, including other people's messages and secrets shown briefly. It travels

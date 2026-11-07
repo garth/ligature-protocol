@@ -17,6 +17,7 @@
 
 mod clipboard;
 mod files;
+mod input;
 mod logging;
 mod node;
 mod notifications;
@@ -25,6 +26,7 @@ mod screen;
 
 pub use clipboard::HostClipboard;
 pub use files::HostFiles;
+pub use input::{DriveAction, DriveKey, DriveScreen, HostInput};
 pub use lp_core::input::{BTN_LEFT, BTN_MIDDLE, BTN_RIGHT};
 pub use node::{Config, Device, Node, OutgoingFile, Status, TransferInfo};
 pub use notifications::HostNotifications;
@@ -325,6 +327,11 @@ pub trait Host: Send + Sync {
     fn screen_share_stop(&self);
     /// The viewer wants a keyframe now.
     fn screen_share_keyframe(&self);
+    /// Another device drives this phone: carry this out through the
+    /// accessibility service.
+    fn drive(&self, action: DriveAction);
+    /// This screen's size in pixels as it is turned now.
+    fn drive_screen(&self) -> DriveScreen;
     /// Something happened that the user interface may want to show.
     fn on_event(&self, event: Event);
     /// A log line from the node, for logcat.

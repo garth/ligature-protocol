@@ -26,7 +26,7 @@ stays in Rust.
 
 The Rust side (`ligature-android/src`): `lib.rs` (the `Host` trait the app implements and
 the exported types), `node.rs` (the `Node` the Kotlin calls, a Tokio runtime,
-`with_runtime`), `clipboard.rs` (`HostClipboard`), `notifications.rs`, `files.rs`
+`with_runtime`), `clipboard.rs` (`HostClipboard`), `input.rs` (`HostInput`), `notifications.rs`, `files.rs`
 (MediaStore pending rows written through `/proc/self/fd`), `logging.rs` (the log to the
 host) and `error.rs`. The Kotlin bindings are generated into `app/build/generated/uniffi/`
 and never committed; a change to an exported type or function regenerates them on the next
@@ -43,6 +43,13 @@ Gradle build.
   clashing name gets a numbered suffix chosen by the app (`Transfers.freeName`), since
   MediaStore's own renaming is not relied on. The clipboard's files are fetched into
   Downloads by the Save action on the files notification.
+- Injecting input is possible only as an accessibility service (`DriveService`, turned on by
+  the user): `dispatchGesture` for touch, one gesture at a time since a new one cancels the
+  last, and the service's input connection (API 33) for text and keys. `HostInput` in the
+  crate translates events to `DriveAction`s, so the logic is tested in Rust. The service also
+  lifts the limit on opening an activity from the background. It must never press a consent
+  dialog's button. The phone's `enabled_accessibility_services` lists other apps' services
+  too: append to it over adb, never replace it.
 - Notifications need `POST_NOTIFICATIONS` on 13 and later, asked for by `MainActivity` at
   launch; the foreground service needs its type declared; battery optimisation must be off
   for the node to live in the background.

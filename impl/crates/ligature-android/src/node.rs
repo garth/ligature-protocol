@@ -197,6 +197,8 @@ pub struct Node {
     host: SharedHost,
     /// The phone's screen, shared through the app (milestone 8).
     screen: Arc<crate::HostScreen>,
+    /// This phone driven by another device, through the app's service.
+    drivable: Arc<crate::HostInput>,
     /// The share this phone watches: the sharer and its control.
     watching: Arc<Mutex<WatchSlot>>,
 }
@@ -268,6 +270,7 @@ impl Node {
             notifications: notifications.clone(),
             files: files.clone(),
             screen: crate::HostScreen::new(host.clone()),
+            drivable: crate::HostInput::new(host.clone()),
             watching: Arc::new(Mutex::new(None)),
             host,
         });
@@ -292,12 +295,12 @@ impl Node {
                     ..lp_core::screen::ScreenParams::default()
                 }),
             );
-            // The phone drives a desktop as a touchpad (milestone 7): it
-            // provides input and accepts none, since Android lets an app
-            // inject nothing.
-            let input = node
-                .daemon
-                .attach_input(Some(ligatured::input::Touchpad::new()), None);
+            // The phone drives a desktop as a touchpad (milestone 7), and is
+            // driven while the user has its accessibility service on (LP-167).
+            let input = node.daemon.attach_input(
+                Some(ligatured::input::Touchpad::new()),
+                Some(node.drivable.clone()),
+            );
             let host = node.host.clone();
             let mut changes = input.subscribe();
             rt.spawn(async move {
@@ -602,6 +605,13 @@ impl Node {
     /// density, ADR 0045).
     pub fn set_screen_share(&self, available: bool, width: u32, height: u32, scale: f64) {
         self.screen.set_available(available, width, height, scale);
+    }
+
+    /// Whether the app's accessibility service is on, so another device may
+    /// drive this phone, and whether it can type (it needs Android 13). The
+    /// manifest follows within the family's poll.
+    pub fn set_drivable(&self, accepts: bool, text: bool) {
+        self.drivable.set_drivable(accepts, text);
     }
 
     /// The user answered the media projection dialog.

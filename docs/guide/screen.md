@@ -67,7 +67,9 @@ again of the network, so on a slow link `--chroma 4:2:0` asks for the lighter on
   sharing indicator in the menu bar, and stopping the share there ends it.
 - **The phone** asks every time, since Android never lets an app keep that consent. The
   request shows as a notification, **Tap to choose whether to share it**, or straight away as
-  Android's dialog while the app is open. While the screen is shared, the notification's
+  Android's dialog while the app is open or Ligature is on under Accessibility
+  ([Driving the phone](input.md#driving-the-phone)). Someone must answer it at the phone,
+  because Ligature never presses it for you. While the screen is shared, the notification's
   **Stop sharing** ends it.
 
 ## Watching a desktop from the phone

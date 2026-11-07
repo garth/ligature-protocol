@@ -26,7 +26,7 @@ needs no LP prompt: the platform's own consent, where the platform has one, is t
 ## 2. Non-goals for this milestone
 
 Audio with the picture (a later milestone on audio and video, which needs the datagram
-decision this one measures for); controlling the phone, as milestone 7 says; recording or
+decision this one measures for); recording or
 screenshots; more than one viewer per share (a second viewer is a second share and a
 second encode); sharing a window rather than a display; sharing with another person's
 device (a device-scoped grant across people under chapter 10 section 6, which comes with

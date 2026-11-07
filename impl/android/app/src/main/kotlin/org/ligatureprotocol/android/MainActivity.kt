@@ -84,6 +84,7 @@ class MainActivity : ComponentActivity() {
                         onShare = ::share,
                         onBatterySettings = ::batterySettings,
                         batteryUnrestricted = batteryUnrestricted(),
+                        onDriveSettings = ::driveSettings,
                         onNotificationSettings = ::notificationSettings,
                         onToggleApp = NodeHolder::setAppEnabled,
                         onTouchpad = NodeHolder::startTouchpad,
@@ -152,6 +153,10 @@ class MainActivity : ComponentActivity() {
 
     private fun notificationSettings() {
         startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+    }
+
+    private fun driveSettings() {
+        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
     }
 
     private fun batterySettings() {

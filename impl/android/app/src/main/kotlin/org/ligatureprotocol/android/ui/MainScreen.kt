@@ -57,6 +57,7 @@ fun MainScreen(
     onShare: (String) -> Unit,
     onBatterySettings: () -> Unit,
     batteryUnrestricted: Boolean,
+    onDriveSettings: () -> Unit,
     onNotificationSettings: () -> Unit,
     onToggleApp: (String, Boolean) -> Unit,
     onTouchpad: (InputTarget) -> Unit,
@@ -92,6 +93,20 @@ fun MainScreen(
             if (state.screenTargets.isNotEmpty()) WatchCard(state.screenTargets, onWatch)
             if (state.pairing == null) IntroduceCard(onStartIntroduce)
             DevicesCard(state.devices, onRevoke)
+        }
+        Card {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Remote control", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    if (state.drivable) {
+                        "Your other devices can control this phone with their mouse and keyboard."
+                    } else {
+                        "To let your other devices control this phone, turn Ligature on under " +
+                            "Accessibility: Android lets an app act on the screen in no other way."
+                    },
+                )
+                TextButton(onClick = onDriveSettings) { Text("Accessibility settings") }
+            }
         }
         if (!batteryUnrestricted) {
             Card {

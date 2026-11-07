@@ -152,15 +152,21 @@ barrier only on a zone's boundary, which for those edges is one past the last pi
 
 ## LP-145: the phone as a touchpad and keyboard
 
-**The phone provides and never accepts.** The node attaches the input family with a
-`Touchpad` capture, which advertises `provides`, has no edges and never reports an event,
-and no injector, since Android lets an app inject nothing (chapter 08). The app drives
-through four node calls: `inputTargets` (this person's connected devices whose descriptor
-says `accepts`, with their names and whether they type text), `inputStart` (an absolute
-entry at the middle of the chosen screen, answered with its size), `inputSend` (a batch of
-`TouchEvent`s: motion in the driven screen's pixels, buttons, scroll in wheel steps, keys,
-text) and `inputStop`. The node tells the host `InputEnded` when a drive ends for any
-reason, so the touchpad screen closes when the desktop or the connection goes.
+**The phone provides, and accepts through a service.** The node attaches the input family with
+the `Touchpad` capture, which provides with nothing to capture on its own, and `HostInput`, which
+accepts only while the user has `DriveService` on under Accessibility, since Android lets an app
+inject in no other way (chapter 08). `HostInput` holds a pure translator from input events to
+`DriveAction`s, tested in Rust: the left button a finger at a pointer the app draws, the right
+Back, the middle Home, Escape Back, scrolling a swipe once it reaches 48 pixels (a wheel step is
+160), a character without a command modifier committed as text, anything else a key on the
+service's input connection. A Mac's Command counts as Control there (LP-167).
+
+The app drives through four node calls: `inputTargets` (this person's connected devices whose
+descriptor says `accepts`, with their names and whether they type text), `inputStart` (an
+absolute entry at the middle of the chosen screen, answered with its size), `inputSend` (a batch
+of `TouchEvent`s: motion in the driven screen's pixels, buttons, scroll in wheel steps, keys,
+text) and `inputStop`. The node tells the host `InputEnded` when a drive ends for any reason, so
+the touchpad screen closes when the desktop or the connection goes.
 
 **Gestures on the screen, not in the node.** The touchpad screen's gesture loop turns one
 finger into relative motion as the finger moved (the desktop's acceleration is not applied

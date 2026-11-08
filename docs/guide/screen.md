@@ -134,13 +134,20 @@ ffplay -f h264 share.h264
   PipeWire plugin to share through the screen-sharing portal ([Install](install.md#linux)).
   Without ffmpeg a desktop offers neither, and `lpctl caps` on another device shows what it
   offers.
+- **The phone** needs an H.264 encoder to share, which phones have. A request opens Android's
+  dialog straight away only while the app is open or Ligature is on under Accessibility, and
+  is answered with nobody at the phone only after the grant in
+  [Watching the phone with nobody at it](#watching-the-phone-with-nobody-at-it).
 - **Driving** a desktop from the picture needs that desktop to accept input, as in
-  [Keyboard and mouse](input.md#what-each-platform-needs).
+  [Keyboard and mouse](input.md#what-each-platform-needs), and driving the phone needs Ligature
+  on under Accessibility ([Driving the phone](input.md#driving-the-phone)).
 
 ## Limits
 
 - Screens are shared between your own devices only.
 - One device watches a display at a time: a second viewer of the same display is refused as
   busy. Another display of the same device can be shared alongside.
-- A whole display is shared, never a single window.
+- A whole display is shared, never a single window. Android's dialog offers one app as well;
+  choose the entire screen there.
+- A locked phone shares its lock screen but not its PIN, pattern or password screen.
 - There is no sound.

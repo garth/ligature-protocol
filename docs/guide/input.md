@@ -80,6 +80,16 @@ which it does for an app you installed yourself, open the app's page in Settings
 your devices driving the phone. Ligature cannot read what is on the screen through this. The
 same switch sends what you copy on the phone to your devices ([The clipboard](clipboard.md#android)).
 
+Android reminds you of an app with this much access: Settings, Security and privacy may show
+**Review app with full device access** naming Ligature, and its **Remove access** turns the
+switch off. Uninstalling the app turns it off too, so turn it on again after a reinstall; an
+update keeps it.
+
+A drive or a watch turns the phone's screen on and keeps it on while it lasts, since a dark
+screen takes no touch and shows nothing. Android lists this under Settings, Apps, Special app
+access, **Turn screen on**. The lock screen stays: whoever drives the phone gets past it as
+anyone at the phone would.
+
 Then the phone is a device you can drive, from `lpview` or across an edge like any other:
 
 - a dot on the screen is the pointer, and the left button is a finger at it, so a click is a

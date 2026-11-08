@@ -12,17 +12,21 @@ stays in Rust.
 
 ## Structure
 
-| Kotlin                                              | Role                                                                                                                                                                                                                                                      |
-| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `LigatureApp`                                       | The `Application`; registers nothing but the process                                                                                                                                                                                                      |
-| `NodeHolder`                                        | The process-wide node, created once on first use with the data and cache directories, and the app's state: the clipboard reads, the files notification with its Save action, the host callbacks                                                           |
-| `NodeService`                                       | Foreground service of type `connectedDevice`, holds the multicast lock, started at boot and after an update (`BootReceiver`) and when the app opens, retrying a failed start; reads the clipboard itself only when `READ_CLIPBOARD_IN_BACKGROUND` is held |
-| `MainActivity`, `ui/MainScreen`, `ui/QrCode`        | The one screen: status, devices, the pairing offer as a QR code, Send; asks for `POST_NOTIFICATIONS` at launch and sends the clipboard when it gains focus                                                                                                |
-| `SendClipboardActivity`, `SendClipboardTileService` | A transparent activity that sends once it has focus, and the quick-settings tile that starts it                                                                                                                                                           |
-| `ShareActivity`                                     | The share sheet target: sends the shared text or streams to a chosen device, without touching the clipboard                                                                                                                                               |
-| `ClipboardProvider`                                 | The `ContentProvider` serving announced parts and files; `openTypedAssetFile` answers a thumbnail request with a placeholder, `openFile` fetches                                                                                                          |
-| `NotificationListener`                              | The listener that emits the phone's notifications and will serve media sessions                                                                                                                                                                           |
-| `Transfers`                                         | One progress notification per transfer with Cancel, then Sent or Received                                                                                                                                                                                 |
+| Kotlin                                                       | Role                                                                                                                                                                                                                                                                  |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LigatureApp`                                                | The `Application`; registers nothing but the process                                                                                                                                                                                                                  |
+| `NodeHolder`                                                 | The process-wide node, created once on first use with the data and cache directories, and the app's state: the clipboard reads, the files notification with its Save action, the host callbacks                                                                       |
+| `NodeService`                                                | Foreground service of type `connectedDevice`, holds the multicast lock, started at boot and after an update (`BootReceiver`) and when the app opens, retrying a failed start; reads the clipboard itself only when `READ_CLIPBOARD_IN_BACKGROUND` is held             |
+| `MainActivity`, `ui/MainScreen`, `ui/QrCode`                 | The one screen: status, devices, the pairing offer as a QR code, Send; asks for `POST_NOTIFICATIONS` at launch and sends the clipboard when it gains focus                                                                                                            |
+| `SendClipboardActivity`, `SendClipboardTileService`          | A transparent activity that sends once it has focus, and the quick-settings tile that starts it                                                                                                                                                                       |
+| `ShareActivity`                                              | The share sheet target: sends the shared text or streams to a chosen device, without touching the clipboard                                                                                                                                                           |
+| `ClipboardProvider`                                          | The `ContentProvider` serving announced parts and files; `openTypedAssetFile` answers a thumbnail request with a placeholder, `openFile` fetches                                                                                                                      |
+| `NotificationListener`                                       | The listener that emits the phone's notifications and will serve media sessions                                                                                                                                                                                       |
+| `Transfers`                                                  | One progress notification per transfer with Cancel, then Sent or Received                                                                                                                                                                                             |
+| `DriveService`                                               | The accessibility service the user turns on: carries out drives (gestures, the service's input connection, global actions, the pointer overlay), sees SystemUI's copy indicator and reads the clipboard for it, with follow-up reads while the indicator hides copies |
+| `ClipboardFocus`, `ClipEchoGuard`                            | A one-pixel focusable accessibility overlay that takes the focus long enough to read the clipboard, and the guard that tells the node's own clipboard sets from the user's copies                                                                                     |
+| `ScreenShare`, `ScreenConsentActivity`, `ScreenShareService` | A viewer's request as a notification or Android's dialog (closed again when the request is withdrawn), the projection's foreground service and its encoder; `unattended` reads the owner's `PROJECT_MEDIA` grant                                                      |
+| `ScreenWake`, `WatchDecoder`, `Touch`                        | The screen kept on for a drive or a share; a desktop's share decoded on the watch screen; touch coalescing for the touchpad and the drive                                                                                                                             |
 
 The Rust side (`ligature-android/src`): `lib.rs` (the `Host` trait the app implements and
 the exported types), `node.rs` (the `Node` the Kotlin calls, a Tokio runtime,
@@ -40,10 +44,13 @@ Gradle build.
   official LineageOS build cannot be (`NodeHolder` checks the permission before reading).
   Nothing else reads it: the share sheet sends what was shared.
   With `DriveService` on it is automatic on any ROM: the listener does not fire out of focus, so
-  the service takes SystemUI's empty `FrameLayout` window event as the copy (the shade is the
-  same class with text), and `ClipboardFocus` adds a focusable accessibility overlay to read. A
-  copy on the owner's phone reaches their real clipboards even off the LAN, through the peers'
-  `get` on reconnect: never test one there.
+  the service takes SystemUI's `FrameLayout` window event with no text or one item and no
+  content change type as the copy (the shade opens with many and closes as a pane that
+  disappears), and `ClipboardFocus` adds a focusable accessibility overlay to read. A copy while
+  the indicator is up raises nothing, so each read is followed by another about seven seconds
+  later while the clip's `ClipDescription` timestamp keeps changing; a driven Control+C reads at
+  once. A copy on the owner's phone reaches their real clipboards even off the LAN, through the
+  peers' `get` on reconnect: test copies there only with the owner's go-ahead.
 - Files land in MediaStore's Downloads as pending rows, finished after the hash check; a
   clashing name gets a numbered suffix chosen by the app (`Transfers.freeName`), since
   MediaStore's own renaming is not relied on. The clipboard's files are fetched into

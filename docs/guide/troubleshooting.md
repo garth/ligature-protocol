@@ -51,9 +51,12 @@ The daemon logs each connection and each refusal with the peer's key at `info`;
   clipboard capability while it cannot reach one, and `lpctl caps` then lists no clipboard
   under "this device offers". A clipboard history tool that reads every selection fetches
   announced images at once, which is expected.
-- **On the phone**, receiving is automatic but sending needs a tap: the tile, the
-  notification action, the app or the share sheet. Opening the app sends what is on the
-  clipboard.
+- **On the phone**, receiving is automatic. Sending is automatic while Ligature is on under
+  Accessibility, and the clipboard card says "Copies on this phone go to your other devices as
+  they happen" when it is; otherwise it needs a tap: the tile, the notification action, the app
+  or the share sheet. Opening the app sends what is on the clipboard. A copy the copying app
+  marks as sensitive is never sent by itself, and a copy made seconds after another arrives
+  about seven seconds late ([The clipboard](clipboard.md#android)).
 - **Large content** is fetched when pasted and only for an hour after the copy; a paste that
   fails with the text intact means the announcement has expired or the copying device is
   gone. Copy again.
@@ -79,6 +82,21 @@ The daemon logs each connection and each refusal with the peer's key at `info`;
   another device: the compositor ends the capture when the daemon's session goes.
   `systemctl --user restart ligatured` on Linux, or
   `launchctl kickstart -k gui/$(id -u)/org.ligatureprotocol.ligatured` on a Mac.
+
+## The phone cannot be driven or watched
+
+- The **Remote control** card on the app's screen says whether your devices can control the
+  phone. When it asks you to turn Ligature on under Accessibility, the switch is off: it was
+  never turned on, the app was reinstalled, or **Remove access** was tapped on Android's
+  "Review app with full device access" reminder. Turn it on again
+  ([Driving the phone](input.md#driving-the-phone)).
+- A watch that never starts is waiting for someone to answer Android's dialog on the phone,
+  for a minute, unless the grant in
+  [Watching the phone with nobody at it](screen.md#watching-the-phone-with-nobody-at-it) is in
+  place; the card says "watch its screen with nobody here" when it is.
+- A watch that shows only the lock screen is a locked phone: its PIN screen is never shared.
+- A dark screen that stays dark: Settings, Apps, Special app access, **Turn screen on** must
+  allow Ligature.
 
 ## Input sharing does not start on the Mac
 

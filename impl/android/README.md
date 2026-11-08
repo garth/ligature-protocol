@@ -141,11 +141,16 @@ there, a touch held still then dragged drags with the button down, two fingers s
 and the field types. Done or Back ends the watch.
 
 The phone shares its own screen when a desktop asks (`lpview` or `lpctl screen start`
-there). Android asks every time: the app opens its dialog at once if it is in front, and
-otherwise posts a notification to tap. Choose **Entire screen** in the dialog, since it
-defaults to a single app. While the share runs, Android's cast indicator shows and the
-app's notification has **Stop sharing**; stopping the cast from the quick settings ends it
-too.
+there). Android asks every time: the app opens its dialog at once if it is in front or
+`DriveService` is on (an accessibility service may start activities from the background), and
+otherwise posts a notification to tap. A request nobody answers is withdrawn after a minute and
+`ScreenConsentActivity` closes the dialog with `finishActivity`. Choose **Entire screen** in the
+dialog, since it defaults to a single app. The owner's
+`adb shell appops set org.ligatureprotocol.android PROJECT_MEDIA allow` makes the dialog answer
+itself, so a share starts with nobody at the phone; the Remote control card reads that app op.
+While the share runs, Android's cast indicator shows and the app's notification has **Stop
+sharing**; stopping the cast from the quick settings ends it too. `ScreenWake` lights the
+screen for a drive or a share (`TURN_SCREEN_ON` on Android 14 and later).
 
 ## Where things are
 

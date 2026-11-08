@@ -127,10 +127,16 @@ The daemon runs as a per-user launchd agent that starts at login.
     time the node starts.
 3. Tap **Battery settings** when the screen offers it and allow unrestricted battery use.
     Without it Android stops the node when the phone has been idle for a while.
-4. For your other devices' notifications to leave the phone, tap **Notification access** and
+4. For the phone's notifications to reach your other devices, tap **Notification access** and
     enable Ligature; see [Notifications](notifications.md).
+5. To control the phone from your other devices and have what you copy on it sent by itself,
+    tap **Accessibility settings** under **Remote control** and turn Ligature on; see
+    [Driving the phone](input.md#driving-the-phone). Watching the phone with nobody at it
+    needs one more step, from a computer
+    ([Screens](screen.md#watching-the-phone-with-nobody-at-it)).
 
-The app needs no account and asks for nothing else at first run.
+The app needs no account, and nothing past step 2 is asked for at first run: each is a
+switch you turn on when you want what it gives.
 
 ## From source
 

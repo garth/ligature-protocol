@@ -62,7 +62,8 @@ limits on this:
 
 Without that switch, sending is on your request. Any of these sends what is on the clipboard:
 
-- the **Send clipboard** quick-settings tile,
+- the **Send clipboard** quick-settings tile, which you add by editing the quick settings
+  panel,
 - the **Send clipboard** action on the Ligature notification,
 - **Send clipboard now** on the app's screen,
 - opening the app,

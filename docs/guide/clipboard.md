@@ -51,8 +51,10 @@ for the system's copy indicator, takes the focus for a moment, and sends. Androi
 limits on this:
 
 - Android shows **Ligature pasted from your clipboard** once for each thing you copy, since it
-  tells you about every read. Nothing else on the screen changes, and an open keyboard stays
-  open.
+  tells you about every read. To stop it, turn off **Show clipboard access** under Settings,
+  Security and privacy, Privacy controls (**Privacy controls** on the app's screen goes
+  there). That switch is for every app, so you no longer see when any app reads your
+  clipboard. Nothing else on the screen changes, and an open keyboard stays open.
 - A copy made while the system's indicator from the last one is still up gives no sign, so
   Ligature looks again once the indicator has gone. That copy arrives about seven seconds
   late.

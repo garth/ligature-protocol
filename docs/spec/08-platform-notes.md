@@ -166,7 +166,9 @@ protocol of its own. LineageOS is the first target (no Google services, sideload
   has the accessibility service on, which sees SystemUI's clipboard indicator appear (the
   listener does not fire for an unfocused app, as LineageOS 24 on Android 17 confirmed), adds
   an invisible window to take the focus for a moment, reads and sends. Android shows its own
-  toast for the first read of each clip. A second copy while the indicator is still up, about
+  toast for the first read of each clip, unless the user has turned off Show clipboard access
+  (`clipboard_show_access_notifications`, a secure setting no app may read, so the app always
+  points to it). A second copy while the indicator is still up, about
   six seconds, makes no new event, so the service reads again once it would have gone and
   keeps doing so while each read finds a new clip, by the timestamp Android puts on it; a
   clip the copying app marked sensitive is passed over. The indicator's event carries no text

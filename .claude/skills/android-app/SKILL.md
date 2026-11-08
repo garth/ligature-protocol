@@ -97,6 +97,10 @@ password are set (the release workflow does), and unsigned otherwise.
     --es android.intent.extra.TEXT 'words' -n org.ligatureprotocol.android/.ShareActivity"
   ```
 
+- `uiautomator dump` suspends every accessibility service while it runs, so with Ligature's
+  drive service on, a dump unbinds it for a moment: the app shows "not drivable" in that
+  instant and the node advertises `accepts=false` then `true`. Read Ligature's own screen from
+  a screenshot instead.
 - `adb logcat -s ligature` for the node's log; `debug_logging` in the node config raises it.
 - If adb says `unauthorized`, `adb kill-server` makes the phone prompt again. The owner's
   phone is a Pixel 8 Pro on LineageOS and enumerates on one USB port only; see the device

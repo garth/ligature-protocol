@@ -12,9 +12,9 @@ release workflow publishes the section as the release notes with the installers.
 
 - What you copy on the phone is sent by itself once you turn Ligature on under Accessibility,
   on any ROM, including a second copy made within seconds of the first and one made with
-  Control+C while driving the phone, which arrives at once. Android shows a toast
-  for each new clip read, and a clip the copying app marks as sensitive is not sent this way
-  (LP-166).
+  Control+C while driving the phone, which arrives at once. Android shows a toast for each new
+  clip read unless you turn off Show clipboard access, which the app's clipboard card points
+  to, and a clip the copying app marks as sensitive is not sent this way (LP-166).
 
 - The phone can be driven from your other devices, once you turn Ligature on under
   Accessibility: a pointer on the screen, clicks as taps, the right button for Back and the

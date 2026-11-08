@@ -59,6 +59,7 @@ fun MainScreen(
     batteryUnrestricted: Boolean,
     onDriveSettings: () -> Unit,
     watchUnattended: Boolean,
+    onPrivacySettings: () -> Unit,
     onNotificationSettings: () -> Unit,
     onToggleApp: (String, Boolean) -> Unit,
     onTouchpad: (InputTarget) -> Unit,
@@ -94,6 +95,7 @@ fun MainScreen(
                 onReceiveClipboard,
                 state.autoSend,
                 onDriveSettings,
+                onPrivacySettings,
                 state.lastClipboard,
             )
             NotificationsCard(state.notificationAccess, state.apps, onNotificationSettings, onToggleApp)
@@ -261,6 +263,7 @@ private fun ClipboardCard(
     onReceive: () -> Unit,
     autoSend: Boolean,
     onDriveSettings: () -> Unit,
+    onPrivacySettings: () -> Unit,
     lastClipboard: String?,
 ) {
     Card {
@@ -283,6 +286,15 @@ private fun ClipboardCard(
                     style = MaterialTheme.typography.bodySmall,
                 )
                 TextButton(onClick = onDriveSettings) { Text("Accessibility settings") }
+            }
+            if (autoSend) {
+                Text(
+                    "Android says \"Ligature pasted from your clipboard\" for each copy sent, " +
+                        "unless Show clipboard access is off in Privacy controls. That switch " +
+                        "is for every app.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                TextButton(onClick = onPrivacySettings) { Text("Privacy controls") }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onSend, enabled = status.clipboardPeers.isNotEmpty()) {

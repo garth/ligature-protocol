@@ -86,6 +86,7 @@ class MainActivity : ComponentActivity() {
                         batteryUnrestricted = batteryUnrestricted(),
                         onDriveSettings = ::driveSettings,
                         watchUnattended = ScreenShare.unattended(this),
+                        onPrivacySettings = ::privacySettings,
                         onNotificationSettings = ::notificationSettings,
                         onToggleApp = NodeHolder::setAppEnabled,
                         onTouchpad = NodeHolder::startTouchpad,
@@ -154,6 +155,15 @@ class MainActivity : ComponentActivity() {
 
     private fun notificationSettings() {
         startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+    }
+
+    /**
+     * Privacy controls, where Show clipboard access is (an app cannot read
+     * that switch); the privacy page where Android has no such link.
+     */
+    private fun privacySettings() {
+        runCatching { startActivity(Intent("android.settings.PRIVACY_CONTROLS")) }
+            .onFailure { startActivity(Intent(Settings.ACTION_PRIVACY_SETTINGS)) }
     }
 
     private fun driveSettings() {

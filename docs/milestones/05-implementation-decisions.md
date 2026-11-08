@@ -199,3 +199,13 @@ six seconds through `getRecommendedTimeoutMillis`, and a second), and that by an
 finds a clip with a new `ClipDescription` timestamp, up to twenty; a read that finds the same
 stamp looks only at the description, which Android shows no toast for. A driven Control+C or
 Control+X starts the same read 300 ms after the key, without waiting for the indicator.
+
+In AOSP's `ClipboardService`, the toast for a read is skipped only for the clip's own app, the
+default keyboard, the content-capture and autofill services, a holder of
+`SUPPRESS_CLIPBOARD_ACCESS_NOTIFICATION` (signature level) and when the user has turned off Show
+clipboard access, which covers every app. Only the last is open to Ligature, and it is the
+user's to make: the clipboard card says so and opens `android.settings.PRIVACY_CONTROLS`
+(Privacy controls on LineageOS 24, the Safety Center on Android 15), falling back to
+`ACTION_PRIVACY_SETTINGS`. The app cannot tell whether the switch is off: reading
+`clipboard_show_access_notifications` throws for a third-party app, so the hint is shown
+whenever sending is automatic.

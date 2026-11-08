@@ -26,7 +26,7 @@ The project audits itself against the threat model in
 [chapter 09](docs/spec/09-threat-model.md) and a checklist for a peer-to-peer daemon and
 its app, and keeps every report, dated, under [`docs/security-audit/`](docs/security-audit/).
 The latest is the
-[audit of 2026-10-23](docs/security-audit/ligature-security-audit-2026-10-23.md). A report
+[audit of 2026-11-08](docs/security-audit/ligature-security-audit-2026-11-08.md). A report
 records Medium and lower findings openly, with evidence and a recommendation each, and
 names a Critical or High finding only once it is fixed or has a security advisory. A
 release is preceded by a pre-release check against the latest report.

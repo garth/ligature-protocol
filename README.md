@@ -290,7 +290,7 @@ side, at [garth.github.io/ligature-protocol](https://garth.github.io/ligature-pr
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md) and the
   [security audits](docs/security-audit/), the latest from
-  [2026-10-23](docs/security-audit/ligature-security-audit-2026-10-23.md)
+  [2026-11-08](docs/security-audit/ligature-security-audit-2026-11-08.md)
 
 ## Sponsors
 

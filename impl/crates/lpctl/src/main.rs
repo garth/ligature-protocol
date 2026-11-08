@@ -163,7 +163,7 @@ enum ScreenAction {
         #[arg(long, default_value_t = 720)]
         height: u32,
         /// The frame rate wanted.
-        #[arg(long, default_value_t = 30)]
+        #[arg(long, default_value_t = ligatured::screen::VIEW_RATE)]
         rate: u32,
         /// Where the stream goes.
         #[arg(long)]

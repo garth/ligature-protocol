@@ -1011,7 +1011,7 @@ async fn handle_screen(
                 formats: request.formats.clone().unwrap_or_default(),
                 width: request.width.unwrap_or(1920),
                 height: request.height.unwrap_or(1080),
-                frame_rate: request.frame_rate.unwrap_or(30),
+                frame_rate: request.frame_rate.unwrap_or(crate::screen::VIEW_RATE),
             };
             match screen.watch(&peer, start).await {
                 Ok(watching) => {

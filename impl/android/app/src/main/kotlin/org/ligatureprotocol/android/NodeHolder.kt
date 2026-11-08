@@ -221,7 +221,7 @@ object NodeHolder : Host {
     /** Opens the watch screen: the device's primary display, at most 1920 by 1080. */
     fun startWatch(target: ScreenTarget) = async {
         call { n ->
-            val watch = n.screenWatch(target.key, 1920u, 1080u, 30u)
+            val watch = n.screenWatch(target.key, 1920u, 1080u, 60u)
             val canDrive = runCatching { n.inputTargets() }.getOrDefault(emptyList()).any { it.key == target.key }
             _state.update { it.copy(watching = Watching(target, watch, canDrive)) }
         }

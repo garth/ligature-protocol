@@ -292,6 +292,7 @@ impl Node {
                 Some(node.screen.clone()),
                 Some(lp_core::screen::ScreenParams {
                     views: true,
+                    max_frame_rate: ligatured::screen::VIEW_RATE,
                     ..lp_core::screen::ScreenParams::default()
                 }),
             );

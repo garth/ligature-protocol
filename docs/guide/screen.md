@@ -21,7 +21,7 @@ keys** or **both Alt keys**, or move to another window. Closing the window ends 
 | Option | What it does |
 | --- | --- |
 | `--display <id>` | Shares that display instead of the primary one; `lpctl screen displays <device>` lists them |
-| `--width`, `--height`, `--rate` | The largest picture and the frame rate you want (1920 by 1080 at 30 a second by default); the sharer sends no larger than its own screen |
+| `--width`, `--height`, `--rate` | The largest picture and the frame rate you want (1920 by 1080 at 60 a second by default); the sharer sends no larger than its own screen |
 | `--actual-size` | Shows the screen at its actual size instead of scaled to the window (below) |
 | `--chroma 4:2:0` or `4:4:4` | Asks for that colour sampling only (below); by default the best both devices handle |
 | `--view-only` | Watch without ever driving |

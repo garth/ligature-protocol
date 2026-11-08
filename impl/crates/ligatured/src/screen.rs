@@ -883,14 +883,25 @@ pub fn probe_decoder() -> bool {
         .is_some_and(|d| d.contains(" h264 "))
 }
 
+/// The frame rate a viewer takes and asks for: 60 a second, which halves every
+/// per-frame wait between a change and its picture (LP-177).
+pub const VIEW_RATE: u32 = 60;
+
 /// The viewer params a desktop daemon advertises: views when ffmpeg decodes
 /// H.264, which `lpview` uses, at 4:4:4 first, since its software decoder
-/// takes it and it keeps coloured text sharp, and at 4:2:0.
+/// takes it and it keeps coloured text sharp, and at 4:2:0, up to
+/// [`VIEW_RATE`].
 #[must_use]
 pub fn viewer_params() -> Option<ScreenParams> {
-    probe_decoder().then(|| ScreenParams {
+    viewer_params_for(probe_decoder())
+}
+
+/// [`viewer_params`] for a daemon that does or does not have a decoder.
+fn viewer_params_for(decodes: bool) -> Option<ScreenParams> {
+    decodes.then(|| ScreenParams {
         views: true,
         decodes: vec![Format::H264_444, Format::H264],
+        max_frame_rate: VIEW_RATE,
         ..ScreenParams::default()
     })
 }
@@ -1091,6 +1102,15 @@ impl Capture for FakeCapture {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_viewer_takes_and_asks_for_sixty_frames_a_second() {
+        // LP-177: every per-frame wait halves at 60.
+        assert_eq!(VIEW_RATE, 60);
+        let params = viewer_params_for(true).expect("a decoder views");
+        assert_eq!(params.max_frame_rate, VIEW_RATE);
+        assert!(viewer_params_for(false).is_none());
+    }
 
     fn f(key: bool, n: u8) -> EncodedFrame {
         EncodedFrame {

@@ -56,7 +56,7 @@ struct Options {
     #[arg(long, default_value_t = 1080)]
     height: u32,
     /// The frame rate wanted.
-    #[arg(long, default_value_t = 30)]
+    #[arg(long, default_value_t = ligatured::screen::VIEW_RATE)]
     rate: u32,
     /// Watch only: never drive the device.
     #[arg(long)]

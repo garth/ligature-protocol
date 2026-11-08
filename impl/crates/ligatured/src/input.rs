@@ -211,9 +211,9 @@ pub struct InputSync {
     offered: tokio::sync::Mutex<Option<InputParams>>,
     /// Local events, for the fakes and tests: a drive began or ended.
     changes: broadcast::Sender<Change>,
-    /// Keys and text the controller sent while this device drives another:
-    /// they go on with the capture's next batch rather than being typed here
-    /// and captured again, which loses them (LP-174).
+    /// What the controller sent while this device drives another: relayed with
+    /// the capture's next batch as it came, rather than injected here and
+    /// captured again, which turns it into other keys or none (LP-174).
     onward: tokio::sync::mpsc::UnboundedSender<InputEvent>,
     onward_rx: Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<InputEvent>>>,
 }
@@ -926,7 +926,7 @@ impl InputSync {
                 Ok(vec![InputMessage::Ready(Ready { width, height })])
             }
             InputMessage::Events(batch) => {
-                // Text goes on to the device this one drives, if any.
+                // Relayed to the device this one drives, if any.
                 let onward = self.is_driving();
                 let mut out = Vec::new();
                 let mut left: Option<Leave> = None;
@@ -942,6 +942,17 @@ impl InputSync {
                     for event in batch.events {
                         if left.is_some() {
                             break;
+                        }
+                        // While this device drives another, what its
+                        // controller sends is relayed there as it came:
+                        // typed or moved here and captured again it turns
+                        // into other keys, or none (LP-174). An absolute
+                        // position describes this screen, not the next.
+                        if onward {
+                            if !matches!(event, InputEvent::Position { .. }) {
+                                let _ = self.onward.send(event);
+                            }
+                            continue;
                         }
                         match &event {
                             InputEvent::Motion { dx, dy } => {
@@ -970,13 +981,6 @@ impl InputSync {
                                 driven.x = mx;
                                 driven.y = my;
                                 inject.inject(&InputEvent::Position { x: mx, y: my })?;
-                                continue;
-                            }
-                            // Keys and text go on to the device this one
-                            // drives: typed here they come back through the
-                            // capture as other keys, or as none (LP-174).
-                            InputEvent::Text { .. } | InputEvent::Key { .. } if onward => {
-                                let _ = self.onward.send(event.clone());
                                 continue;
                             }
                             InputEvent::Text { .. } if !params.text => continue,

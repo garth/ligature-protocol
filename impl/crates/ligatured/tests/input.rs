@@ -486,6 +486,50 @@ async fn text_a_driven_device_is_sent_goes_on_to_the_device_it_drives() {
             .any(|e| matches!(e, InputEvent::Key { code: 14, .. })),
         "b pressed it too"
     );
+    // Clicks and pointer motion are relayed as they came too: b injects
+    // nothing while it drives c (LP-174).
+    b.inject.clear();
+    a.sync
+        .send(
+            vec![
+                InputEvent::Motion { dx: 5.0, dy: 0.0 },
+                InputEvent::Button {
+                    code: 273,
+                    pressed: true,
+                },
+                InputEvent::Button {
+                    code: 273,
+                    pressed: false,
+                },
+            ],
+            None,
+        )
+        .await
+        .unwrap();
+    until("c is right-clicked", || {
+        c_inject.injected().iter().any(|e| {
+            matches!(
+                e,
+                InputEvent::Button {
+                    code: 273,
+                    pressed: true
+                }
+            )
+        })
+    })
+    .await;
+    assert!(
+        c_inject
+            .injected()
+            .iter()
+            .any(|e| matches!(e, InputEvent::Motion { .. })),
+        "the motion went on"
+    );
+    assert!(
+        b.inject.injected().is_empty(),
+        "b injected {:?}",
+        b.inject.injected()
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

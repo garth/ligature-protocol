@@ -1,8 +1,18 @@
 # Milestone 8: a device's screen viewed, then controlled, from another of the person's devices
 
-**Status:** Accepted by the owner on 2026-10-24; implemented as LP-147 to LP-151 under the
-epic LP-113, with the negotiated picture format of ADR 0044 as LP-162, and the run
-with the real devices and the close are LP-152. Raised on 2026-10-23
+**Status:** Done. Accepted by the owner on 2026-10-24; the tasks LP-147 to LP-152 under the
+epic LP-113 are done, with the negotiated picture format of ADR 0044 as LP-162 and the
+viewer's actual size as LP-164, and the exit criteria were run on the Linux machine, the Mac
+and the Pixel on 2026-11-08 (LP-152, recorded on LP-113), with the phone also shared with
+nobody at it and driven from the picture (LP-167). The run found and fixed: the Mac's Screen
+Recording grant taking effect without a restart (LP-169), clicks from the Mac's `lpview` on
+the phone acting as long presses (LP-172), the phone's watch screen gaining landscape and
+zoom (LP-173), and the latency work of LP-176 and LP-177 (frames leave as soon as they are
+encoded, 60 frames a second). Glass to glass at 60 fps, measured from a clock on the shared
+screen: Linux → Mac 204 ms, Mac → Linux 270 ms, Linux → phone 102 ms, Mac → phone 260 ms,
+phone → Linux 110 ms, phone → Mac 100 ms, against the plan's 150 ms: met with the phone or
+Linux sharing to the phone, not with a desktop viewer or the Mac sharing, where the Mac's
+capture adds about 150 ms. Raised on 2026-10-23
 from the feasibility assessment of the candidate capability families: viewing is feasible
 on all three platforms, with the phone as viewer the easy end, and control is the `input`
 family of milestone 7 with absolute positions; the new work is capture, encoding, transport

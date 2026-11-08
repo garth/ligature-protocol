@@ -86,6 +86,12 @@ unsafe extern "C" {
         wheel3: i32,
     ) -> CGEventRef;
     fn CGEventKeyboardSetUnicodeString(event: CGEventRef, length: usize, string: *const u16);
+    fn CGEventKeyboardGetUnicodeString(
+        event: CGEventRef,
+        max_length: usize,
+        actual_length: *mut usize,
+        string: *mut u16,
+    );
     fn CGEventPost(tap: u32, event: CGEventRef);
     fn CGEventSourceCreate(state: i32) -> CGEventSourceRef;
     fn CGEventSourceSetUserData(source: CGEventSourceRef, data: i64);
@@ -229,7 +235,9 @@ const RTLD_DEFAULT: *mut c_void = -2isize as *mut c_void;
 /// The user data the poster's events carry, "LIGATURE" in ASCII.
 const INJECTED_TAG: i64 = 0x4C49_4741_5455_5245;
 /// Quartz's longest string on one keyboard event, in UTF-16 units.
-const TEXT_CHUNK: usize = 20;
+pub const TEXT_CHUNK: usize = 20;
+/// `kCGEventSourceUserData`: the poster's tag on its events.
+const SOURCE_USER_DATA: u32 = 42;
 
 /// Whether the process may watch the keyboard (Input Monitoring).
 #[must_use]
@@ -652,6 +660,18 @@ pub enum TapEvent {
         /// `CGEventFlags`.
         flags: u64,
     },
+    /// Text this crate posted (`Poster::text`, or a character no key types):
+    /// a key event carrying it, which is not to be read as its key code, so a
+    /// capture running on this Mac passes the text on (LP-174). Up to
+    /// [`TEXT_CHUNK`] UTF-16 units.
+    Text {
+        /// The text's UTF-16 units; the first `len` count.
+        units: [u16; TEXT_CHUNK],
+        /// How many units are the text.
+        len: usize,
+        /// Down or up.
+        pressed: bool,
+    },
     /// A modifier key changed: its virtual key code and the flags after.
     Flags {
         /// The virtual key code.
@@ -872,6 +892,17 @@ unsafe fn decode(kind: u32, event: CGEventRef) -> Option<TapEvent> {
                     double(SCROLL_POINT_DELTA_AXIS_2),
                 ),
             },
+            KEY_DOWN | KEY_UP
+                if CGEventGetIntegerValueField(event, SOURCE_USER_DATA) == INJECTED_TAG
+                    && posted_text(event).1 > 0 =>
+            {
+                let (units, len) = posted_text(event);
+                TapEvent::Text {
+                    units,
+                    len,
+                    pressed: kind == KEY_DOWN,
+                }
+            }
             KEY_DOWN | KEY_UP => TapEvent::Key {
                 code: u16::try_from(int(KEYBOARD_KEYCODE)).unwrap_or(u16::MAX),
                 pressed: kind == KEY_DOWN,
@@ -887,6 +918,19 @@ unsafe fn decode(kind: u32, event: CGEventRef) -> Option<TapEvent> {
             _ => return None,
         })
     }
+}
+
+/// The text attached to a key event, as UTF-16 units and their count.
+///
+/// # Safety
+///
+/// `event` is a live keyboard event the tap was handed.
+unsafe fn posted_text(event: CGEventRef) -> ([u16; TEXT_CHUNK], usize) {
+    let mut units = [0u16; TEXT_CHUNK];
+    let mut len = 0usize;
+    // SAFETY: the buffer holds TEXT_CHUNK units, the most the call writes.
+    unsafe { CGEventKeyboardGetUnicodeString(event, TEXT_CHUNK, &raw mut len, units.as_mut_ptr()) };
+    (units, len.min(TEXT_CHUNK))
 }
 
 /// What a posted mouse event is.

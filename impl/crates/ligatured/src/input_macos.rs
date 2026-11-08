@@ -269,6 +269,16 @@ fn capturer(
                 scroll => vec![scroll],
             },
             TapEvent::Key { repeat: true, .. } => Vec::new(),
+            // Text the Mac was sent and posted goes on as text, not as the
+            // key code it rode on (LP-174).
+            TapEvent::Text {
+                units,
+                len,
+                pressed: true,
+            } => vec![InputEvent::Text {
+                text: String::from_utf16_lossy(&units[..len]),
+            }],
+            TapEvent::Text { .. } => Vec::new(),
             TapEvent::Key {
                 code,
                 pressed,

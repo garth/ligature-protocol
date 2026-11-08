@@ -59,6 +59,10 @@ description: USE when implementing features or fixing bugs in the Rust workspace
 
 - Every public item has a doc comment (`missing_docs = "warn"`, and CI runs clippy with
   `-D warnings`). Doc comments say what the thing is for, in sentences.
+- `lpctl` and `lpview` are self-documenting: a listing ends with the commands that act on
+  what it showed (`next_steps` in `lpctl`'s `main.rs`, with `lpctl permissions` as the model),
+  a refusal says what to run instead, and every command and argument has clap help. The
+  closing lines come from a pure `*_next_steps` function with a unit test.
 - `unsafe_code` is forbidden except in `ligature-android` (the C ABI) and `lp-macos` (the
   Objective-C provider); never add a third.
 - Dependency direction between crates is fixed (CLAUDE.md "Repository layout"); a new

@@ -10,6 +10,11 @@ release workflow publishes the section as the release notes with the installers.
 
 ### Added
 
+- Every `lpctl` listing ends with the commands that act on what it shows, each with what it
+  does: `status`, `devices`, `input layout`, `input status`, `screen status`, `files offers`,
+  `files transfers` and `permissions`. `lpctl pair` on a device that already has its keys says
+  how a new device is added instead of only refusing (LP-170).
+
 - A permission allowed on the Mac takes effect without restarting anything: the daemon sees
   the grant and restarts itself. `lpctl permissions` lists which of Accessibility, Input
   Monitoring and Screen Recording the daemon holds, `lpctl permissions open <permission>`

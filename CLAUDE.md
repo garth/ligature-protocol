@@ -306,6 +306,10 @@ npx ajv compile --spec=draft2020 -c ajv-formats -s schemas/<name>.schema.json \
   accepted. Do not add wire formats or state machines to the spec without an accepted ADR.
 - New capability families each need a schema under `schemas/` and a section in
   `docs/spec/05-capabilities.md`.
+- The command-line tools are self-documenting. A listing ends with the commands that act on
+  what it showed, each with what it does (`lpctl permissions` is the model, built by
+  `next_steps`), a refusal says what to run instead of a bare error, and every command and
+  argument has clap help. The closing lines come from a pure function with a unit test.
 - `ligatureprotocol.org` is the project's registered domain: the `org.ligatureprotocol`
   type names and the schema `$id`s are official and never renamed.
 - Device security is out of scope (ADR 0024): never add lock, idle, local-authentication

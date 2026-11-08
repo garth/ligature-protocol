@@ -389,9 +389,8 @@ fn permissions_reset() -> Result<(), Error> {
 }
 
 /// `lpctl permissions` without an action: each permission with whether the
-/// daemon holds it and what it enables, then how a missing one is granted (the
-/// `open` command for each) and how all are forgotten (`reset`), so the output
-/// itself says how the command is used.
+/// daemon holds it and what it enables, then the `open` command for each
+/// missing one and `reset`, so the output itself says how the command is used.
 fn permissions_report(held: &Permissions) -> String {
     use std::fmt::Write as _;
     if held.permissions.is_empty() {
@@ -407,28 +406,171 @@ fn permissions_report(held: &Permissions) -> String {
             p.enables
         );
     }
-    out.push('\n');
     let missing: Vec<_> = held.permissions.iter().filter(|p| !p.granted).collect();
     if missing.is_empty() {
         out.push_str("all granted\n");
-    } else {
-        out.push_str(
-            "A missing permission is turned on under System Settings, Privacy & Security; the \
-             daemon restarts by itself once it is granted:\n",
-        );
-        for p in missing {
-            let _ = writeln!(
-                out,
-                "  lpctl permissions open {:<17} opens the {} page",
-                p.name, p.label
-            );
-        }
     }
-    out.push_str(
-        "  lpctl permissions reset                  forgets all three and restarts the daemon, \
-         so macOS asks again\n",
-    );
+    let mut steps: Vec<(String, String)> = missing
+        .iter()
+        .map(|p| {
+            (
+                format!("lpctl permissions open {}", p.name),
+                format!(
+                    "opens the {} page in System Settings, where it is turned on; the daemon \
+                     restarts by itself once it is",
+                    p.label
+                ),
+            )
+        })
+        .collect();
+    steps.push((
+        "lpctl permissions reset".to_owned(),
+        "forgets all three and restarts the daemon, so macOS asks again".to_owned(),
+    ));
+    let steps: Vec<(&str, &str)> = steps
+        .iter()
+        .map(|(c, d)| (c.as_str(), d.as_str()))
+        .collect();
+    out.push_str(&next_steps(&steps));
     out
+}
+
+/// A listing's last lines: the commands that act on what it showed, each with
+/// what it does, aligned, after a blank line. Every `lpctl` listing ends with
+/// one, so the output says how the tool is used (LP-170). Empty for no steps.
+fn next_steps(steps: &[(&str, &str)]) -> String {
+    use std::fmt::Write as _;
+    let Some(width) = steps.iter().map(|(command, _)| command.len()).max() else {
+        return String::new();
+    };
+    let mut out = String::from("\n");
+    for (command, does) in steps {
+        let _ = writeln!(out, "  {command:<width$}  {does}");
+    }
+    out
+}
+
+const PAIR_ADDS: (&str, &str) = (
+    "lpctl pair",
+    "adds a device: run it on the new device and give the offer it shows to lpctl pair <OFFER> \
+     here",
+);
+
+/// After `lpctl status`: how a fresh daemon gets its keys, or what to run next.
+fn status_next_steps(initialised: bool) -> String {
+    if initialised {
+        next_steps(&[
+            ("lpctl devices", "lists every device with its keys"),
+            PAIR_ADDS,
+        ])
+    } else {
+        next_steps(&[
+            (
+                "lpctl init --name <NAME>",
+                "creates your keys on this, your first device",
+            ),
+            (
+                "lpctl pair",
+                "joins your existing devices instead: this device shows an offer, which you give \
+                 to lpctl pair <OFFER> on one of them",
+            ),
+        ])
+    }
+}
+
+/// After `lpctl devices`: adding one, and revoking one when there is another.
+fn devices_next_steps(any_other: bool) -> String {
+    let mut steps = vec![PAIR_ADDS];
+    if any_other {
+        steps.push((
+            "lpctl revoke <KEY>",
+            "revokes a device's or person's key, on every device",
+        ));
+    }
+    next_steps(&steps)
+}
+
+/// After `lpctl input layout`: setting an edge, and unsetting one when any leads somewhere.
+fn layout_next_steps(edges: usize) -> String {
+    let mut steps = vec![(
+        "lpctl input layout set <EDGE> <DEVICE>",
+        "makes the left, right, top or bottom edge of this screen lead to a device",
+    )];
+    if edges > 0 {
+        steps.push(("lpctl input layout unset <EDGE>", "makes it lead nowhere"));
+    }
+    next_steps(&steps)
+}
+
+/// After `lpctl input status`: releasing a drive in progress, and the layout.
+fn input_status_next_steps(driving: bool) -> String {
+    let mut steps = Vec::new();
+    if driving {
+        steps.push(("lpctl input release", "gives the input back to this device"));
+    }
+    steps.push((
+        "lpctl input layout",
+        "shows and changes which edge of this screen leads where",
+    ));
+    next_steps(&steps)
+}
+
+/// After `lpctl screen status`: watching a device, and stopping when anything runs.
+fn screen_status_next_steps(active: bool) -> String {
+    let mut steps = vec![
+        (
+            "lpview <DEVICE>",
+            "watches and drives a device's screen in a window",
+        ),
+        (
+            "lpctl screen displays <DEVICE>",
+            "lists a device's displays",
+        ),
+    ];
+    if active {
+        steps.push((
+            "lpctl screen stop [DEVICE]",
+            "stops the shares with a device, or every share this device runs",
+        ));
+    }
+    next_steps(&steps)
+}
+
+/// After `lpctl files offers`: offering a file, and withdrawing one when any stands.
+fn offers_next_steps(offers: usize) -> String {
+    let mut steps = vec![(
+        "lpctl files offer <PATH>",
+        "offers a file for your other devices to fetch with lpctl files get <DEVICE> <ID>",
+    )];
+    if offers > 0 {
+        steps.push(("lpctl files withdraw <ID>", "withdraws one"));
+    }
+    next_steps(&steps)
+}
+
+/// After `lpctl files transfers`: sending files, and cancelling when any is in flight.
+fn transfers_next_steps(in_flight: usize) -> String {
+    let mut steps = vec![(
+        "lpctl files send <DEVICE> <PATHS>...",
+        "pushes files to a device's download folder",
+    )];
+    if in_flight > 0 {
+        steps.push(("lpctl files cancel <TRANSFER>", "cancels one"));
+    }
+    next_steps(&steps)
+}
+
+/// The error `lpctl pair` reports. A join refused because this device already
+/// has its keys says how a device is added instead.
+fn pair_refusal(join: bool, refused: &ligatured::control::ErrorBody) -> Error {
+    if join && refused.code == "already-initialised" {
+        return Error::Refused(
+            "this device already has its keys. To add a new device, run lpctl pair on it and \
+             give the offer it shows to lpctl pair <OFFER> here"
+                .to_owned(),
+        );
+    }
+    Error::Refused(refused.message.clone())
 }
 
 /// `lpctl permissions open`: the permission's page in System Settings.
@@ -512,13 +654,16 @@ async fn run(options: &Options, locations: &Locations) -> Result<(), Error> {
                     println!("  {:<20} {:<8} {}…  {}", name, platform, p.fingerprint(), p);
                 }
             }
+            print!("{}", status_next_steps(s.initialised));
         }
         Command::Devices => {
             let d: Devices = client.request(Request::new(types::DEVICES, 0)).await?;
             if d.devices.is_empty() {
                 println!("no devices");
             }
-            for group in ligatured::control::group_devices(&d.devices) {
+            let groups = ligatured::control::group_devices(&d.devices);
+            let any_other = groups.iter().any(|g| !g.this_device() && !g.revoked());
+            for group in groups {
                 let mut flags = Vec::new();
                 if group.this_device() {
                     flags.push("this device");
@@ -553,6 +698,7 @@ async fn run(options: &Options, locations: &Locations) -> Result<(), Error> {
                     );
                 }
             }
+            print!("{}", devices_next_steps(any_other));
         }
         Command::Pair {
             offer,
@@ -573,7 +719,7 @@ async fn run(options: &Options, locations: &Locations) -> Result<(), Error> {
                 .await?;
             match response.error {
                 None => println!("paired."),
-                Some(e) => return Err(Error::Refused(e.message)),
+                Some(e) => return Err(pair_refusal(offer.is_none(), &e)),
             }
         }
         Command::Revoke { key } => {
@@ -696,8 +842,9 @@ async fn input(client: &mut Client, action: &InputAction) -> Result<(), Error> {
         InputAction::Layout { action: None } => {
             let layout: InputLayout = client.request(Request::new(types::INPUT_LAYOUT, 0)).await?;
             if layout.layout.is_empty() {
-                println!("no edge leads anywhere; lpctl input layout set right <device>");
+                println!("no edge leads anywhere");
             }
+            let edges = layout.layout.len();
             let known: Devices = client.request(Request::new(types::DEVICES, 1)).await?;
             for entry in layout.layout {
                 let name = known
@@ -714,6 +861,7 @@ async fn input(client: &mut Client, action: &InputAction) -> Result<(), Error> {
                     entry.device
                 );
             }
+            print!("{}", layout_next_steps(edges));
         }
         InputAction::Layout {
             action: Some(LayoutAction::Set { edge, device }),
@@ -737,6 +885,7 @@ async fn input(client: &mut Client, action: &InputAction) -> Result<(), Error> {
             let s: InputStatus = client.request(Request::new(types::INPUT_STATUS, 0)).await?;
             println!("accepts:   {}", s.accepts);
             println!("provides:  {}", s.provides);
+            let driving = s.driving.is_some();
             match s.driving {
                 Some(d) => println!(
                     "driving:   {} ({}…) {}x{}, {} batches{}",
@@ -769,6 +918,7 @@ async fn input(client: &mut Client, action: &InputAction) -> Result<(), Error> {
                     entry.device
                 );
             }
+            print!("{}", input_status_next_steps(driving));
         }
         InputAction::Release => {
             let _: Empty = client
@@ -872,6 +1022,7 @@ async fn screen(client: &mut Client, action: &ScreenAction) -> Result<(), Error>
                 .await?;
             println!("shares: {}", s.shares);
             println!("views:  {}", s.views);
+            let active = !s.sharing.is_empty() || !s.watching.is_empty();
             for share in s.sharing {
                 println!(
                     "sharing {} to {}… at {}x{} {} fps, {} frames, {} dropped",
@@ -895,6 +1046,7 @@ async fn screen(client: &mut Client, action: &ScreenAction) -> Result<(), Error>
                     watch.frames
                 );
             }
+            print!("{}", screen_status_next_steps(active));
         }
     }
     Ok(())
@@ -940,10 +1092,11 @@ async fn files(
             if o.offers.is_empty() {
                 println!("no offers");
             }
-            for f in o.offers {
+            for f in &o.offers {
                 println!("{}  {:<40} {:>10}  {}", f.id, f.name, human(f.size), f.mime);
             }
             println!("received files land in {}", o.location);
+            print!("{}", offers_next_steps(o.offers.len()));
             Ok(())
         }
         FilesAction::Withdraw { id } => {
@@ -967,6 +1120,7 @@ async fn files(
             if t.transfers.is_empty() {
                 println!("no transfers in flight");
             }
+            let in_flight = t.transfers.len();
             for p in t.transfers {
                 println!(
                     "{}  {}  {}  {}/{}",
@@ -985,6 +1139,7 @@ async fn files(
                     );
                 }
             }
+            print!("{}", transfers_next_steps(in_flight));
             Ok(())
         }
     }
@@ -1317,5 +1472,69 @@ mod tests {
             permissions_report(&none),
             "this device needs no permissions\n"
         );
+    }
+
+    #[test]
+    fn next_steps_align_the_commands_and_vanish_when_there_are_none() {
+        assert_eq!(next_steps(&[]), "");
+        let out = next_steps(&[("lpctl a", "does a"), ("lpctl longer", "does b")]);
+        assert_eq!(out, "\n  lpctl a       does a\n  lpctl longer  does b\n");
+    }
+
+    #[test]
+    fn every_listing_ends_with_the_commands_that_act_on_it() {
+        let fresh = status_next_steps(false);
+        assert!(fresh.contains("lpctl init --name <NAME>"), "{fresh}");
+        assert!(fresh.contains("lpctl pair"), "{fresh}");
+        let running = status_next_steps(true);
+        assert!(!running.contains("init"), "{running}");
+        assert!(running.contains("lpctl devices"), "{running}");
+        assert!(running.contains("lpctl pair"), "{running}");
+
+        assert!(devices_next_steps(false).contains("lpctl pair"));
+        assert!(!devices_next_steps(false).contains("revoke"));
+        assert!(devices_next_steps(true).contains("lpctl revoke <KEY>"));
+
+        assert!(layout_next_steps(0).contains("lpctl input layout set <EDGE> <DEVICE>"));
+        assert!(!layout_next_steps(0).contains("unset"));
+        assert!(layout_next_steps(1).contains("lpctl input layout unset <EDGE>"));
+
+        assert!(input_status_next_steps(false).contains("lpctl input layout"));
+        assert!(!input_status_next_steps(false).contains("release"));
+        assert!(input_status_next_steps(true).contains("lpctl input release"));
+
+        let idle = screen_status_next_steps(false);
+        assert!(idle.contains("lpview <DEVICE>"), "{idle}");
+        assert!(idle.contains("lpctl screen displays <DEVICE>"), "{idle}");
+        assert!(!idle.contains("stop"), "{idle}");
+        assert!(screen_status_next_steps(true).contains("lpctl screen stop [DEVICE]"));
+
+        assert!(offers_next_steps(0).contains("lpctl files offer <PATH>"));
+        assert!(!offers_next_steps(0).contains("withdraw"));
+        assert!(offers_next_steps(2).contains("lpctl files withdraw <ID>"));
+
+        assert!(transfers_next_steps(0).contains("lpctl files send <DEVICE> <PATHS>..."));
+        assert!(!transfers_next_steps(0).contains("cancel"));
+        assert!(transfers_next_steps(1).contains("lpctl files cancel <TRANSFER>"));
+    }
+
+    #[test]
+    fn a_join_on_an_initialised_device_says_how_a_device_is_added_instead() {
+        use ligatured::control::ErrorBody;
+        let refused = ErrorBody::new("already-initialised", "already initialised");
+        let Error::Refused(text) = pair_refusal(true, &refused) else {
+            panic!("a refusal")
+        };
+        assert!(text.contains("already has its keys"), "{text}");
+        assert!(text.contains("lpctl pair <OFFER>"), "{text}");
+        let Error::Refused(text) = pair_refusal(false, &refused) else {
+            panic!("a refusal")
+        };
+        assert_eq!(text, "already initialised");
+        let other = ErrorBody::new("not-found", "no such device");
+        let Error::Refused(text) = pair_refusal(true, &other) else {
+            panic!("a refusal")
+        };
+        assert_eq!(text, "no such device");
     }
 }

@@ -211,6 +211,11 @@ pub struct InputSync {
     offered: tokio::sync::Mutex<Option<InputParams>>,
     /// Local events, for the fakes and tests: a drive began or ended.
     changes: broadcast::Sender<Change>,
+    /// Text the controller sent while this device drives another: it goes on
+    /// with the capture's next batch rather than being typed here and
+    /// captured again, which loses it (LP-174).
+    onward: tokio::sync::mpsc::UnboundedSender<InputEvent>,
+    onward_rx: Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<InputEvent>>>,
 }
 
 /// Something that happened to this device's drives.
@@ -250,6 +255,7 @@ impl InputSync {
             .filter_map(|(edge, key)| edge.parse::<Edge>().ok().map(|e| (e, key)))
             .collect();
         let (changes, _) = broadcast::channel(64);
+        let (onward, onward_rx) = tokio::sync::mpsc::unbounded_channel();
         let this = Arc::new(Self {
             daemon: daemon.clone(),
             capture,
@@ -261,6 +267,8 @@ impl InputSync {
             regions: Mutex::new(HashMap::new()),
             offered: tokio::sync::Mutex::new(None),
             changes,
+            onward,
+            onward_rx: Mutex::new(Some(onward_rx)),
         });
         daemon.manager().on_stream(INPUT_TYPE, this.handler());
         this.arm();
@@ -754,6 +762,9 @@ impl InputSync {
             return;
         };
         let mut events = capture.subscribe();
+        let Some(mut onward) = lock(&self.onward_rx).take() else {
+            return;
+        };
         let mut batch: Vec<InputEvent> = Vec::new();
         // Captured input arrived with nothing driven and the capture was
         // given back: the rest of that burst does not give it back again.
@@ -846,6 +857,11 @@ impl InputSync {
                         Err(broadcast::error::RecvError::Closed) => return,
                     }
                 }
+                Some(event) = onward.recv() => {
+                    if self.is_driving() {
+                        batch.push(event);
+                    }
+                }
                 _ = frame.tick() => {
                     if !batch.is_empty() {
                         let width = capture.screen().0;
@@ -910,6 +926,8 @@ impl InputSync {
                 Ok(vec![InputMessage::Ready(Ready { width, height })])
             }
             InputMessage::Events(batch) => {
+                // Text goes on to the device this one drives, if any.
+                let onward = self.is_driving();
                 let mut out = Vec::new();
                 let mut left: Option<Leave> = None;
                 let region = lock(&self.regions)
@@ -952,6 +970,10 @@ impl InputSync {
                                 driven.x = mx;
                                 driven.y = my;
                                 inject.inject(&InputEvent::Position { x: mx, y: my })?;
+                                continue;
+                            }
+                            InputEvent::Text { .. } if onward => {
+                                let _ = self.onward.send(event.clone());
                                 continue;
                             }
                             InputEvent::Text { .. } if !params.text => continue,

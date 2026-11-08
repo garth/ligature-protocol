@@ -415,6 +415,52 @@ async fn a_device_driven_by_a_touchpad_still_follows_its_layout() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn text_a_driven_device_is_sent_goes_on_to_the_device_it_drives() {
+    // The phone (a) types on Linux (b), which drives the Mac (c) on from its
+    // edge: the text is the Mac's, not typed on Linux and captured again,
+    // which loses it (LP-174).
+    let (a, b, c, _c_dir) = three().await;
+    let c_inject = FakeInject::new(800, 600);
+    c.attach_input(None, Some(c_inject.clone()));
+    until("b sees c's input", || {
+        b.daemon.registry().peers_offering(INPUT_TYPE).len() == 2
+    })
+    .await;
+    a.sync
+        .drive(*b.daemon.binding().public(), Enter::absolute(0.5, 0.5))
+        .await
+        .unwrap();
+    until("b is driven", || b.sync.driven_by().is_some()).await;
+    b.sync.set_edge(Edge::Right, *c.binding().public()).unwrap();
+    b.capture.hit_edge(Edge::Right, 0.5);
+    until("b drives c", || b.sync.is_driving()).await;
+    b.inject.clear();
+    a.sync
+        .send(
+            vec![InputEvent::Text {
+                text: "é".to_owned(),
+            }],
+            None,
+        )
+        .await
+        .unwrap();
+    until("c types the text", || {
+        c_inject
+            .injected()
+            .iter()
+            .any(|e| matches!(e, InputEvent::Text { text } if text == "é"))
+    })
+    .await;
+    assert!(
+        !b.inject
+            .injected()
+            .iter()
+            .any(|e| matches!(e, InputEvent::Text { .. })),
+        "b typed it too"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_driven_device_never_leads_on_to_the_device_driving_it() {
     // A viewer on a drives b; b's edge leads back to a. Leading on would make
     // each drive the other, and a viewer's own pointer would feed itself

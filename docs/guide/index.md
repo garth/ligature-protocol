@@ -26,7 +26,7 @@ feature they have today.
 | `ligatured` | Linux, macOS | The daemon: runs as a user service, holds your keys and talks to your other devices |
 | `lpctl` | Linux, macOS | The command line that drives the daemon: pairing, status, sending files, diagnostics |
 | `lpview` | Linux, macOS | A window that shows another of your devices' screens and drives it |
-| Ligature for Android | Android | The daemon inside an app, with a screen for pairing and the phone's own ways of sending |
+| Ligature for Android | Android | The daemon inside an app: pairing, sending, a touchpad and a screen viewer for your desktops, and a phone your desktops can drive and watch |
 
 ## How the guide is organised
 
@@ -41,8 +41,8 @@ feature they have today.
    does not arrive.
 
 Each page says what a platform cannot do as well as what it can: the Mac cannot read its own
-notifications, the phone reads its clipboard only when you ask it to, and so on. Those are
-limits of the platforms, recorded in the
+notifications, the phone sends what you copy only on a tap unless Ligature is on under
+Accessibility, and so on. Those are limits of the platforms, recorded in the
 [platform notes](../spec/08-platform-notes.md), not bugs to report.
 
 ## Status

@@ -55,8 +55,9 @@ store, so a device learned through gossip is recognised the first time it connec
 revoked one is refused on its next connection; a session already open with a device whose
 revocation arrives, by gossip or by the user's own hand, is closed at once
 ([ADR 0039](../adr/0039-revocation-scope-and-live-session-close.md)). Until that decision a
-receiver dispatches only the `pairing` purpose: every other stream the peer opens waits in a small bounded
-queue, to be dispatched if the peer is admitted and reset with code 2 if it is dropped, so
+receiver dispatches only the `pairing` purpose: every other stream the peer opens waits in
+a small bounded queue, to be dispatched if the peer is admitted and reset with code 2 if it
+is dropped, so
 a stranger kept for a ceremony learns nothing from the streams it opened
 ([ADR 0038](../adr/0038-stream-reset-codes-and-admission.md)).
 
@@ -64,7 +65,7 @@ a stranger kept for a ceremony learns nothing from the streams it opened
 
 QUIC connection migration keeps a session alive when a device changes network (Wi-Fi to
 mobile data, roaming between access points). Open question: how migration interacts with
-relay paths and with the per-epoch local identifiers in section 4.1.
+relay paths and with the local identifier in section 4.1.
 
 ### 3.4 End to end
 
@@ -173,8 +174,8 @@ itself a capability (chapter 05).
 
 ## 9. Open questions
 
-- Which QUIC implementation(s) the reference implementation should target, and whether
-  iroh's endpoint abstraction is reusable directly.
+- Whether iroh's endpoint abstraction is reusable over quinn, the implementation ADR 0028
+  chose.
 - How multiple network paths to the same peer are ranked (direct over relay, IPv6 over
   IPv4, Wi-Fi over mobile).
 - Whether IPv6 reachability should be preferred aggressively, since it often removes the

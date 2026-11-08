@@ -20,6 +20,9 @@ accept any valid CBOR; nothing requires a canonical form.
 **Ceremony**: The proximity pairing step: an introducer verifies a key physically in front
 of it and signs it with a role. One ceremony makes the newcomer known to all my devices.
 
+**Controller**: The device whose keyboard and mouse drive another during a *drive*; the
+*driven device* is the one that injects what it is sent. See *drive*.
+
 **Device security**: How a device authenticates its local user, locks, and protects its
 storage. Out of scope for the protocol, which defines authority and trust only.
 
@@ -35,9 +38,21 @@ owner of the device-scoped capabilities.
 **Device-scoped capability**: A capability that belongs to the device rather than to any
 account on it: display, speakers, sensors, physical input.
 
+**Drive**: One device's keyboard and mouse acting on another over the `input` capability,
+started when the pointer crosses an *edge* of the controller's *layout*, from a touchpad or
+from a *screen share*'s picture, and ended by the pointer leaving, the *release chord* or
+either side's release.
+
+**Edge**: A side of a desktop's screen that its *layout* maps to another device, so that a
+pointer pushed off it drives that device.
+
 **Envelope**: The one container for a signed fact: type, payload bytes as the signer
 produced them, signing key, and a signature over the prefix, type and payload. Facts are
 verified over the bytes as received and never re-encoded.
+
+**Format**: What a *screen share*'s picture is sent as, a codec and a chroma sampling
+(`h264` at `4:2:0` or `4:4:4`), agreed per share from what each end encodes and decodes
+(ADR 0044), never the encoder or decoder that makes or takes it.
 
 **Gossip**: The exchange, after authentication at the start of every session, of signed
 facts (revocations, bindings, principals, known persons, group membership, relays) that one
@@ -79,6 +94,9 @@ the ceremony for new devices and known persons. Chosen per device at pairing tim
 **Known person**: Another person whose master key I have verified in the ceremony and
 signed with the `person` role.
 
+**Layout**: Which *edge* of a desktop's screen leads to which device, kept locally on that
+desktop and set with `lpctl input layout`.
+
 **Least exposure**: The rule that data is encrypted only to the device that needs it; no
 hub, relay or uninvolved device can decrypt it.
 
@@ -119,8 +137,9 @@ the self-signing and user-signing public keys with the master key's signatures o
 Handed over in the ceremony and gossiped; what a verifier checks chains against and what a
 prompt shows.
 
-**Present**: Having an active, unlocked session on a device. The present person approves
-cross-person requests for that device's device-scoped capabilities.
+**Present**: Having a session on a device that the device reports as present; how it was
+unlocked is the device's business (ADR 0024). The present person approves cross-person
+requests for that device's device-scoped capabilities.
 
 **Principal**: See *device principal*. Also the role a signature carries when it marks a
 device as one I use.
@@ -138,15 +157,27 @@ and re-verifying with household members.
 **Relay**: A helper that forwards packets between two devices that cannot connect directly.
 It sees only addresses and ciphertext. The default personal relay is the user's home hub.
 
+**Release chord**: The keys that give the keyboard and mouse back to the controller during a
+*drive*: in the reference implementation both Control keys together, or an Alt or Super key
+on each side together.
+
 **Role**: What a ceremony signature asserts about a key: `binding` (my account on a
 device), `principal` (a device I use) or `person` (someone I know).
+
+**Scale**: A display's pixels per logical point, carried with its size so a viewer can show a
+*screen share* at its actual size (ADR 0045).
 
 **Schema**: A JSON Schema 2020-12 document under `schemas/` defining one LP record or
 message type. Messages are CBOR on the wire and validate against the schema after
 decoding.
 
+**Screen share**: One device's display watched live on another over the `screen`
+capability, and driven from the picture with absolute positions: the *sharer* captures and
+encodes, the *viewer* decodes and shows. Distinct from *share*.
+
 **Share**: The ad-hoc, AirDrop-like push of text, links or files to a chosen device,
-accepted per item by the receiving person. A user-scoped capability.
+accepted per item by the receiving person. A user-scoped capability. Distinct from a
+*screen share*.
 
 **Registration**: Whether a device belongs to a person (*personal*) or to the group
 (*group*), chosen by the introducer at pairing.

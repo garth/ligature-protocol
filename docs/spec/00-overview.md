@@ -33,7 +33,7 @@ MAY) follow RFC 2119 and RFC 8174 once this document leaves draft status.
 
 ## 4. Layering
 
-LP is organised as five layers plus a shared-state store:
+LP is organised as five layers plus a local store on each device:
 
 1. **Identity** (chapter 01): a person is a master signing key, with a self-signing key, a
    user-signing key and a self-chosen display name carried in a signed person fact.
@@ -56,7 +56,7 @@ groups of identities.
 flowchart TB
     L5["5 · Capabilities<br/>manifests on connect, requests, explicit grants"]
     L4["4 · Transport<br/>QUIC: one connection per device pair, one stream per capability<br/>mDNS/DNS-SD and BLE at home; untrusted helpers when away"]
-    L3["3 · Encryption<br/>the QUIC/TLS 1.3 session itself, raw public keys, least exposure, no group key"]
+    L3["3 · Encryption<br/>the QUIC/TLS 1.3 session itself, raw public keys, least exposure, no group encryption key"]
     L2["2 · Device trust<br/>one in-person ceremony, role signatures: binding, principal, person"]
     L1["1 · Identity<br/>master key and person fact"]
     S["State: a local store on every device, signed facts gossiped on every session.<br/>No server, nothing to recover."]
@@ -67,9 +67,12 @@ flowchart TB
 ## 5. Document conventions
 
 Each chapter states its intent per section and lists open questions inline. Wire formats
-appear only where an accepted decision in `docs/adr/` fixes them (the fact envelope, the
-stream frame and header, the gossip messages); state machines are still absent from this
-draft.
+appear where a decision in `docs/adr/` fixes them (the fact envelope, the stream frame and
+header, the gossip messages, the reset codes, the pairing stream, parts of input and screen)
+and, for the capability families of chapter 05, as the reference implementation's
+milestones defined them; those stay draft while
+[ADR 0008](../adr/0008-capability-model.md) is Proposed. State machines are still absent
+from this draft.
 
 ## 6. Schemas and encoding
 

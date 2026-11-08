@@ -65,7 +65,7 @@ running.
 - `--yes` skips the code prompt on a desktop, for scripts. Compare the code some other way
   when you use it.
 - A second pairing cannot start while one is waiting, and a device that already has keys
-  cannot show an offer; stop the daemon's pairing with Ctrl-C (desktop) or **Cancel**
+  cannot show an offer; stop the daemon's pairing with Ctrl+C (desktop) or **Cancel**
   (phone) first.
 
 ## Knowing other people

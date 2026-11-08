@@ -12,11 +12,13 @@ those constraints so capability specs do not assume more than a platform allows.
 The reference daemon (`ligatured`) runs as a systemd user service, installed by the release
 tarball's `install.sh` with its state in `$XDG_DATA_HOME/ligature` and its control socket in
 `$XDG_RUNTIME_DIR/ligature`, and exposes that socket to
-`lpctl` (D-Bus integration is a later milestone). Clipboard, notifications and remote input on
-Wayland go through compositor protocols and portals (for example `wlr-data-control`, `xdg-desktop-
-portal`), which differ by compositor. On a multi-account machine each account runs its own
-`ligatured` as a systemd user service for user-scoped capabilities, and a system-level service owns
-the device principal and device-scoped capabilities, learning who is present from logind. LP relies
+`lpctl` (D-Bus integration is a later milestone). The clipboard, input and screens on Wayland
+go through compositor protocols and portals (`wlr-data-control`, `xdg-desktop-portal`), which
+differ by compositor, and notifications through the session bus (below). On a multi-account
+machine each account runs its own `ligatured` as a systemd user service for user-scoped
+capabilities, and a system-level service, when it exists, will own the device principal and
+device-scoped capabilities, learning who is present from logind (until then the account's
+daemon offers them, [ADR 0040](../adr/0040-binding-stands-in-for-principal.md)). LP relies
 on the OS's account isolation to keep one account's keys and clipboard from another. The account's
 daemon does not depend on the session's environment: it finds the compositor socket in the runtime
 directory and runs the Wayland side in a small helper process whose environment names that socket,
@@ -61,11 +63,15 @@ chooses what is shared, so a viewer's choice of display is a request, and the re
 it hands back is kept so the picker shows once. The PipeWire stream is read by GStreamer's
 `pipewiresrc` and encoded by ffmpeg (VA-API where a test encode works, `libx264`
 otherwise), child processes the daemon feeds and reads, so neither library is needed for
-the rest of the daemon. `h264_vaapi` keeps two frames in flight by default, 31 ms at 30 fps
-here, so it runs with `-async_depth 1`; a raw H.264 stream marks where a frame begins but
+the rest of the daemon. `h264_vaapi` keeps two frames in flight by default (39 ms at 30 fps
+here), so it runs with `-async_depth 1`; a raw H.264 stream marks where a frame begins but
 not where it ends, so the daemon takes a whole-looking frame when the encoder pauses rather
-than when the next one begins. Hyprland shows no indicator of a screen cast, so the daemon posts a
-notification with a Stop action for the share's life. `pipewiresrc` can stop delivering
+than when the next one begins. A 4:4:4 share comes only from `libx264`, since VA-API encodes
+4:2:0 alone ([ADR 0044](../adr/0044-screen-formats-are-negotiated.md)); the reference
+viewers ask for 60 frames a second and a sharer agrees to at most 60, and `lpview` decodes
+with ffmpeg's software decoder, asking for 4:4:4 first. Hyprland shows no indicator of a
+screen cast, so the daemon posts a notification with a Stop action for the share's life.
+`pipewiresrc` can stop delivering
 while the portal logs "Out of buffers"; the daemon starts a capture that has gone quiet
 again on the same portal session. Where the portal is missing, `wlr-screencopy` copies an
 output instead.
@@ -79,8 +85,9 @@ A macOS machine is a full peer. The binding daemon runs as a per-user launchd ag
 from an application bundle, `~/Applications/Ligature.app` (installed by the release
 tarball's `install.sh`, state in `~/Library/Application Support/ligature`, control socket
 in `$TMPDIR/ligature`, the UDP port fixed at 47471), because macOS grants notifications,
-Accessibility, Input Monitoring and Screen Recording, to a bundle by its identifier, and
-the principal daemon as a launchd daemon, mirroring the Linux split; presence comes from
+Accessibility, Input Monitoring and Screen Recording to a bundle by its identifier; the
+principal daemon, when it exists, will be a launchd daemon, mirroring the Linux split, with
+presence from
 the console-user and session state that the system exposes to daemons. Bonjour is the
 native mDNS/DNS-SD implementation and CoreBluetooth the BLE stack, so discovery needs no
 extra components. What a third-party daemon may offer is bounded by platform permissions:
@@ -104,9 +111,8 @@ extra components. What a third-party daemon may offer is bounded by platform per
   other devices. The same binary run outside the bundle displays nothing. A Focus mode
   hides the notifications as it hides any other.
 - **Files**: received files land in `~/Downloads` the same way as on Linux, and `lpctl
-  files` sends and fetches. Whether a launchd agent writing under `~/Downloads` meets a
-  Transparency, Consent and Control prompt on first write is recorded by the milestone 4
-  run.
+  files` sends and fetches. The milestone 4 run (LP-87) wrote files there from the launchd
+  agent with no Transparency, Consent and Control prompt recorded.
 - **Remote input**: posting events and filtering them in an event tap needs the
   Accessibility permission, and seeing the keyboard needs Input Monitoring; both are
   granted to the bundle by the user under Privacy and Security, and macOS prompts for each
@@ -171,24 +177,26 @@ protocol of its own. LineageOS is the first target (no Google services, sideload
 - **Clipboard.** Since Android 10 an app may read the clipboard only while its window has
   focus or it is the default keyboard; the change listener fires only when a read would
   be allowed. Writing is unrestricted. A phone therefore always receives (the daemon sets
-  the primary clip from the background) and sends in one of three ways: automatically, when
+  the primary clip from the background) and sends in one of three ways. First, automatically, when
   the app holds `READ_CLIPBOARD_IN_BACKGROUND`, a signature-level permission granted only
   to a build signed with the platform key, which means a ROM built from source, since the
-  LineageOS project's own builds are signed with keys it keeps; automatically, while the user
-  has the accessibility service on, which sees SystemUI's clipboard indicator appear (the
-  listener does not fire for an unfocused app, as LineageOS 24 on Android 17 confirmed), adds
+  LineageOS project's own builds are signed with keys it keeps. Second, automatically, while
+  the user has the accessibility service on, which sees SystemUI's clipboard indicator
+  appear (the listener does not fire for an unfocused app, as LineageOS 24 on Android 17
+  confirmed), adds
   an invisible window to take the focus for a moment, reads and sends. Android shows its own
   toast for the first read of each clip, unless the user has turned off Show clipboard access
   (`clipboard_show_access_notifications`, a secure setting no app may read, so the app always
   points to it). A second copy while the indicator is still up, about
   six seconds, makes no new event, so the service reads again once it would have gone and
   keeps doing so while each read finds a new clip, by the timestamp Android puts on it; a
-  clip the copying app marked sensitive is passed over. The indicator's event carries no text
-  or one item, where the notification shade's and quick settings' carry many, and their
-  closing one is a pane that disappears. Or on the user's request,
+  clip the copying app marked sensitive is passed over. The service tells the indicator apart
+  from the notification shade and quick settings by its event, which carries no text or one
+  item where theirs carry many, and whose closing is a pane disappearing. Third, on the
+  user's request,
   from a quick-settings tile, a notification action, the app's own screen or the share
   sheet, each of which gives the app a moment of focus or hands it the text directly. The
-  capability is advertised in both cases: what differs is when a `set` goes out, not
+  capability is advertised in all three cases: what differs is when a `set` goes out, not
   whether the peer may send one. The clip carries text and HTML itself; an image or a file
   selection a peer sent is a content URI of the app's own provider, fetched from the peer
   only when an application opens it, into the app's cache directory. Since few Android
@@ -199,7 +207,7 @@ protocol of its own. LineageOS is the first target (no Google services, sideload
   The system's copy overlay asks the provider for a thumbnail the moment a clip is set;
   it gets a placeholder, so only an application's read fetches.
 - **Pairing.** The phone has a screen and a camera, so it shows its offer as a QR code
-  and as text (the newcomer role); introducing another device from a pasted offer works
+  and as text (as the newcomer); introducing another device from a pasted offer works
   too. A camera-based scanner is a later addition.
 - **Device name.** The name under Settings → About phone, else the model, as the host
   name the device record carries ([ADR 0034](../adr/0034-keys-are-identifiers.md)).
@@ -224,8 +232,10 @@ protocol of its own. LineageOS is the first target (no Google services, sideload
   way Android lets an app inject, so it accepts input only while that is on, and the
   descriptor follows. A touch screen has no pointer or buttons: the app draws a pointer, the
   left button is a finger at it, the right is Back and the middle is Home, and scrolling is a
-  swipe. Characters and keys go through the service's input connection (Android 13), so they
-  reach a focused text field and nothing else, and a held key does not repeat. A person's
+  swipe. Characters and keys go through the service's input connection, which Android gives
+  an accessibility service only from Android 13, so they reach a focused text field and
+  nothing else, and a held key does not repeat, since only its press and its release reach
+  the phone and the connection repeats nothing. A person's
   own touch cancels a finger the service holds down, and so does SystemUI as the keyguard's
   PIN pad rises in the middle of a swipe, so a stroke Android cancels while the remote button
   is held starts again on the next move, or the bouncer stays half open and the next tap
@@ -250,7 +260,7 @@ protocol of its own. LineageOS is the first target (no Google services, sideload
   drives it.
 - **SMS, telephony.** SMS and telephony need their own permissions and, for SMS, store
   policy approval; neither is offered yet.
-- **Keys.** The Android Keystore holds no Ed25519 keys on most devices (section 3a); the
+- **Keys.** The Android Keystore holds no Ed25519 keys on most devices (section 4a); the
   key file is software-held under the app's private directory.
 
 ## 4. iOS and iPadOS
@@ -296,7 +306,7 @@ bounds:
 - **Files.** Sent from the share sheet, received into the app's folder in the Files app.
   A transfer gets about thirty seconds once the app leaves the foreground.
 - **Remote input, camera, sensors, display.** Usable while the device is held and the app
-  open, which is when they are wanted; an iPad can be a `display` for a desktop this way.
+  open, which is when they are wanted; an iPad could be a `screen` viewer for a desktop this way.
 - **Keys.** The Keychain stores the local store's keys; the Secure Enclave holds only P-256
   keys, as on macOS (section 2b).
 
@@ -321,7 +331,7 @@ notifications, media and telephony from the phone, and a Swift app over the shar
 for pairing, clipboard receive, clipboard send on request, file send from the share sheet,
 and the device as a controller, camera or display while open.
 
-## 3a. Local store protection
+## 4a. Local store protection
 
 Hardware-backed keystores on some phones support only ECDSA P-256, not Ed25519
 ([ADR 0027](../adr/0027-ed25519.md)). On such devices the Ed25519 key is software-held and
@@ -333,7 +343,7 @@ TPM-backed key on Linux, the Keystore on Android and the Keychain on iOS. This i
 device security is out of scope and conformance does not depend on it
 ([ADR 0024](../adr/0024-device-security-out-of-scope.md)).
 
-## 4a. Networks and IPv6
+## 4b. Networks and IPv6
 
 Where both devices have global IPv6 addresses, a direct QUIC connection usually succeeds
 without hole punching or a relay, since there is no NAT to traverse (only stateful
@@ -345,12 +355,12 @@ implementations.
 ## 5. Home hubs and headless devices
 
 Hubs have no screen or camera and never rely on hardware for pairing: they serve a basic
-web page on the LAN that shows the ceremony's fingerprint and code (chapter 02 section 5).
+web page on the LAN that shows the ceremony's offer (chapter 02 section 5).
 A hub is also the default personal relay and hole-punch coordinator (chapter 04), so
 it should be always on and reachable from the internet, which on an IPv4-only home
 connection means a port forward or a global IPv6 address. Before the first owner claims the device,
 anyone on the LAN can open its pairing page and claim it; this setup-window risk is
-accepted for milestone 1 ([ADR 0029](../adr/0029-ceremony-code-from-tls-exporter.md)). If
+accepted ([ADR 0029](../adr/0029-ceremony-code-from-tls-exporter.md)). If
 later judged insufficient, the options are a claim window opened by a power cycle or a
 printed code.
 

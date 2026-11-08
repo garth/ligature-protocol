@@ -7,7 +7,7 @@ file for another to fetch, which is how the clipboard carries large content.
 ## Sending from a desktop
 
 ```sh
-lpctl files send phone ~/Pictures/holiday.jpg ~/Documents/notes.pdf
+lpctl files send "Pixel 8 Pro" ~/Pictures/holiday.jpg ~/Documents/notes.pdf
 ```
 
 The device is named by its display name, or by a prefix of its key or fingerprint as
@@ -50,8 +50,8 @@ lpctl files withdraw <id>
 and on the other device:
 
 ```sh
-lpctl files get laptop <id>              # into the download folder
-lpctl files get laptop <id> --to /mnt/x  # or somewhere else
+lpctl files get Garths-MacBook-Pro <id>              # into the download folder
+lpctl files get Garths-MacBook-Pro <id> --to /mnt/x  # or somewhere else
 ```
 
 Offers live in memory: they end when the daemon stops or the connection drops. A fetch of a

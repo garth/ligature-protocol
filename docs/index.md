@@ -38,7 +38,8 @@ created on their first device; each device gets its own keys, signed in by the p
 introducer devices in a proximity ceremony with a QR code and a six-digit code. Devices find
 each other on the local network and hold one QUIC connection per pair, with TLS 1.3 and
 their own keys as the credentials, so the session itself is the end-to-end layer. Over it,
-devices advertise capabilities (clipboard, notifications, files, and more to come) and use
+devices advertise capabilities (clipboard, notifications, files, the keyboard and mouse,
+screens, and more to come) and use
 each other's. There is no shared database: each device keeps its own signed facts and
 gossips them to its peers, revocations first. The [specification](spec/00-overview.md) has
 the whole design, and the
@@ -50,8 +51,11 @@ product.
 
 Alpha. The releases carry pairing, the clipboard with text, HTML, images and files,
 notifications, and file transfer, between a Linux machine, a Mac and an Android phone on
-one network. Next come the phone's messages and calls and media control, then one keyboard
-and mouse across the desktops, then a screen viewed and controlled from another device.
+one network. On `main`, for the next release, come one keyboard and mouse across your
+devices, with the pointer crossing from one desktop to the next at the edge of the screen
+and the phone a touchpad for either or driven from them, and screens watched and driven
+from another device, in a window on a desktop or in the app on the phone. After them come
+the phone's messages and calls and media control.
 Remote connections, sharing between people and shared household devices are specified and
 not yet built. Each release is reviewed against the project's threat model before it goes
 out; the reports are in the

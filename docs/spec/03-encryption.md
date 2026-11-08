@@ -6,7 +6,7 @@
 
 Communication is private to the people and devices involved, and no device can decrypt
 data it does not need. The QUIC/TLS 1.3 session between two devices (chapter 04) is the
-end-to-end encryption layer; there is no group key. See
+end-to-end encryption layer; there is no group encryption key. See
 [ADR 0019](../adr/0019-pairwise-least-exposure-encryption.md).
 
 ## 2. The session is the envelope
@@ -47,10 +47,11 @@ and C together, so the tablet never sees what went to the laptop.
 
 A device sends no manifest, no gossip and no capability traffic until the peer is
 authenticated and its key is recognised: a binding of mine, a principal I use, or a
-binding of a known person. An unknown key is answered only with the pairing offer of
-chapter 02, if the device is accepting pairings. Bystanders learn nothing beyond a public
-key. Open questions: whether even the public key should be hidden behind a per-epoch
-identifier, as the discovery advertisements already are (chapter 04); and whether to allow
+binding of a known person. An unknown key may open only the `pairing` stream of chapter
+02, and only while the device accepts pairings; its other streams wait unanswered (chapter
+04 section 3.2). Bystanders learn nothing beyond a public key. Open questions: whether even
+the public key should be hidden behind a per-epoch identifier, the same open question as
+the discovery `id` (chapter 04 section 4.1); and whether to allow
 an opt-in open sharing mode (chapter 10 section 7) in which an unknown but authenticated
 key may offer a share and nothing else for a limited time.
 

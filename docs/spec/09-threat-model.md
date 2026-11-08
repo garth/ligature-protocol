@@ -9,9 +9,9 @@ not. It should be read alongside every other chapter; design choices elsewhere c
 
 ## 2. Assets
 
-The user's master key, the device set membership, the content of
-device-to-device traffic, secrets at rest, and the user's presence and location
-information.
+The user's master key, the device set membership, the content of device-to-device
+traffic, and the user's presence and location information; keys at rest are the device's
+concern (section 6).
 
 ## 3. Adversaries
 
@@ -49,7 +49,7 @@ A group member must not be able to read another member's user-scoped traffic or 
 another member's capabilities without a grant. On a shared device, one account's daemon
 must not be able to read another account's clipboard or keys; LP relies on the
 operating system's account isolation for this and says so (chapter 08). A departed member
-is removed from the group record and their standing grants are revoked. Open question:
+is removed from the membership document and their standing grants are revoked. Open question:
 whether a device-scoped capability invoked by a group member should be visible to the
 present user even after approval (an indicator), to limit silent use.
 
@@ -98,22 +98,6 @@ user's own control (the home hub), and that any relay can be swapped without any
 change. Open question: whether relays should require proof of device-set membership to
 accept traffic, to resist abuse without becoming identity-aware.
 
-## 5. Privacy goals
-
-Local discovery advertisements should not reveal the user's identity to bystanders, and
-nothing is sent before mutual authentication (chapter 03). Content that passes through a
-capability, such as the text of a notification or the clipboard, travels only on the
-authenticated pairwise session, is held in memory for that session, and is never written
-to a store (chapter 05 sections 3b and 3c). A transferred file is written only to the
-destination the receiving device chose, by default its download folder, under a name the
-receiver reduces to a base name, so a sender can never choose a path on the receiver, and
-what a device offers is served only by an id it announced, never listed (chapter 05
-section 3d). A large clipboard value is announced rather than pushed, so its bytes reach
-only the device on which an application pastes it, and the receiver's copy of a fetched
-value lives in a cache it clears when its clipboard moves on (section 3b). Open question: whether a
-device's bare public key, seen by anyone who connects, is itself an identifier worth hiding
-behind a per-epoch value.
-
 ### 4.4 Capabilities that act on a device
 
 Input (chapter 05 section 3g) is the first capability by which a peer acts on a device
@@ -123,7 +107,7 @@ authority (chapter 10 section 5.1), and the family is offered to no one else. A 
 that is lost or stolen can therefore drive the person's desktop until it is revoked, which
 is why revocation is a gossiped fact that takes effect at the next session start and ends
 a live session ([ADR 0039](../adr/0039-revocation-scope-and-live-session-close.md),
-chapter 06 section 3), and why the person revokes a lost device first. A driven device
+chapter 06 section 5), and why the person revokes a lost device first. A driven device
 shows nothing while driven beyond the pointer moving, and lifts every key and button it
 holds when the drive ends however it ends, so a dropped connection leaves nothing
 pressed. What this family cannot defend against is a compromised peer of the same person:
@@ -150,6 +134,23 @@ Nothing a stranger can do over the network makes any device recognise them. A `p
 role and a group membership exist only through the in-person ceremony
 ([ADR 0030](../adr/0030-in-person-verification-mandatory.md)). Impersonation at a distance
 is therefore excluded by construction rather than mitigated.
+
+## 5. Privacy goals
+
+Local discovery advertisements should not reveal the user's identity to bystanders, and
+nothing is sent before mutual authentication (chapter 03). Content that passes through a
+capability, such as the text of a notification or the clipboard, travels only on the
+authenticated pairwise session, is held in memory for that session, and is never written
+to a store (chapter 05 sections 3b and 3c). A transferred file is written only to the
+destination the receiving device chose, by default its download folder, under a name the
+receiver reduces to a base name, so a sender can never choose a path on the receiver, and
+what a device offers is served only by an id it announced, never listed (chapter 05
+section 3d). A large clipboard value is announced rather than pushed, so its bytes reach
+only the device on which an application pastes it, and the receiver's copy of a fetched
+value lives in a cache it clears when its clipboard moves on (chapter 05 section 3b). Open
+question: whether a
+device's bare public key, seen by anyone who connects, is itself an identifier worth hiding
+behind a per-epoch value.
 
 ## 6. Out of scope
 

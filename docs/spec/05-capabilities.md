@@ -56,10 +56,11 @@ flowchart LR
 
 ## 3. Initial capability families
 
-The first families are: notifications, clipboard, files, share, remote input, media
-control, telephony/SMS, displays, sensors. Each will become its own spec section with its
-own schema; share (section 3a), clipboard (section 3b), notifications (section 3c), files
-(section 3d), input (section 3g) and screen (section 3h) are specified so far.
+The first families are: notifications, clipboard, files, share, input, media control,
+telephony/SMS, screen, sensors. Each will become its own spec section with its own schema;
+clipboard (section 3b), notifications (section 3c), files (section 3d), input (section 3g)
+and screen (section 3h) are specified so far, and share (section 3a) is outlined with no
+schema yet. Sections 3e and 3f are reserved for media control and telephony.
 
 ## 3a. Sharing between people
 
@@ -68,7 +69,8 @@ files to a chosen device, usually another person's. It is user-scoped: it belong
 binding, so a share to the family laptop is a share to a particular account on it. The
 receiver accepts or declines each share on the receiving device; acceptance is a one-time
 grant, which the receiver may make standing for a particular sender. The payload travels
-on the `share` stream of the pairwise session. `files` (section 3d) is the transfer of
+on a stream of the pairwise session whose purpose is the family's type. `files` (section 3d) is the
+transfer of
 files among a person's own devices. See
 [ADR 0022](../adr/0022-ad-hoc-sharing-between-people.md). Open question: size limits and
 resumption for large shares, and whether a share may be addressed to several devices at
@@ -82,7 +84,7 @@ It is user-scoped: a binding offers it, and the same person's other bindings use
 without a prompt (section 4). A device advertises it only while it can reach its local
 clipboard. The descriptor's `params` carry `mimeTypes`, the content types the device
 accepts and can put on its clipboard; `maxBytes`, the push bound, 512 KiB by default and
-never more than the frame limit of chapter 03 less 64 KiB of headroom; and `fetch`, whether
+never more than the frame limit of chapter 04 section 3.1 less 64 KiB of headroom; and `fetch`, whether
 the device holds a promise for announced content and fetches it on paste.
 
 A clipboard holds one selection in several representations at once (plain text and HTML
@@ -207,7 +209,8 @@ software KVM does, or a phone's screen is a touchpad for a desktop. It is the fi
 device-scoped family (chapter 10 section 3): a keyboard and mouse belong to the device, not
 to an account on it, and a request to drive a device is answered by the person present on
 it. Between one person's own devices that is implicit, as for user-scoped use (section 4);
-across people it is the grant of chapter 10 section 6. On a device with one account the
+across people it would be the grant of chapter 10 section 6, and the family is not yet
+offered to anyone but the person's own devices. On a device with one account the
 account's daemon offers the family in its own manifest, standing in for the principal
 ([ADR 0040](../adr/0040-binding-stands-in-for-principal.md)). The descriptor's `params` say
 `accepts` (this device injects what it is sent), `provides` (it captures its own keyboard
@@ -233,9 +236,10 @@ things, as Synergy's key message does ([ADR 0043](../adr/0043-keys-carry-their-m
 the physical key as an evdev code; on a press `id`, what the key means on the controller's layout
 (Synergy's key ID: a character's Unicode value, or a named key's value in U+E000 to U+EFFF, the X11
 keysym less 0x1000); and `mods`, the controller's modifier mask. The controller computes the
-character with Shift and Caps Lock and without Control, Alt or Super, composes dead keys itself, and
-counts a Mac's Command as Super, its left Option as Alt, and its right Option alone as the
-level key that chooses a character, as AltGr
+character with Shift, Caps Lock and AltGr and without Control, Alt or Super, and composes
+dead keys itself. A Mac's Command is Super, its left Option is Alt, and its right Option,
+with no Control, Command or left Option held, is AltGr: it chooses the character, and its
+own press and release are not sent
 ([ADR 0046](../adr/0046-right-option-types-characters.md)). The driven device finds its own key for
 `id`: a modifier presses its own key for that modifier and Caps Lock or Num Lock toggles its lock;
 with a command modifier held it presses the key that produces `id` with the user's modifiers; and
@@ -246,9 +250,12 @@ never guessed.
 
 The drive ends in one of three ways. The driven device sends `leave` when the pointer
 reaches the edge it entered by, with `at` along it, and the controller takes the pointer
-back there; a driven device never follows its own layout while driven, so two devices
-need one mapping each and nothing cycles. Either side sends `release`: the controller on
-its release chord or when it stops driving without an edge (a touchpad's user leaving the
+back there; a device driven across an edge never follows its own layout, so two desktops
+need one mapping each and nothing cycles, while a device driven by an absolute entry (a
+touchpad, a viewer) does follow it, except to the device driving it. Either side sends
+`release`: the controller on its release chord (in the reference implementation both
+Control keys, or an Alt or Super key on each side) or when it stops driving without an
+edge (a touchpad's user leaving the
 screen), the driven device when it wants its input back. Or the stream ends, by reset or
 by the session's end, which the driven device treats as `release`. In every case the
 driven device lifts every key and button still held before anything else, so nothing
@@ -282,13 +289,15 @@ it takes.
 A **format** names what a share's picture is sent as, never the encoder or decoder that
 makes or takes it ([ADR 0044](../adr/0044-screen-formats-are-negotiated.md)): a map of
 `codec` and `chroma`. The codec `h264` is H.264 as an Annex B byte stream with the parameter
-sets repeated in every keyframe, so a decoder can start at any keyframe; `chroma` is `4:2:0`
+sets repeated in every keyframe, a keyframe being an access unit with an IDR slice, so a
+decoder can start at any keyframe; `chroma` is `4:2:0`
 (colour at half the resolution each way, the default when absent) or `4:4:4` (colour at
 full resolution, which keeps coloured text sharp). A device that does not know one of a
 format's keys or values passes over that format, so a codec or a sampling is added by
 defining its name here, without a new message.
 
-A **share** is one stream with the capability type as its purpose, opened by the viewer.
+A **screen share** is one stream with the capability type as its purpose, opened by the
+viewer.
 `displays` without a list asks the sharer what it has and is answered by `displays` with the
 list, each display an `id` stable for the session, a `name`, its `width` and `height` in
 pixels, whether it is `primary`, and its `scale`, the pixels per logical point the platform
@@ -305,10 +314,11 @@ each is one chunk of one frame with the frame's `seq`, its capture time `at` in 
 since the share started, whether it is a `key` frame, whether this chunk is the `last`, and
 up to 256 KiB of `bytes`, a frame being the concatenation of its chunks in order, so no
 message exceeds the bound of [ADR 0036](../adr/0036-stream-framing-and-message-typing.md)
-and the bound stands as it is. The sharer paces frames to the agreed rate and, when the
-stream's flow control holds it back, drops frames rather than queues them, so the picture
-stays current rather than complete; it sends a keyframe at the start, whenever the viewer
-sends `keyframe`, after a loss or a late start, and after frames it dropped, and need send
+and the bound stands as it is. The sharer sends frames no faster than the agreed rate, and
+may send fewer while the display is still; when the stream's flow control holds it back it
+drops frames rather than queues them, so the picture stays current rather than complete. It
+sends a keyframe at the start, whenever the viewer sends `keyframe` (after a loss or a late
+start), and after frames it dropped, and need send
 no other, since a keyframe codes again what did not change. `stop` from either side, with a
 reason (`viewer`, `sharer`, `consent`, `error`), ends the share and then the stream; a
 stream that ends without one is a stop too, and either way the sharer ends its capture at
@@ -322,8 +332,8 @@ display it is sharing. Viewing and driving are two streams of two families on on
 and a viewer may watch without driving. One stream carries one share for its life; a
 second viewer is a second share. Nothing of a share is stored, and the sharing device
 shows that it shares, by the platform's indicator or a notification of its own, for the
-share's life (chapter 09 section 4.4). Open question: audio with the picture, and a window
-rather than a display.
+share's life (chapter 09 section 4.4). Open questions: audio with the picture, a window
+rather than a display, and a bit-rate ceiling in `start` (ADR 0044).
 
 ## 4. Requests and grants
 
@@ -342,7 +352,7 @@ Open question: whether a person may opt their own devices out of the implicit de
 
 Once granted, a capability is invoked over its own stream in the pairwise QUIC session
 (chapter 04), which is also the end-to-end encryption (chapter 03). Each capability family
-defines its own operations. No wire format is defined in this draft.
+defines its own operations in its section above.
 
 ## 6. Bridging
 
@@ -352,8 +362,7 @@ A bridge is just a device that advertises a capability on behalf of something el
 
 ## 7. Open questions
 
-- Versioning and negotiation of capability types.
-- Schemas are JSON Schema 2020-12 ([ADR 0020](../adr/0020-json-schema-and-reverse-dns-names.md));
-  the wire encoding is CBOR ([ADR 0025](../adr/0025-cbor-wire-encoding.md)).
+- How a capability type is replaced by an incompatible successor; within `ligature/1`
+  evolution is additive ([ADR 0036](../adr/0036-stream-framing-and-message-typing.md)).
 - Capability discovery across group identities: what a member can see of another
   member's devices before asking.

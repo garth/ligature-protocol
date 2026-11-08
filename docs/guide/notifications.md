@@ -29,7 +29,7 @@ send notifications: click **Allow**. After that:
   it on your other devices;
 - a Focus mode hides them like any other.
 
-If you clicked **Don't Allow**, turn Ligature on under System Settings → Notifications.
+If you clicked **Don't Allow**, turn Ligature on under System Settings, Notifications.
 
 Nothing an application posts on the Mac leaves it, because macOS gives no process a view of
 other applications' notifications.

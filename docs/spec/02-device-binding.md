@@ -44,8 +44,9 @@ user chooses at pairing time according to their requirements. Open question: whe
 ## 4. The ceremony
 
 1. The newcomer displays an **offer**, as a QR code and as text
-   (`ligature:pair/1?b=…&p=…&a=…&c=…`): its binding and principal keys, the addresses it
-   can be dialled at, and a one-time code. A headless device serves a page that shows it
+   (`ligature:pair/1?b=…&p=…&a=…&c=…`, a form that stays draft until an ADR fixes it):
+   its binding and principal keys, the addresses it can be dialled at, and a one-time code.
+   A headless device serves a page that shows it
    (section 5).
 2. An introducer of mine reads the offer, dials it over QUIC with raw public keys, and
    refuses to go on unless the key the connection authenticates is the offer's binding key.
@@ -97,7 +98,7 @@ sequenceDiagram
 A device without a screen or camera (a hub, a NAS, a speaker) never relies on hardware
 for pairing. It serves a basic web page on the local network, reachable by a URL it
 prints at first boot, announces over mDNS, or exposes on a well-known port. The page shows
-the fingerprint and code of step 1, and the ceremony proceeds from any trusted device
+the offer of step 1, and the ceremony proceeds from any trusted device
 viewing it. Open question: whether that page should be served only until the first
 binding or principal signature arrives, and what replaces it afterwards for adding further
 owners.
@@ -148,7 +149,5 @@ required when the device set is large.
 
 ## 8. Open questions
 
-- How long a device may go without meeting any trusted peer before treating its trust
-  store as stale (chapter 06 section 5).
 - Whether a device may hold bindings for two people at once on an operating system with
   no account separation.

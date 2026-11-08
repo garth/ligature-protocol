@@ -30,9 +30,7 @@ self-signing key with the `binding` role (chapter 02), and owner of that person'
 user-scoped capabilities on the device. Pairing a binding on a shared device also signs the
 principal with the `principal` role for that person, in the same ceremony. A personal
 phone has one binding and its owner is the device's owner; a family laptop has one
-principal and one binding per account; a lamp has a principal and no bindings. Open
-question: whether a principal with bindings needs its own key, or can be represented by
-the set of bindings plus an owner record.
+principal and one binding per account; a lamp has a principal and no bindings.
 
 ```mermaid
 flowchart TB
@@ -104,7 +102,7 @@ All members may use its device-scoped capabilities under the group policy. From 
 | --- | --- | --- |
 | Any member's device | The group device's principal key | The membership document lists it |
 | The group device | A binding whose chain reaches a listed member's master key | The membership document lists that person |
-| The group device | An admin's binding, for configuration | The admin's master key has the `admin` role in the document |
+| The group device | An admin's binding, for configuration | The admin's master key has the group role `admin` in the document |
 | A member's device | The group device, for device-scoped requests only, as unauthenticated | Section 5.1 |
 
 When nobody is signed in, group policy decides every request to the device: the default
@@ -146,8 +144,8 @@ Within one person, their devices may use their user-scoped capabilities without 
 1. A device requests a capability from a principal or binding that belongs to another
    person or to the group.
 2. If the capability is user-scoped, the owning person is asked on any of their devices.
-3. If the capability is device-scoped and someone is **present** on the device (an active,
-   unlocked session), that person is asked on that device. If nobody is present, or the
+3. If the capability is device-scoped and someone is **present** on the device (a session
+   the device reports as present), that person is asked on that device. If nobody is present, or the
    device has no accounts, the device's policy decides. The prompt states whether the
    requester is a person or an unauthenticated group device (section 5.1).
 4. The approver may answer once, or remember the answer as a standing grant with scope and
@@ -180,7 +178,7 @@ group members, so a sender sees exactly the devices they may send to. Each share
 accepted by the receiving person on the receiving device, as a one-time grant, unless they
 have chosen to always accept from that sender. Open question: an opt-in **open mode** in
 which anyone nearby may offer a share for a few minutes, which would be the one exception
-to "nothing before recognition" in chapter 03 and would need its own threat-model entry.
+to "nothing before authentication" in chapter 03 and would need its own threat-model entry.
 
 ## 8. Encryption across people
 
@@ -200,9 +198,9 @@ how a new member's devices first obtain the document when no admin device is rea
 
 ## 10. Open questions
 
-- Pairing a shared laptop: does the first admin pair the principal, and each person then
-  binds their account separately?
-- Guest access: time-boxed group membership with the `guest` role, or grants only?
+- Pairing a shared laptop: whether its principal must be paired by an admin before any
+  account binds (chapter 02 signs a binding and a principal in one ceremony).
+- Guest access: time-boxed group membership with a group role `guest`, or grants only?
 - Audit: should approvals and uses of device-scoped capabilities be logged for the owners?
-- Recovery of a group whose admins have all rebuilt: re-pair every group device, or allow
+- Rebuilding a group whose admins have all rebuilt: re-pair every group device, or allow
   a member to claim the group with a new group key?

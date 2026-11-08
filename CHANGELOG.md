@@ -10,167 +10,94 @@ release workflow publishes the section as the release notes with the installers.
 
 ### Added
 
-- Backspace and Enter work on a Linux desktop after text is typed into it from the phone or
-  through another desktop; before, the desktop took the keymap of its own typing for the
-  seat's and lost every named key after the first text (LP-178).
-
-- Screens are shared at 60 frames a second by default, rather than 30, which halves every
-  per-frame wait between a change and its picture; `lpview --rate` and `lpctl screen start
-  --rate` still choose another, and `lpview`'s title shows the rate (LP-177).
-
-- A shared screen reaches its viewer sooner: each frame leaves the sharer as soon as it is
-  encoded rather than when the next one begins, VA-API no longer holds a frame back, and
-  `lpview` decodes each frame without waiting for the next (LP-176).
-
+- One keyboard and mouse across the desktops (milestone 7): the pointer crosses from one
+  desktop to the other at an edge set with `lpctl input layout`, the keyboard follows it, and
+  `lpctl input status` and `lpctl input release` show and end a drive (LP-142, LP-143,
+  LP-144).
+- Keys type what they mean on the controlling keyboard, after Synergy and Input Leap: the
+  driven device presses its own key for the controller's character, modifiers keep their
+  meaning across layouts, a shortcut is the same letter's, and a dead key is composed on the
+  controller; building on Linux needs xkbcommon's development files (ADR 0043, LP-161).
 - Driving another device from a Mac, the right Option key types the characters it makes on
-  the Mac, accents included (right Option+E, then E, for é), as AltGr does on a PC; the left
-  Option key stays Alt (ADR 0046, LP-175).
-
-- A Mac driven by the phone's touchpad carries the pointer on across its edge to the next
-  desktop, as Linux does, and no device leads on to the device driving it, even when its own
-  edge fires the moment the entering pointer lands on it, which once made two desktops drive
-  each other and lose both keyboards (LP-174).
-
-- Watching a desktop on the phone turns the screen to landscape for a wide desktop, and a
-  pinch zooms the picture and pans it, with taps landing where they touch (LP-173).
-
-- `lpctl caps` names each connected device, as `lpctl status` does, instead of heading it with
-  its key alone (LP-172).
-
-- Every `lpctl` listing ends with the commands that act on what it shows, each with what it
-  does: `status`, `devices`, `input layout`, `input status`, `screen status`, `files offers`,
-  `files transfers` and `permissions`. `lpctl pair` on a device that already has its keys says
-  how a new device is added instead of only refusing (LP-170).
-
-- An Alt or Super key on each side, pressed together (Option or Command on a Mac), gives the
-  keyboard and mouse back, as both Control keys do, for a keyboard with one Control key such
-  as a MacBook's, and wherever Alt and Super are swapped (LP-171).
-
-- A permission allowed on the Mac takes effect without restarting anything: the daemon sees
-  the grant and restarts itself. `lpctl permissions` lists which of Accessibility, Input
-  Monitoring and Screen Recording the daemon holds, `lpctl permissions open <permission>`
-  opens its page in System Settings, with Ligature listed there, and `lpctl permissions reset`
-  clears all three and restarts the daemon so macOS asks again, with its alert for
-  Accessibility (LP-169).
-
-- What you copy on the phone is sent by itself once you turn Ligature on under Accessibility,
-  on any ROM, including a second copy made within seconds of the first and one made with
-  Control+C while driving the phone, which arrives at once. Android shows a toast for each new
-  clip read unless you turn off Show clipboard access, which the app's clipboard card points
-  to, and a clip the copying app marks as sensitive is not sent this way (LP-166).
-
-- The phone can be driven from your other devices, once you turn Ligature on under
-  Accessibility: a pointer on the screen, clicks as taps, the right button for Back and the
-  middle for Home, the wheel to scroll, and typing into the field in focus. A request to watch
-  its screen then opens Android's dialog at once instead of a notification, the screen wakes
-  for either, and a request nobody answers within a minute closes its dialog. A click from a
-  Mac trackpad is a tap rather than a long press, and a locked phone is unlocked by dragging
-  up and clicking its PIN, since a stroke Android cancels as the PIN pad appears is carried
-  on. Granting the
-  app screen capture over `adb` lets your devices watch the phone with nobody at it, and the
-  app's **Remote control** says when that is so (LP-167).
-
-- The phone's node never needs the app opened: it starts by itself after an update as it does
-  at boot, a failed start is tried again until it succeeds, and its notification can be
-  swiped away while it keeps running (LP-165).
-
-- A shared screen's picture format is agreed between the two devices: a Linux machine sends
-  full colour detail (4:4:4), which keeps coloured text sharp, to a desktop that decodes it,
-  and 4:2:0 to the phone; `lpview --chroma` narrows the choice (ADR 0044) (LP-162).
-
-- `lpview --actual-size` shows a shared screen at the size it has on its device, pixel for
-  pixel and adjusted for a high-DPI screen at either end, scrolling when it is larger than
-  the window; displays now report their scale (ADR 0045) (LP-164).
-
-- Every release carries `SHA256SUMS` over its files and `SHA256SUMS.minisig`, its
-  signature by the project's release key, made with minisign; the install guide has the
-  public key and the commands that verify a download (LP-139).
-- `lpctl upgrade` installs the latest release on a desktop after verifying its checksum
-  file against the release key and the package against the checksum; `lpctl upgrade
-  --check` only reports, and every other `lpctl` command run on a terminal says once a
-  day when a newer release exists (`LIGATURE_NO_UPDATE_CHECK=1` switches the check off)
-  (LP-140).
-- The input capability (milestone 7): the daemon core that lets one device's keyboard and
-  mouse drive another across a configured screen edge or from a touchpad, `lpctl input
-  layout`, `status` and `release`, the layout kept in the store, and in-memory backends
-  behind `LIGATURE_FAKE_INPUT=1`; no platform captures or injects yet, so no device
-  advertises it (LP-142).
-- A Mac captures and injects input (milestone 7): an event tap captures the keyboard and
-  mouse when the cursor reaches a mapped edge, posted events drive the Mac from another
-  device, and the family is offered while Ligature is allowed under Accessibility and Input
-  Monitoring (LP-144).
-- A Mac shares its screen (milestone 8): ScreenCaptureKit captures a display, ffmpeg encodes
-  it with VideoToolbox, and the share is offered where ffmpeg is installed and runs once
-  Ligature is allowed to record the screen (LP-150).
-- The screen capability (milestone 8): the daemon core that lists a device's displays,
-  negotiates a share, chunks frames within the message bound, drops rather than queues
-  and recovers with a keyframe, and ends a share on every path; `lpctl screen displays`,
-  `start` (the encoded stream to a file), `stop` and `status`; a synthetic capture behind
-  `LIGATURE_FAKE_SCREEN=1`; no platform captures or views yet (LP-148).
-- Linux: the keyboard and mouse are captured through the InputCapture portal and libei
-  when the pointer crosses a mapped screen edge, and injected through the virtual pointer
-  and virtual keyboard protocols by a helper, with text typed through a keyboard of its
-  own; a Linux daemon now advertises `input` (LP-143).
-- Android: the app is a touchpad and keyboard for one of the person's desktops: one
-  finger moves, a tap clicks, a hold drags, two fingers scroll, the field types, with
-  Backspace, Enter and right-click buttons; the phone advertises `input` as a provider
-  only (LP-145).
-- Linux: the screen is shared through the ScreenCast portal (or `wlr-screencopy` where the
-  portal is missing) and encoded by ffmpeg, with a "Sharing" notification whose action
-  stops it; `lpview <device>` watches another device's screen in a window and, after a
-  click, drives it until both Control keys are pressed; a Mac with ffmpeg can watch with
-  `lpview` too (LP-149).
-- Android: the phone shares its screen with another of the person's devices after the
-  user consents in Android's dialog each time, with a Stop sharing action, and a Watch
-  screen shows a desktop's screen and drives it by touch: a tap clicks where it lands, a
-  drag moves the pointer, two fingers scroll, the field types (LP-151).
-- Android: touch on the touchpad and the Watch screen is sent in coalesced batches, so
-  the pointer follows the finger instead of replaying every movement (LP-151).
+  the Mac, accents included, as AltGr does on a PC; the left Option key stays Alt (ADR 0046,
+  LP-175).
+- Both Control keys together, or an Alt or Super key on each side (Option or Command on a
+  Mac), give the keyboard and mouse back (LP-142, LP-171).
+- The phone is a touchpad and keyboard for either desktop: one finger moves, a tap clicks, a
+  hold drags, two fingers scroll, the field types, with Backspace, Enter and right-click
+  buttons (LP-145, LP-156).
+- A desktop the phone drives carries the pointer on across its own edges to the next desktop,
+  and no device ever drives the device driving it (LP-174).
+- The phone is driven from your other devices once Ligature is on under Accessibility: a
+  pointer on its screen, clicks as taps, the right button for Back and the middle for Home,
+  the wheel to scroll, typing into the field in focus on Android 13 or later, and a locked
+  phone unlocked by dragging up and clicking its PIN; the screen wakes for a drive or a watch
+  (LP-167).
+- What you copy on the phone is sent by itself once Ligature is on under Accessibility, on
+  any ROM, a second copy within seconds included; Android shows a toast for each clip read
+  unless Show clipboard access is off, and a clip its app marked sensitive is not sent
+  (LP-166).
+- A screen watched and driven from another device (milestone 8): `lpview <device>` shows
+  another device's display in a window and, after a click, drives it from the picture; the
+  phone's Watch screen does the same by touch, in landscape for a wide desktop and with a
+  pinch to zoom; `lpctl screen displays`, `start`, `stop` and `status` list, record and end
+  shares (LP-148, LP-149, LP-150, LP-151, LP-173).
+- Linux shares through the ScreenCast portal, or `wlr-screencopy` where the portal is missing,
+  encoded by ffmpeg with VA-API where it works, with a Sharing notification whose action stops
+  it; a Mac shares through ScreenCaptureKit and VideoToolbox once Ligature is allowed to
+  record the screen; the phone shares after Android's dialog, or with nobody at it once the
+  app is granted screen capture over `adb`, which its **Remote control** card reports
+  (LP-149, LP-150, LP-151, LP-167).
+- A share is light and quick: frames leave the sharer as soon as they are encoded, at 60 a
+  second by default, a keyframe comes at the start and on request rather than every second, a
+  still screen sends almost nothing, and a Linux capture that stalls restarts itself (LP-149,
+  LP-150, LP-151, LP-176, LP-177).
+- A share's picture format is agreed between the two devices: full colour detail (4:4:4),
+  which keeps coloured text sharp, where both ends handle it, and 4:2:0 otherwise; `lpview
+  --chroma` narrows the choice (ADR 0044, LP-162).
+- `lpview --actual-size` shows a shared screen at its real size, adjusted for a high-DPI
+  screen at either end and scrolling when larger than the window, since displays now report
+  their scale (ADR 0045, LP-164).
+- `lpctl permissions` lists which of Accessibility, Input Monitoring and Screen Recording the
+  Mac's daemon holds, `lpctl permissions open <permission>` shows the page where each is
+  turned on with Ligature listed, `lpctl permissions reset` clears them so macOS asks again,
+  and a permission allowed takes effect without a restart (LP-169).
+- The daemon on Linux touches no desktop portal until the session has passed its environment
+  to systemd, and tries the InputCapture and ScreenCast portals again while they are missing
+  (LP-157).
+- Every release carries `SHA256SUMS` over its files and `SHA256SUMS.minisig`, its signature by
+  the project's release key; the install guide has the key and the commands that verify a
+  download (LP-139).
+- `lpctl upgrade` installs the latest release on a desktop after verifying it, `lpctl upgrade
+  --check` only reports, and every other `lpctl` command run on a terminal says once a day
+  when a newer release exists (`LIGATURE_NO_UPDATE_CHECK=1` switches the check off) (LP-140).
+- A user guide, one page per topic with each platform's limits named, and a documentation
+  site carrying the guide and the specification (LP-136, LP-137, LP-181).
 
 ### Changed
 
-- A key sent across a drive carries what it means on the controller's layout as well as its
-  position, after Synergy and Input Leap (ADR 0043): the driven device types the
-  controller's character with its own keys, modifiers keep their meaning across layouts
-  that move them, a shortcut is the same letter's, and a dead key is composed on the
-  controller. Building on Linux now needs xkbcommon's development files (LP-161).
 - On macOS the daemon runs from its own application bundle, `~/Applications/Ligature.app`,
   and shows other devices' notifications through the user notification centre: the
   permission prompt names Ligature, icons are shown, a dismissal on another device clears
-  the copy, and closing a copy on the Mac clears it everywhere. The Script Editor step is
+  the copy, and closing a copy on the Mac clears it everywhere; the Script Editor step is
   gone, and `ligatured` is no longer installed in `~/.local/bin` on macOS (LP-94).
+- Every `lpctl` listing ends with the commands that act on what it shows, each with what it
+  does, and `lpctl pair` on a device that already has its keys says how a new device is added
+  (LP-170).
+- `lpctl caps` names each device, this device's own capabilities first (LP-172).
+- A refusal from another device reads as that device's refusal, by name and with its reason,
+  rather than as a trust-chain error (LP-155).
+- The phone's node never needs the app opened: it starts by itself after an update as at
+  boot, a failed start is tried again until it succeeds, and its notification can be swiped
+  away while it keeps running (LP-165).
+- A revoked device loses its live sessions at once on every device of yours, not only at
+  their next start, and a stream a device cannot take is reset with a code that says why
+  (ADR 0038, ADR 0039, LP-124, LP-125).
+- On an Apple ISO keyboard the key under Escape and the key beside the left Shift are read as
+  their caps say, both ways (LP-160).
 
 ### Fixed
 
-- A Linux share of a high-DPI screen is sent at its full resolution: its displays were
-  listed at their logical size, so a screen at scale 2 sent half its pixels each way
-  (LP-164).
-
-- A shared screen's text is sharp and stays still: x264 encodes at a constant quantiser
-  instead of a low fixed rate, so what did not change is not coded again, and a keyframe comes
-  at the start and when one is asked for rather than every second, which had redrawn the
-  picture with new artifacts each time (LP-149).
-- A change on a shared Linux screen shows at once: the last picture of a change is encoded
-  again after a frame and a half, which pushes out the frame the daemon and `lpview`'s
-  decoder had held until the next one, up to a second later (LP-149).
-- The phone's screen share makes a keyframe at the start and when one is asked for rather
-  than every second, and its last picture is repeated shortly after a change, so a desktop
-  watching it shows the change at once (LP-151).
-- A Mac's share makes a keyframe at the start and when one is asked for rather than every
-  second, and a change on its screen shows at once, as a Linux share's does (LP-150).
-- A Mac's share writes a frame when the screen changes and the last one again once a second,
-  instead of the full frame rate of a still screen (LP-150).
-- Watching a still screen no longer costs the viewer the full frame rate: a Linux share sends
-  a frame when the screen changes and the last one again once a second, and `lpview` skips a
-  repeated picture and works out its scaling once per redraw (LP-149).
-- `lpview` no longer prints ffmpeg's "Broken pipe" errors when its window closes or it is
-  stopped with Ctrl+C, which now closes it as the window's close button does (LP-150).
-- Linux: a screen share whose capture stalls (seen as PipeWire's stream running out of buffers)
-  is started again on the same portal session after four seconds without a frame, so the
-  viewer's picture recovers instead of freezing; three stalls in a row end the share (LP-149).
-- A share whose capture had stopped sending frames outlived the viewer that closed it, and
-  the next viewer was refused as busy; a viewer that goes now ends the share at once
-  (LP-148).
 - The macOS installer waits for the old launchd agent to be gone before loading the new one,
   and retries the load, so an install or `lpctl upgrade` no longer leaves the daemon stopped
   with only launchctl's "Bootstrap failed: 5"; if it still cannot load, it says so and exits

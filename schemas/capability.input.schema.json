@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ligatureprotocol.org/schemas/capability.input.schema.json",
   "title": "org.ligatureprotocol.capability.input",
-  "description": "DRAFT. The input capability (spec chapter 05 section 3g): device-scoped, the keyboard and mouse of one device driving another. The descriptor's params say whether the device accepts what it is sent, provides its own input, takes absolute positions and types text. A drive is one stream (purpose org.ligatureprotocol.capability.input, ADR 0036) opened by the controller: enter, then ready from the driven device, then events batches, until leave from the driven device or release from either; the stream's end lifts everything still held. Keys and buttons are Linux evdev codes and name physical keys; the driven device applies its own layout. Positions along an edge and on the screen are fractions.",
+  "description": "DRAFT. The input capability (spec chapter 05 section 3g): device-scoped, the keyboard and mouse of one device driving another. The descriptor's params say whether the device accepts what it is sent, provides its own input, takes absolute positions and types text. A drive is one stream (purpose org.ligatureprotocol.capability.input, ADR 0036) opened by the controller: enter, then ready from the driven device, then events batches, until leave from the driven device or release from either; the stream's end lifts everything still held. Keys and buttons are Linux evdev codes naming physical keys, and a key also carries its meaning on the controller's layout (id and mods, ADR 0043); the driven device finds its own key for that meaning, or places a key without one by its code. Positions along an edge and on the screen are fractions.",
   "$defs": {
     "params": {
       "type": "object",
@@ -227,7 +227,7 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 4294967295,
-              "description": "Synergy's key ID: a character's Unicode scalar value, or a named key's value in U+E000 to U+EFFF (an X11 keysym of 0xFF00 to 0xFFFF less 0x1000: BackSpace 0xEF08, Return 0xEF0D, Escape 0xEF1B, Shift_L 0xEFE1, Caps_Lock 0xEFE5). The character is the one the controller's layout produces with Shift and Caps Lock, ignoring Control, Alt and Super."
+              "description": "Synergy's key ID: a character's Unicode scalar value, or a named key's value in U+E000 to U+EFFF (an X11 keysym of 0xFF00 to 0xFFFF less 0x1000: BackSpace 0xEF08, Return 0xEF0D, Escape 0xEF1B, Shift_L 0xEFE1, Caps_Lock 0xEFE5). The character is the one the controller's layout produces with Shift, Caps Lock and AltGr, ignoring Control, Alt and Super, with a Mac's right Option as AltGr (ADR 0046)."
             },
             "mods": {
               "type": "integer",

@@ -52,10 +52,22 @@ receiving files when none is.
 
 Sharing the screen and watching another device's with `lpview` use programs the installer
 does not bring, since the daemon links no video library: ffmpeg with an H.264 encoder
-(`libx264`, or VA-API where the GPU has it) to share and to watch, and GStreamer's PipeWire
-plugin (`gst-plugin-pipewire` on Arch) to share through the ScreenCast portal. Without the
-plugin a compositor with `wlr-screencopy`, Hyprland among them, is captured directly instead;
-without ffmpeg the machine offers neither, and `lpctl caps` shows what it offers.
+(`libx264`; VA-API is used instead where a test encode on the GPU works) to share and to
+watch, and GStreamer's command-line tools with its PipeWire plugin (`gstreamer` and
+`gst-plugin-pipewire` on Arch, `gstreamer1.0-tools` and `gstreamer1.0-pipewire` on Debian and
+Ubuntu) to share through the ScreenCast portal. Without the plugin a compositor with
+`wlr-screencopy`, Hyprland among them, is captured directly instead; without ffmpeg the
+machine offers neither, which `lpctl screen status` shows.
+
+Sharing the keyboard and mouse needs, to be driven, a compositor with the virtual pointer and
+virtual keyboard protocols (Hyprland and Sway have them; GNOME and KDE Plasma give
+applications no virtual pointer, so they cannot be driven), and to drive others a desktop
+portal with InputCapture (`xdg-desktop-portal-hyprland` 1.4.1 or later). The portals for
+input and for screens are reached only once the session has passed `WAYLAND_DISPLAY` and
+`XDG_CURRENT_DESKTOP` to the systemd user manager, which uwsm does; on a session that does
+not, run `dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP`
+when the compositor starts, since the daemon waits for them before it offers input or
+screens.
 
 ## macOS
 
@@ -110,7 +122,9 @@ The daemon runs as a per-user launchd agent that starts at login.
     permissions open accessibility` (or `input-monitoring`, `screen-recording`) opens the
     page where each is turned on, asking macOS first so that Ligature is listed there.
     macOS lets nothing but you turn one on. Changing Input Monitoring later turns
-    Accessibility off as well, so turn it back on afterwards.
+    Accessibility off as well, so turn it back on afterwards. macOS ties the three to the
+    app's ad hoc signature, so after an upgrade, or a build of your own, allow them again
+    ([Upgrading](upgrade-uninstall.md#upgrading)).
 
 6. Check it:
 
@@ -135,10 +149,12 @@ The daemon runs as a per-user launchd agent that starts at login.
     Without it Android stops the node when the phone has been idle for a while.
 4. For the phone's notifications to reach your other devices, tap **Notification access** and
     enable Ligature; see [Notifications](notifications.md).
-5. To control the phone from your other devices and have what you copy on it sent by itself,
-    tap **Accessibility settings** under **Remote control** and turn Ligature on; see
-    [Driving the phone](input.md#driving-the-phone). Watching the phone with nobody at it
-    needs one more step, from a computer
+5. To control the phone from your other devices, have what you copy on it sent by itself,
+    and have a request to watch it open Android's dialog at once, tap **Accessibility
+    settings** under **Remote control** and turn Ligature on; if Android calls the setting
+    restricted, open Ligature's page in Settings, choose **Allow restricted settings** from
+    its menu and try again. See [Driving the phone](input.md#driving-the-phone). Watching the
+    phone with nobody at it needs one more step, from a computer
     ([Screens](screen.md#watching-the-phone-with-nobody-at-it)).
 
 The app needs no account, and nothing past step 2 is asked for at first run: each is a

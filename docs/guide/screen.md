@@ -3,7 +3,8 @@
 You can watch another of your devices' screens in a window and, with a click, drive it with
 your own keyboard and mouse. The picture goes straight between the two devices, encoded as
 H.264 on the device that shares and decoded on the one that watches. The phone can watch and
-drive a desktop, and can share its own screen with one.
+drive a desktop, share its own screen with one, and be driven from the picture once
+Ligature is on under Accessibility.
 
 ## Watching a desktop from a desktop
 
@@ -16,18 +17,20 @@ scaled to fit. **Click the picture** to drive the device: the pointer follows yo
 picture, and your buttons, scroll wheel and keyboard go there. Your keys type what your own
 keyboard says, as when driving across an edge ([Keyboard and
 mouse](input.md#what-your-keys-type)). To take them back, press **both Control keys**, or an
-**Alt or Super key on each side**, or move to another window. Closing the window ends the
+**Alt or Super key on each side** (Option or Command on a Mac), or move to another window. Closing
+the window ends the
 share.
 
 | Option | What it does |
 | --- | --- |
 | `--display <id>` | Shares that display instead of the primary one; `lpctl screen displays <device>` lists them |
 | `--width`, `--height`, `--rate` | The largest picture and the frame rate you want (1920 by 1080 at 60 a second by default); the sharer sends no larger than its own screen |
-| `--actual-size` | Shows the screen at its actual size instead of scaled to the window (below) |
+| `--actual-size` | Shows the screen at its actual size instead of scaled to the window (below); `--width` and `--height` are then ignored |
 | `--chroma 4:2:0` or `4:4:4` | Asks for that colour sampling only (below); by default the best both devices handle |
 | `--view-only` | Watch without ever driving |
 
-A device that takes no input, such as the phone, is only watched.
+A device that takes no input, such as the phone before Ligature is on under Accessibility,
+is only watched, and the window's title says why.
 
 ### At its actual size
 
@@ -45,8 +48,8 @@ it scrolls:
 - **while driving**, by holding the pointer at an edge of the window, since the wheel
   then scrolls on the other device.
 
-`lpctl screen displays <device>` shows each display's scale, for example `2880x1800 at 2x`
-for a Retina display.
+`lpctl screen displays <device>` shows each display's size in pixels and its scale, for
+example `2880x1800 at 2x` for a high-DPI laptop screen.
 
 ### Colour detail
 
@@ -81,8 +84,9 @@ lighter one.
 
 ### Watching the phone with nobody at it
 
-Android has no setting for letting an app share the screen without its dialog. A computer with
-`adb` and the phone's USB debugging on can grant it once:
+Android has no setting for letting an app share the screen without its dialog. A computer
+with `adb` (Android's platform tools) and the phone's USB debugging on (Settings, System,
+Developer options, which appear after tapping Build number seven times) can grant it once:
 
 ```sh
 adb shell appops set org.ligatureprotocol.android PROJECT_MEDIA allow
@@ -95,7 +99,7 @@ until you revoke it, so grant it only if you want that. The phone still shows th
 sharing, and **Stop sharing** still ends a share. A locked phone shares its lock screen, but
 not its PIN, pattern or password screen, which Android keeps out of every share: the picture
 dims while it is up. Clicks still reach it, so a PIN can be entered from the viewer by its
-place on the pad, or leave the phone unlocked to use it from another computer. To ask every time again:
+place on the pad. To ask every time again:
 
 ```sh
 adb shell appops set org.ligatureprotocol.android PROJECT_MEDIA ignore
@@ -135,12 +139,15 @@ lpctl screen start Garths-MacBook-Pro --out share.h264 --frames 300
 ffplay -f h264 share.h264
 ```
 
+It takes `--display`, `--width`, `--height` and `--rate` as `lpview` does, asking for 1280 by
+720 at 60 a second by default.
+
 ## What each platform needs
 
 - **Linux and the Mac** need ffmpeg to share or to watch, and Linux needs GStreamer's
   PipeWire plugin to share through the screen-sharing portal ([Install](install.md#linux)).
-  Without ffmpeg a desktop offers neither, and `lpctl caps` on another device shows what it
-  offers.
+  Without ffmpeg a desktop offers neither; `lpctl screen status` on the device itself says
+  whether it shares and views, and `lpctl caps` on another device lists the family.
 - **The phone** needs an H.264 encoder to share, which phones have. A request opens Android's
   dialog straight away only while the app is open or Ligature is on under Accessibility, and
   is answered with nobody at the phone only after the grant in
@@ -158,4 +165,4 @@ ffplay -f h264 share.h264
   choose the entire screen there.
 - A locked phone shares its lock screen but not its PIN, pattern or password screen, which
   is entered unseen from a viewer.
-- There is no sound.
+- The share carries no sound; the protocol does not define audio yet.

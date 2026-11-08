@@ -64,7 +64,7 @@ The daemon logs each connection and each refusal with the peer's key at `info`;
 
 ## Notifications do not arrive
 
-- **On the Mac**, Ligature must be allowed under System Settings → Notifications, and the
+- **On the Mac**, Ligature must be allowed under System Settings, Notifications, and the
   daemon must run from `~/Applications/Ligature.app`, as the installer sets it up; run from
   anywhere else it displays nothing, and the log says so. The Mac never sends its own.
 - **On the phone**, grant notification access for the phone's notifications to leave it, and
@@ -79,13 +79,36 @@ The daemon logs each connection and each refusal with the peer's key at `info`;
   on a Mac): the keyboard and mouse come back to this device.
 - A desktop gives its keyboard and mouse back on its own when the pointer reaches an edge
   but the other device cannot be driven, for example because it is asleep or out of reach.
-- If nothing responds, restart the daemon from another way in: the compositor ends the
-  capture when the daemon's session goes. On Linux, switch to a text console with
+- If nothing responds, restart the daemon from another way in, since the compositor ends
+  the capture when the daemon's session goes. On Linux, switch to a text console with
   Ctrl+Alt+F3 (the console still gets the keyboard), log in, run
   `systemctl --user restart ligatured`, and switch back with Ctrl+Alt+F1 (or F2, whichever
-  the desktop was on). From a terminal on another device, the same command on Linux, or
+  the desktop was on). Over SSH from another device, the same command on Linux, or
   `launchctl kickstart -k gui/$(id -u)/org.ligatureprotocol.ligatured` on a Mac. There is no
   need to reset the machine.
+
+## The pointer does not cross to the other desktop
+
+- `lpctl input layout` on the controlling desktop must list the edge; `lpctl input layout set
+  <edge> <device>` sets it.
+- On Linux, driving others needs a desktop portal with InputCapture (Hyprland's), and being
+  driven a compositor with the virtual pointer and keyboard protocols; GNOME and KDE Plasma
+  cannot be driven ([Keyboard and mouse](input.md#what-each-platform-needs)).
+- The daemon waits for the graphical session before it touches a portal: the session must
+  pass `WAYLAND_DISPLAY` and `XDG_CURRENT_DESKTOP` to the systemd user manager
+  ([Install](install.md#linux)). Until then `lpctl input status` shows `provides: false`.
+- On the Mac, Input Monitoring must be allowed to drive others and Accessibility to be driven
+  (`lpctl permissions`).
+
+## A screen cannot be watched
+
+- `lpctl screen status` on the sharing device says whether it shares: it needs ffmpeg, and on
+  Linux `gst-launch-1.0` with the PipeWire plugin ([Install](install.md#linux)); on a Mac the
+  agent looks for ffmpeg under Homebrew's directory and `/usr/local/bin` only.
+- On the Mac, Screen Recording must be allowed (`lpctl permissions open screen-recording`).
+- On Linux the session environment above applies to the ScreenCast portal too.
+- The daemon's log says why a share was refused: `journalctl --user -u ligatured` on Linux,
+  `~/Library/Logs/ligature/ligatured.log` on the Mac.
 
 ## The phone cannot be driven or watched
 
@@ -131,7 +154,8 @@ The daemon logs each connection and each refusal with the peer's key at `info`;
 
 Set `RUST_LOG=debug` on the daemon for the mechanism behind a problem: on Linux with
 `systemctl --user edit ligatured` and an `Environment=RUST_LOG=debug` line, on the Mac by
-editing the agent's plist, on the phone in `adb logcat -s ligature`. Logs name devices by
+adding it under `EnvironmentVariables` in the agent's plist (a reinstall rewrites the file);
+the phone's log is read with `adb logcat -s ligature`. Logs name devices by
 their keys and never carry what was copied, posted or sent. Report problems on the
 [issue tracker](https://github.com/garth/ligature-protocol/issues); anything that looks like
 a security weakness goes through a

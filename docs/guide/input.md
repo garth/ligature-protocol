@@ -30,10 +30,11 @@ Move the pointer off the edge. It appears on the other device at the matching he
 your keyboard, buttons and scroll wheel go there with it. Move it back off the edge it came
 in by and it returns to this screen at the height where it left.
 
-To take the keyboard and mouse back at any moment, press **both Control keys** together, or an
-**Alt or Super key on each side** together: both Alt keys, both Option or both Command keys on
-a Mac, whose keyboard has a Control key on one side only, or the keys in their places where Alt
-and Super are swapped. Or run `lpctl input release` from another terminal. A desktop also gives
+To take the keyboard and mouse back at any moment, press **both Control keys** together, or
+an **Alt or Super key on each side** together (Option or Command on a Mac, whose keyboard has
+a Control key on one side only; any Alt or Super on the left with any on the right, so a
+swapped Alt and Super work too). Or run `lpctl input release` from another terminal. A desktop also
+gives
 them back by itself when the device beside the edge is asleep, out of reach or refuses, and
 when the driven device's daemon stops in the middle of a drive. Nothing stays pressed on the
 other side: every key and button held there is let go when the drive ends.
@@ -73,7 +74,7 @@ On the app's main screen, under **Touchpad**, tap **Drive** followed by the desk
 
 A desktop that the phone is driving still follows its own layout, Linux and the Mac alike,
 so the phone can push the pointer on across an edge to the next desktop, though never back
-to the phone itself.
+to the phone itself, since a device never leads on to the device that is driving it.
 
 ## Driving the phone
 
@@ -93,7 +94,9 @@ update keeps it.
 A drive or a watch turns the phone's screen on and keeps it on while it lasts, since a dark
 screen takes no touch and shows nothing. Android lists this under Settings, Apps, Special app
 access, **Turn screen on**. The lock screen stays: whoever drives the phone gets past it as
-anyone at the phone would, dragging up to the PIN pad and clicking the PIN.
+anyone at the phone would, dragging up to the PIN pad and clicking the PIN by its place on
+the pad, which Android keeps out of the picture
+([Screens](screen.md#watching-the-phone-with-nobody-at-it)).
 
 Then the phone is a device you can drive, from `lpview` or across an edge like any other:
 
@@ -105,9 +108,12 @@ Then the phone is a device you can drive, from `lpview` or across an edge like a
   shortcuts such as select all work there. What you copy or cut with them reaches your
   devices' clipboards straight away, and paste pastes what you last copied on any of them.
 
-Android sets some limits on this. Keys reach a text field and nothing else, so an app's own
-keyboard shortcuts outside a field do nothing, and typing needs Android 13. Holding a key does
-not repeat it. If you touch the screen during a drag, Android cancels the drag.
+The pointer leaves the phone the way it came: back across the edge it entered by, or with
+the release chord. Android sets some limits on this. Keys reach a text field and nothing
+else, so an app's own keyboard shortcuts outside a field do nothing, and typing needs
+Android 13, which first gave an accessibility service a way to type. Holding a key does not
+repeat it, since only its press and its release reach the phone. If you touch the screen
+during a drag, Android cancels the drag.
 
 ## What each platform needs
 
@@ -118,6 +124,8 @@ not repeat it. If you touch the screen during a drag, Android cancels the drag.
   applications, so they cannot be driven.
 - **Mac**: allow Ligature under Accessibility to be driven, and under Input Monitoring as well
   to drive others ([Install](install.md#macos)). Until then the Mac offers neither.
+- **Android**: nothing, to be a touchpad; Ligature on under Accessibility to be driven, and
+  Android 13 or later to be typed into.
 
 ## Limits
 

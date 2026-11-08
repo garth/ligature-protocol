@@ -76,7 +76,8 @@ case where the phone was off or out of reach when you copied.
 
 On a ROM you built and signed yourself the app can hold the platform permission to read the
 clipboard in the background, and then every copy is sent as it happens; the screen reports
-"automatic (background read allowed)". An official LineageOS build cannot grant it. The
+"automatic (background read allowed)". An official LineageOS build cannot grant it, since
+Android gives that permission only to apps signed with the ROM's own key. The
 [app's README](https://github.com/garth/ligature-protocol/blob/main/impl/android/README.md)
 has the signing steps.
 

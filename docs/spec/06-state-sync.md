@@ -110,7 +110,7 @@ apply:
 - A device that has seen no trusted peer for a configurable period treats its trust store
   as stale and requires a fresh binding check before honouring requests.
 - Every session is freshly authenticated, and a session that outlives its peer's
-  revocation is closed when the revocation is learnt, so a revoked device gains nothing
+  revocation is closed when the revocation is learned, so a revoked device gains nothing
   from sessions it held before.
 
 Open question: the default staleness period.

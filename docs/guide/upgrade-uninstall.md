@@ -11,8 +11,11 @@ file against the project's release key (see
 [Verifying a download](install.md#verifying-a-download)) and the package against the
 checksum, then runs the package's `install.sh`, which replaces the binaries and restarts the
 service; your keys and devices stay. `lpctl upgrade --check` only says whether a newer
-release exists. The same by hand: unpack the new tarball and run `./install.sh` again. A
-release that changes the store's layout brings it forward on the next start; the change is
+release exists. The same by hand: unpack the new tarball and run `./install.sh` again, which
+is also the way up from 0.1.1-alpha, whose `lpctl` has no `upgrade`; on a Mac coming from
+that version the daemon moves from `~/.local/bin` into `~/Applications/Ligature.app`, macOS
+asks for its notifications again, and the old `~/.local/bin/ligatured` is left for you to
+delete. A release that changes the store's layout brings it forward on the next start; the change is
 one way, so a copy of the data directory (see [Where things live](install.md#where-things-live))
 beforehand is the way back.
 

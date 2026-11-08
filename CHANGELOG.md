@@ -16,7 +16,7 @@ release workflow publishes the section as the release notes with the installers.
 
 - Screens are shared at 60 frames a second by default, rather than 30, which halves every
   per-frame wait between a change and its picture; `lpview --rate` and `lpctl screen start
-  --rate` still choose another (LP-177).
+  --rate` still choose another, and `lpview`'s title shows the rate (LP-177).
 
 - A shared screen reaches its viewer sooner: each frame leaves the sharer as soon as it is
   encoded rather than when the next one begins, VA-API no longer holds a frame back, and

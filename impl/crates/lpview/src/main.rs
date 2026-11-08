@@ -811,7 +811,10 @@ impl App {
             (Some(s), false, false) => format!("{} — click to drive", s.display),
         };
         match &self.started {
-            Some(s) => format!("{} · {state} · {}", self.device, s.format),
+            Some(s) => format!(
+                "{} · {state} · {} {} fps",
+                self.device, s.format, s.frame_rate
+            ),
             None => format!("{} · {state}", self.device),
         }
     }

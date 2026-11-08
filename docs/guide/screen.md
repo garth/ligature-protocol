@@ -52,10 +52,11 @@ for a Retina display.
 
 Video usually keeps colour at half the resolution of brightness ("4:2:0"), which blurs the
 edges of coloured text. When both devices can handle it, `lpview` asks for full colour
-detail ("4:4:4"), and the window's title shows which one the share uses. A Linux machine
-encoding with `libx264` sends 4:4:4. A Mac encoding with VideoToolbox, and the phone, send
-4:2:0, since their hardware encoders do not produce 4:4:4. 4:4:4 takes about half as much
-again of the network, so on a slow link `--chroma 4:2:0` asks for the lighter one.
+detail ("4:4:4"), and the window's title shows which one the share uses and its frame rate.
+A Linux machine encoding with `libx264` sends 4:4:4. A Mac encoding with VideoToolbox, and
+the phone, send 4:2:0, since their hardware encoders do not produce 4:4:4. 4:4:4 takes
+about half as much again of the network, so on a slow link `--chroma 4:2:0` asks for the
+lighter one.
 
 ## What the sharing device asks
 

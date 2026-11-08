@@ -11,8 +11,9 @@
 //! (`enter`, `ready`, `leave`), batches captured events per frame, scales
 //! motion by the two screens' widths, tracks the driven pointer's position to
 //! know when it reaches its entry edge, lifts everything on every way a drive
-//! ends, honours the release chord (both Control keys, or both Alt keys for a
-//! keyboard with one Control key, as a MacBook's) and measures the round
+//! ends, honours the release chord (both Control keys, or an Alt or Super key
+//! on each side, for a keyboard with one Control key, as a MacBook's) and
+//! measures the round
 //! trip through `seq` and `injected`. A drive is one stream opened by the
 //! controller; the stream's end is a release.
 
@@ -1265,11 +1266,21 @@ impl Inject for FakeInject {
     }
 }
 
-/// Whether the keys held make the release chord: both Control keys, or both
-/// Alt keys, since a MacBook's keyboard has a Control key on one side only.
+/// The left Super key (Command on a Mac).
+const KEY_LEFTMETA: u16 = 125;
+/// The right Super key.
+const KEY_RIGHTMETA: u16 = 126;
+
+/// Whether the keys held make the release chord: both Control keys, or an Alt
+/// or Super key on each side, since a MacBook's keyboard has a Control key on
+/// one side only (LP-171) and a keyboard with Alt and Super swapped has its Alt
+/// in Super's place.
 fn is_release_chord(held: &HashSet<u16>) -> bool {
-    (held.contains(&KEY_LEFTCTRL) && held.contains(&KEY_RIGHTCTRL))
-        || (held.contains(&KEY_LEFTALT) && held.contains(&KEY_RIGHTALT))
+    let left = [KEY_LEFTALT, KEY_LEFTMETA].iter().any(|k| held.contains(k));
+    let right = [KEY_RIGHTALT, KEY_RIGHTMETA]
+        .iter()
+        .any(|k| held.contains(k));
+    (held.contains(&KEY_LEFTCTRL) && held.contains(&KEY_RIGHTCTRL)) || (left && right)
 }
 
 #[cfg(test)]

@@ -337,6 +337,23 @@ async fn both_alt_keys_give_the_input_back_too() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_super_key_in_alts_place_makes_the_chord_too() {
+    // The owner's Linux swaps Alt and Super: the key they use as left Alt is
+    // left Super (125). An Alt or Super key on each side ends the drive.
+    let (a, b, _c, _c_dir) = three().await;
+    a.sync
+        .set_edge(Edge::Left, *b.daemon.binding().public())
+        .unwrap();
+    a.capture.hit_edge(Edge::Left, 0.5);
+    until("b is driven", || b.sync.driven_by().is_some()).await;
+    a.capture.feed(InputEvent::key(125, true));
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(a.sync.is_driving(), "one key alone ends nothing");
+    a.capture.feed(InputEvent::key(KEY_RIGHTALT, true));
+    until("a let go", || !a.sync.is_driving()).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_driven_device_never_follows_its_own_layout() {
     let (a, b, c, _c_dir) = three().await;
     a.sync

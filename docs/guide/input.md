@@ -30,12 +30,13 @@ Move the pointer off the edge. It appears on the other device at the matching he
 your keyboard, buttons and scroll wheel go there with it. Move it back off the edge it came
 in by and it returns to this screen at the height where it left.
 
-To take the keyboard and mouse back at any moment, press **both Control keys** together, or
-**both Alt keys** (both Option keys on a Mac, whose keyboard has a Control key on one side
-only), or run `lpctl input release` from another terminal. A desktop also gives them back by
-itself when the device beside the edge is asleep, out of reach or refuses, and when the driven
-device's daemon stops in the middle of a drive. Nothing stays pressed on the other side: every
-key and button held there is let go when the drive ends.
+To take the keyboard and mouse back at any moment, press **both Control keys** together, or an
+**Alt or Super key on each side** together: both Alt keys, both Option or both Command keys on
+a Mac, whose keyboard has a Control key on one side only, or the keys in their places where Alt
+and Super are swapped. Or run `lpctl input release` from another terminal. A desktop also gives
+them back by itself when the device beside the edge is asleep, out of reach or refuses, and
+when the driven device's daemon stops in the middle of a drive. Nothing stays pressed on the
+other side: every key and button held there is let go when the drive ends.
 
 ```sh
 lpctl input status   # what this device offers, drives and is driven by, with the round trip

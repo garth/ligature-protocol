@@ -8,7 +8,8 @@
 //! to drive the device (`input.drive`, an absolute entry where the click
 //! landed); from then on the pointer's position over the picture, its
 //! buttons and wheel, and the keyboard go to the device as `input` events,
-//! until both Control keys (or both Alt keys) are pressed, the window loses focus, or it
+//! until both Control keys (or an Alt or Super key on each side) are pressed, the
+//! window loses focus, or it
 //! closes. A key travels as its Linux evdev code, from winit's physical key
 //! code, and a press carries what it means from winit's logical key (ADR
 //! 0043), so the device types what this keyboard's layout says.

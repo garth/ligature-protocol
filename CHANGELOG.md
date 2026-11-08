@@ -36,8 +36,9 @@ release workflow publishes the section as the release notes with the installers.
   `files transfers` and `permissions`. `lpctl pair` on a device that already has its keys says
   how a new device is added instead of only refusing (LP-170).
 
-- Both Alt keys together (both Option keys on a Mac) give the keyboard and mouse back, as
-  both Control keys do, for a keyboard with one Control key such as a MacBook's (LP-171).
+- An Alt or Super key on each side, pressed together (Option or Command on a Mac), gives the
+  keyboard and mouse back, as both Control keys do, for a keyboard with one Control key such
+  as a MacBook's, and wherever Alt and Super are swapped (LP-171).
 
 - A permission allowed on the Mac takes effect without restarting anything: the daemon sees
   the grant and restarts itself. `lpctl permissions` lists which of Accessibility, Input

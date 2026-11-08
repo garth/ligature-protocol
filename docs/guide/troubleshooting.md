@@ -75,8 +75,8 @@ The daemon logs each connection and each refusal with the peer's key at `info`;
 
 ## The keyboard and mouse stay with another device
 
-- Press both Control keys together, or both Alt (Option) keys: the keyboard and mouse come
-  back to this device.
+- Press both Control keys together, or an Alt or Super key on each side (Option or Command
+  on a Mac): the keyboard and mouse come back to this device.
 - A desktop gives its keyboard and mouse back on its own when the pointer reaches an edge
   but the other device cannot be driven, for example because it is asleep or out of reach.
 - If nothing responds, restart the daemon from another way in, such as a terminal on

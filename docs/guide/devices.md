@@ -10,7 +10,7 @@ shows this device's person and keys, the port it listens on and the peers it is 
 to right now:
 
 ```text
-ligatured 0.1.1-alpha
+ligatured 0.2.0-alpha
 initialised: true
 person:      Garth (z6Mkkaz8L7J2HSv4q15GT7vTH9Pw8PfacYetAanAS8bZfGC5)
 device:      tmarchy (mCgtFQcD…)

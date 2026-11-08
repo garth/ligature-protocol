@@ -6,7 +6,7 @@
 # Pages on every push to main.
 [book]
 title = "Ligature Protocol"
-description = "Your devices, working as one: the clipboard, notifications and files move between the devices you own, directly, with no account and no server."
+description = "Your devices, working as one: the clipboard, notifications, files, the keyboard and mouse and screens move between the devices you own, directly, with no account and no server."
 language = "en"
 src = "../docs"
 
@@ -22,7 +22,7 @@ create-missing = false
 command = "cargo run --quiet --manifest-path ../impl/Cargo.toml -p lp-book --"
 
 [output.html]
-site-url = "/ligature-protocol/"
+site-url = "/"
 git-repository-url = "https://github.com/garth/ligature-protocol"
 edit-url-template = "https://github.com/garth/ligature-protocol/edit/main/docs/{path}"
 default-theme = "light"

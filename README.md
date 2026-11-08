@@ -3,8 +3,10 @@
 > **Status: alpha.** Release packages for Linux, macOS and Android are on the
 > [Releases page](https://github.com/garth/ligature-protocol/releases), tagged
 > `vX.Y.Z-alpha`: the reference implementation shares the clipboard, notifications and
-> files between a Linux machine, a Mac and an Android phone (milestones 1 to 5). Nothing is
-> stable yet: the specification is a draft and the wire format may change between releases.
+> files, one keyboard and mouse, and screens watched and driven from another device,
+> between a Linux machine, a Mac and an Android phone (milestones 1 to 5, 7 and 8). Nothing
+> is stable yet: the specification is a draft and the wire format may change between
+> releases.
 
 Ligature Protocol binds the devices a person owns, and the devices a household shares,
 into one trusted group, whatever they run: Linux and macOS desktops and laptops, Android
@@ -153,24 +155,22 @@ allows; the Mac displays but cannot read its own. Revoking a device stops it con
 and pairings survive a restart. A file shared from the phone, or sent with `lpctl files
 send` from a desktop, lands in the other device's download folder, several at once where the
 receiver allows, with progress and a cancel at either end, and a device can fetch a file
-another has offered. This is the scope of
+another has offered. The Linux machine and the Mac share one keyboard and mouse: the
+pointer crosses from one to the other at a mapped edge, with keys typing what they mean on
+the controlling keyboard, and the phone drives either desktop as a touchpad with a keyboard
+field ([user guide](docs/guide/input.md)); with Ligature on under Accessibility the phone is
+driven from the desktops too, and sends what you copy by itself. Any of the three devices
+can watch another's screen, in `lpview` on the desktops or in the app on the phone, after the
+sharing device's own consent, and drive it from the picture
+([user guide](docs/guide/screen.md)). This is the scope of
 [milestone 1](docs/milestones/01-clipboard-poc.md),
 [milestone 2](docs/milestones/02-android-clipboard.md),
 [milestone 3](docs/milestones/03-notifications.md),
-[milestone 4](docs/milestones/04-files.md) and
-[milestone 5](docs/milestones/05-rich-clipboard.md).
-
-On `main`, not yet in a release, both run with the real devices:
+[milestone 4](docs/milestones/04-files.md),
+[milestone 5](docs/milestones/05-rich-clipboard.md),
 [milestone 7](docs/milestones/07-shared-input.md) and
-[milestone 8](docs/milestones/08-remote-desktop.md). The Linux machine and the Mac share one
-keyboard and mouse: the pointer crosses from one to the other at a mapped edge, with keys
-typing what they mean on the controlling keyboard, and the phone drives either desktop as a
-touchpad with a keyboard field ([user guide](docs/guide/input.md)); with Ligature on under
-Accessibility the phone is driven from the desktops too, and sends what you copy by itself.
-Any of the three devices
-can watch another's screen, in `lpview` on the desktops or in the app on the phone, after the
-sharing device's own consent, and drive it from the picture
-([user guide](docs/guide/screen.md)). Everything else in the specification is unimplemented.
+[milestone 8](docs/milestones/08-remote-desktop.md). Everything else in the specification is
+unimplemented.
 Apple phones and tablets are off the roadmap for now; what the platform would allow is
 recorded in the [platform notes](docs/spec/08-platform-notes.md#4-ios-and-ipados).
 
@@ -251,12 +251,11 @@ follow them.
    reach the phone shown and answered on the desktops, a message or a call placed through
    the phone from a desktop, and any device's player driven from the others
    ([plan](docs/milestones/06-phone-and-media.md)).
-7. **One keyboard and mouse across the desktops, the phone as a touchpad.** Implemented on
-   `main` and run with the real devices, not yet released: the first device-scoped
-   capability ([plan](docs/milestones/07-shared-input.md)).
-8. **A screen viewed, then controlled, from another device.** Implemented on `main` and
-   run with the real devices, not yet released
-   ([plan](docs/milestones/08-remote-desktop.md)).
+7. **One keyboard and mouse across the desktops, the phone as a touchpad.** Done and
+   released in 0.2.0-alpha: the first device-scoped capability
+   ([plan](docs/milestones/07-shared-input.md)).
+8. **A screen viewed, then controlled, from another device.** Done and released in
+   0.2.0-alpha ([plan](docs/milestones/08-remote-desktop.md)).
 
 Not planned: Apple phones and tablets, for the reasons in the
 [platform notes](docs/spec/08-platform-notes.md#4-ios-and-ipados).
@@ -264,7 +263,7 @@ Not planned: Apple phones and tablets, for the reasons in the
 ## Documentation
 
 Everything below is also published, with the user guide and the specification side by
-side, at [garth.github.io/ligature-protocol](https://garth.github.io/ligature-protocol/).
+side, at [ligatureprotocol.org](https://ligatureprotocol.org/).
 
 - [User guide](docs/guide/index.md): [install](docs/guide/install.md),
   [first steps](docs/guide/first-steps.md), [the clipboard](docs/guide/clipboard.md),

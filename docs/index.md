@@ -1,8 +1,9 @@
 # Ligature Protocol
 
-**Your devices, working as one.** What you copy, the notifications you get and the files
-you share move between the devices you own, directly, over your own network: no account, no
-server, no company in between. An open protocol, with apps for Linux, macOS and Android.
+**Your devices, working as one.** What you copy, the notifications you get, the files you
+share, and your keyboard, mouse and screen move between the devices you own, directly, over
+your own network: no account, no server, no company in between. An open protocol, with apps
+for Linux, macOS and Android.
 
 **[Install the apps](guide/install.md)** · [Read the user guide](guide/index.md) ·
 [Releases](https://github.com/garth/ligature-protocol/releases)
@@ -24,6 +25,17 @@ dismissing it anywhere clears it everywhere the platform allows.
 
 Share from the phone or send from the command line; files land in the other device's
 download folder, with progress and a cancel at either end. [Files](guide/files.md)
+
+### One keyboard and mouse
+
+Push the pointer off the edge of one desktop and it drives the next, typing what your own
+keyboard says; the phone is a touchpad for either, and your desktops can drive the phone.
+[Keyboard and mouse](guide/input.md)
+
+### Screens from anywhere
+
+Watch another of your devices' screens in a window or on the phone, and click to drive it;
+the phone can be watched with nobody at it once you allow it. [Screens](guide/screen.md)
 
 ### Yours alone
 
@@ -50,12 +62,11 @@ product.
 ## Status
 
 Alpha. The releases carry pairing, the clipboard with text, HTML, images and files,
-notifications, and file transfer, between a Linux machine, a Mac and an Android phone on
-one network. On `main`, for the next release, come one keyboard and mouse across your
-devices, with the pointer crossing from one desktop to the next at the edge of the screen
-and the phone a touchpad for either or driven from them, and screens watched and driven
-from another device, in a window on a desktop or in the app on the phone. After them come
-the phone's messages and calls and media control.
+notifications, file transfer, one keyboard and mouse across your devices (the pointer
+crossing from one desktop to the next at the edge of the screen, the phone a touchpad for
+either or driven from them) and screens watched and driven from another device, in a window
+on a desktop or in the app on the phone, between a Linux machine, a Mac and an Android
+phone on one network. Next come the phone's messages and calls and media control.
 Remote connections, sharing between people and shared household devices are specified and
 not yet built. Each release is reviewed against the project's threat model before it goes
 out; the reports are in the

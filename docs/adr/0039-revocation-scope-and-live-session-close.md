@@ -1,6 +1,9 @@
 # 0039. Whose revocation counts, and a gossiped revocation ending the live session
 
-**Status:** Accepted
+**Status:** Accepted; the third case of decision 2 (a role fact of the revoking person covers
+the subject) is narrowed by
+[ADR 0047](0047-revocation-by-another-person-needs-acquaintance.md) to persons the device
+knows, and never over the owner's own keys
 **Date:** 2026-10-23
 **Extends:** [ADR 0003](0003-device-cross-signing.md),
 [ADR 0016](0016-no-required-shared-state.md) and [ADR 0018](0018-rebuild-instead-of-recovery.md)

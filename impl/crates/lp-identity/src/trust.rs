@@ -70,14 +70,18 @@ fn person_fact(store: &TrustStore, master: &PublicKey) -> Result<Option<PersonFa
 }
 
 /// Whether `subject` is revoked in the eyes of the device whose person is
-/// `owner` (ADR 0039, chapter 06 section 5). A stored revocation counts only when it
-/// verifies against the person fact of the person it names, and that person
-/// is the owner, or the subject is that person's own master key (an
-/// abandonment), or a verified binding or principal role of that person names
-/// the subject (a person revoking one of their own devices). A self-signed
-/// revocation from a stranger, and one person's revocation of another person's
-/// device, change nothing (LP-120). A revoked key stays revoked: no fact undoes
-/// a revocation, and a later role over the same key does not restore it.
+/// `owner` (ADR 0039 and ADR 0047, chapter 06 section 5). A stored revocation
+/// counts only when it verifies against the person fact of the person it
+/// names, and that person is the owner, or the subject is that person's own
+/// master key (an abandonment), or that person is one the owner knows (a
+/// `person` role from the owner, not revoked by the owner), the subject is not
+/// a key the owner's own roles cover, and a verified binding or principal role
+/// of that person names the subject (a person revoking one of their own
+/// devices). A self-signed revocation from a stranger, and one person's
+/// revocation of another person's device, change nothing (LP-120); nor does a
+/// person made up by a paired device, since a role alone proves nothing about
+/// whose a key is (LP-185). A revoked key stays revoked: no fact undoes a
+/// revocation, and a later role over the same key does not restore it.
 ///
 /// # Errors
 ///
@@ -87,6 +91,7 @@ pub fn is_revoked(
     owner: &PublicKey,
     subject: &PublicKey,
 ) -> Result<bool, Error> {
+    let me = person_fact(store, owner)?;
     for stored in store.revocations_naming(subject)? {
         let Ok(claim) = facts::decode::<RevocationFact>(&stored.envelope) else {
             continue;
@@ -102,14 +107,56 @@ pub fn is_revoked(
         if person.master_key == *owner || *subject == person.master_key {
             return Ok(true);
         }
-        let their_device = store.about(subject)?.iter().any(|s| {
-            facts::verify_role(&s.envelope, &person)
-                .is_ok_and(|r| matches!(r.role, Role::Binding | Role::Principal))
-        });
-        if their_device {
+        // Another person's revocation of a device is their business only when
+        // this device knows them and the subject is no key of the owner's own.
+        // Any paired device can make up a person and have it sign a role over
+        // any key, so a role alone proves nothing about whose a key is.
+        let Some(me) = me.as_ref() else {
+            tracing::debug!(fact = %stored.id, "revocation by another person, and no person fact of my own to know them by; ignoring");
+            continue;
+        };
+        if role_from(store, me, subject, &[Role::Binding, Role::Principal])? {
+            tracing::debug!(fact = %stored.id, "revocation by another person over a device of mine; ignoring");
+            continue;
+        }
+        if !role_from(store, me, &person.master_key, &[Role::Person])?
+            || revoked_by(store, me, &person.master_key)?
+        {
+            tracing::debug!(fact = %stored.id, "revocation by a person this device does not know; ignoring");
+            continue;
+        }
+        if role_from(store, &person, subject, &[Role::Binding, Role::Principal])? {
             return Ok(true);
         }
         tracing::debug!(fact = %stored.id, "revocation by a person whose device the subject is not; ignoring");
+    }
+    Ok(false)
+}
+
+/// Whether the store holds a role fact over `subject` signed by `signer`'s
+/// subordinate key for one of `roles`.
+fn role_from(
+    store: &TrustStore,
+    signer: &PersonFact,
+    subject: &PublicKey,
+    roles: &[Role],
+) -> Result<bool, Error> {
+    Ok(store
+        .about(subject)?
+        .iter()
+        .any(|s| facts::verify_role(&s.envelope, signer).is_ok_and(|r| roles.contains(&r.role))))
+}
+
+/// Whether `me`, the owner's own person fact, has revoked `subject`: a
+/// revocation naming the owner as its person that verifies against that fact.
+fn revoked_by(store: &TrustStore, me: &PersonFact, subject: &PublicKey) -> Result<bool, Error> {
+    for stored in store.revocations_naming(subject)? {
+        let Ok(claim) = facts::decode::<RevocationFact>(&stored.envelope) else {
+            continue;
+        };
+        if claim.person == me.master_key && facts::verify_revocation(&stored.envelope, me).is_ok() {
+            return Ok(true);
+        }
     }
     Ok(false)
 }
@@ -520,6 +567,112 @@ mod tests {
             .unwrap();
         assert!(is_revoked(&w.store, w.alice.person(), bob.person()).unwrap());
         assert!(!is_revoked(&w.store, bob.person(), bob.person()).unwrap());
+    }
+
+    #[test]
+    fn a_trusted_device_cannot_revoke_my_keys_by_forging_a_person() {
+        // Any paired device can make up a person: fresh keys, a person fact
+        // signed by them, a binding role in that person's name over any key,
+        // and that person's revocation of it. Gossip from a trusted peer stores
+        // all three. None of it may touch Alice's own keys (LP-185).
+        let w = world();
+        let forged = PersonKeys::generate().unwrap();
+        w.store
+            .insert(&facts::person_fact(&forged, "Nobody", 1, at(0)).unwrap())
+            .unwrap();
+        for subject in [*w.laptop.public(), *w.alice.person()] {
+            w.store
+                .insert(&facts::role_fact(&forged, Role::Binding, subject, false, at(1)).unwrap())
+                .unwrap();
+            w.store
+                .insert(
+                    &facts::revocation_fact(&forged, subject, RevocationKind::Revocation, at(2))
+                        .unwrap(),
+                )
+                .unwrap();
+        }
+        assert!(!is_revoked(&w.store, w.alice.person(), w.laptop.public()).unwrap());
+        assert!(!is_revoked(&w.store, w.alice.person(), w.alice.person()).unwrap());
+        assert_eq!(
+            recognise(&w.store, w.alice.person(), w.laptop.public()).unwrap(),
+            Recognition::MyBinding { introducer: true }
+        );
+        // The forged person's own abandonment of its own master key is its
+        // business and harms nobody.
+        w.store
+            .insert(
+                &facts::revocation_fact(
+                    &forged,
+                    *forged.person(),
+                    RevocationKind::Abandonment,
+                    at(3),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        assert!(is_revoked(&w.store, w.alice.person(), forged.person()).unwrap());
+    }
+
+    #[test]
+    fn a_known_person_cannot_revoke_my_device_either() {
+        // Bob is someone Alice knows; a role he signs over Alice's laptop, and
+        // his revocation of it, say nothing about her device.
+        let w = world();
+        let bob = PersonKeys::generate().unwrap();
+        w.store
+            .insert(&facts::person_fact(&bob, "Bob", 1, at(0)).unwrap())
+            .unwrap();
+        w.store
+            .insert(&facts::role_fact(&w.alice, Role::Person, *bob.person(), false, at(1)).unwrap())
+            .unwrap();
+        w.store
+            .insert(
+                &facts::role_fact(&bob, Role::Binding, *w.laptop.public(), false, at(2)).unwrap(),
+            )
+            .unwrap();
+        w.store
+            .insert(
+                &facts::revocation_fact(
+                    &bob,
+                    *w.laptop.public(),
+                    RevocationKind::Revocation,
+                    at(3),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        assert!(!is_revoked(&w.store, w.alice.person(), w.laptop.public()).unwrap());
+        assert_eq!(
+            recognise(&w.store, w.alice.person(), w.laptop.public()).unwrap(),
+            Recognition::MyBinding { introducer: true }
+        );
+    }
+
+    #[test]
+    fn a_stranger_revoking_their_own_device_is_not_this_devices_business() {
+        // Carol is nobody Alice knows: her revocation of her own phone is
+        // stored, since it verifies, and counts for nothing here, where her
+        // phone was a stranger anyway.
+        let w = world();
+        let carol = PersonKeys::generate().unwrap();
+        let phone = SigningKey::generate().unwrap();
+        w.store
+            .insert(&facts::person_fact(&carol, "Carol", 1, at(0)).unwrap())
+            .unwrap();
+        w.store
+            .insert(&facts::role_fact(&carol, Role::Binding, *phone.public(), true, at(1)).unwrap())
+            .unwrap();
+        w.store
+            .insert(
+                &facts::revocation_fact(&carol, *phone.public(), RevocationKind::Revocation, at(2))
+                    .unwrap(),
+            )
+            .unwrap();
+        assert!(!is_revoked(&w.store, w.alice.person(), phone.public()).unwrap());
+        assert_eq!(
+            recognise(&w.store, w.alice.person(), phone.public()).unwrap(),
+            Recognition::Stranger
+        );
     }
 
     #[test]

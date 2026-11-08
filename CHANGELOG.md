@@ -98,6 +98,11 @@ release workflow publishes the section as the release notes with the installers.
 
 ### Fixed
 
+- A device of yours could no longer be cut off by another of your devices inventing a person:
+  a revocation by anyone but you counts only from a person you know, and never over your own
+  keys. Before, any paired device could sign a made-up person's role over a key of yours and
+  that person's revocation of it, and every device honoured it, so a lost device could keep
+  its own revocation from ever arriving (ADR 0047, LP-185).
 - The macOS installer waits for the old launchd agent to be gone before loading the new one,
   and retries the load, so an install or `lpctl upgrade` no longer leaves the daemon stopped
   with only launchctl's "Bootstrap failed: 5"; if it still cannot load, it says so and exits

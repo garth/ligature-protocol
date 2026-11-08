@@ -95,10 +95,14 @@ sequenceDiagram
 ## 5. Revocation and the offline window
 
 A revocation counts on a device when the person who signed it is the device's owner, when
-its subject is that person's own master key (an abandonment, chapter 07), or when a role
-fact of that person covers the subject, so a person can cut off their own device for
-everyone but another person's device only on their own devices
-([ADR 0039](../adr/0039-revocation-scope-and-live-session-close.md)). A device that learns
+its subject is that person's own master key (an abandonment, chapter 07), or when the
+device's owner knows that person (a `person` role from the owner, not revoked), the subject
+is not a key the owner's own roles cover, and a role fact of that person covers the subject,
+so a person can cut off their own device for everyone who knows them but another person's
+device only on their own devices, and nobody can revoke a device by inventing a person and
+signing a role over its key
+([ADR 0039](../adr/0039-revocation-scope-and-live-session-close.md),
+[ADR 0047](../adr/0047-revocation-by-another-person-needs-acquaintance.md)). A device that learns
 a revocation, by gossip or otherwise, re-decides the recognition of every connected peer
 and closes the session of any it no longer trusts.
 

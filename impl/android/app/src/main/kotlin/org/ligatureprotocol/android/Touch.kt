@@ -37,3 +37,27 @@ internal fun coalesceDrive(queue: MutableList<DriveAction>, action: DriveAction)
         else -> queue.add(action)
     }
 }
+
+/**
+ * Whether a finger's move from one point to another goes nowhere, within half
+ * a pixel. Such a move is not made: Android leaves a continued stroke of no
+ * length unfinished, and the release after it then has nothing to continue,
+ * so the finger stays down and a click becomes a long press (LP-167). A Mac
+ * trackpad reports the same point again just before a release.
+ */
+internal fun goesNowhere(fromX: Float, fromY: Float, toX: Float, toY: Float): Boolean {
+    val dx = toX - fromX
+    val dy = toY - fromY
+    return dx * dx + dy * dy < 0.25f
+}
+
+/**
+ * Whether a stroke Android ended is started again: only for a finger the
+ * remote button still holds down, and only when it moves, release included.
+ * SystemUI cancels the stroke under way as the keyguard's bouncer appears in
+ * the middle of a swipe; without the rest of the swipe and its release the
+ * bouncer stays half open and the next tap closes it (LP-167). A release where
+ * the finger already was is not made, since that would be a tap.
+ */
+internal fun restartsStroke(fingerDown: Boolean, moved: Boolean): Boolean = fingerDown && moved
+

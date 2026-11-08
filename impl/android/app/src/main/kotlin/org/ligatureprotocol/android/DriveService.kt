@@ -34,6 +34,8 @@ class DriveService : AccessibilityService() {
     private var stroke: GestureDescription.StrokeDescription? = null
     private var lastX = 0f
     private var lastY = 0f
+    /** Whether the remote button holds a finger down, whatever Android did with its stroke. */
+    private var fingerDown = false
     private var pointer: View? = null
     private var lastCopyRead = 0L
 
@@ -148,9 +150,15 @@ class DriveService : AccessibilityService() {
             is DriveAction.TouchDown -> {
                 lastX = action.x.toFloat()
                 lastY = action.y.toFloat()
+                fingerDown = true
                 GestureDescription.StrokeDescription(line(lastX, lastY, lastX, lastY), 0, 1, true)
             }
-            is DriveAction.TouchMove -> continued(action.x, action.y, MOVE_MS, true)
+            is DriveAction.TouchMove ->
+                if (goesNowhere(lastX, lastY, action.x.toFloat(), action.y.toFloat())) {
+                    null
+                } else {
+                    continued(action.x, action.y, MOVE_MS, true)
+                }
             is DriveAction.TouchUp -> continued(action.x, action.y, 1, false)
             is DriveAction.Swipe -> {
                 val (w, h) = NodeHolder.screenPixels(this)
@@ -177,8 +185,10 @@ class DriveService : AccessibilityService() {
                     override fun onCompleted(gestureDescription: GestureDescription?) = finished()
 
                     override fun onCancelled(gestureDescription: GestureDescription?) {
-                        // The user touched the screen, or the system ended it:
-                        // the finger is gone, so what continued it has no use.
+                        // The user touched the screen, or the system ended it (the
+                        // keyguard does as its bouncer appears): this stroke is
+                        // over, and a finger the button still holds starts a new
+                        // one when it next moves.
                         stroke = null
                         finished()
                     }
@@ -198,13 +208,22 @@ class DriveService : AccessibilityService() {
     }
 
     private fun continued(x: Double, y: Double, ms: Long, more: Boolean): GestureDescription.StrokeDescription? {
-        val from = stroke ?: return null
         val toX = x.toFloat()
         val toY = y.toFloat()
         val path = line(lastX, lastY, toX, toY)
+        val moved = !goesNowhere(lastX, lastY, toX, toY)
+        val from = stroke
+        val next = when {
+            from != null -> from.continueStroke(path, 0, ms, more)
+            // Android ended the stroke while the button is still held: the
+            // finger goes down again where it was and carries on.
+            restartsStroke(fingerDown, moved) -> GestureDescription.StrokeDescription(path, 0, ms, more)
+            else -> null
+        }
         lastX = toX
         lastY = toY
-        return from.continueStroke(path, 0, ms, more)
+        if (!more) fingerDown = false
+        return next
     }
 
     private fun line(fromX: Float, fromY: Float, toX: Float, toY: Float) = Path().apply {

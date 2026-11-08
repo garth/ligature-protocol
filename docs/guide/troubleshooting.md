@@ -95,7 +95,8 @@ The daemon logs each connection and each refusal with the peer's key at `info`;
   for a minute, unless the grant in
   [Watching the phone with nobody at it](screen.md#watching-the-phone-with-nobody-at-it) is in
   place; the card says "watch its screen with nobody here" when it is.
-- A watch that shows only the lock screen is a locked phone: its PIN screen is never shared.
+- A watch that shows only the lock screen is a locked phone: drag up and click the PIN, which
+  Android keeps out of the picture, or unlock it at the phone.
 - A dark screen that stays dark: Settings, Apps, Special app access, **Turn screen on** must
   allow Ligature.
 

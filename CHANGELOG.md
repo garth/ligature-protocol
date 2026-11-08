@@ -37,7 +37,10 @@ release workflow publishes the section as the release notes with the installers.
   Accessibility: a pointer on the screen, clicks as taps, the right button for Back and the
   middle for Home, the wheel to scroll, and typing into the field in focus. A request to watch
   its screen then opens Android's dialog at once instead of a notification, the screen wakes
-  for either, and a request nobody answers within a minute closes its dialog. Granting the
+  for either, and a request nobody answers within a minute closes its dialog. A click from a
+  Mac trackpad is a tap rather than a long press, and a locked phone is unlocked by dragging
+  up and clicking its PIN, since a stroke Android cancels as the PIN pad appears is carried
+  on. Granting the
   app screen capture over `adb` lets your devices watch the phone with nobody at it, and the
   app's **Remote control** says when that is so (LP-167).
 

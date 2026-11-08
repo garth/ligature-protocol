@@ -217,7 +217,12 @@ protocol of its own. LineageOS is the first target (no Google services, sideload
   left button is a finger at it, the right is Back and the middle is Home, and scrolling is a
   swipe. Characters and keys go through the service's input connection (Android 13), so they
   reach a focused text field and nothing else, and a held key does not repeat. A person's
-  own touch cancels a finger the service holds down. The screen is kept on for the drive.
+  own touch cancels a finger the service holds down, and so does SystemUI as the keyguard's
+  PIN pad rises in the middle of a swipe, so a stroke Android cancels while the remote button
+  is held starts again on the next move, or the bouncer stays half open and the next tap
+  closes it. A continued stroke of no length is never finished, so a move that goes nowhere
+  (a Mac trackpad reports one before a release) is not made. The screen is kept on for the
+  drive.
 - **Displays.** Only an app may capture the screen, after the user consents in the media
   projection dialog for every share; the dialog shares one app unless the user picks the
   entire screen. An app in the background may not open the dialog, so a viewer's request

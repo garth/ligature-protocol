@@ -91,8 +91,9 @@ at once, and **Remote control** on the app's screen says your devices can watch 
 there. Every device you have paired can then watch the phone without asking, a lost one too
 until you revoke it, so grant it only if you want that. The phone still shows that it is
 sharing, and **Stop sharing** still ends a share. A locked phone shares its lock screen, but
-not its PIN, pattern or password screen, which Android keeps out of every share, so leave the
-phone unlocked to use it from another computer. To ask every time again:
+not its PIN, pattern or password screen, which Android keeps out of every share: the picture
+dims while it is up. Clicks still reach it, so a PIN can be entered from the viewer by its
+place on the pad, or leave the phone unlocked to use it from another computer. To ask every time again:
 
 ```sh
 adb shell appops set org.ligatureprotocol.android PROJECT_MEDIA ignore
@@ -150,5 +151,6 @@ ffplay -f h264 share.h264
   busy. Another display of the same device can be shared alongside.
 - A whole display is shared, never a single window. Android's dialog offers one app as well;
   choose the entire screen there.
-- A locked phone shares its lock screen but not its PIN, pattern or password screen.
+- A locked phone shares its lock screen but not its PIN, pattern or password screen, which
+  is entered unseen from a viewer.
 - There is no sound.

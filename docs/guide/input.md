@@ -89,7 +89,7 @@ update keeps it.
 A drive or a watch turns the phone's screen on and keeps it on while it lasts, since a dark
 screen takes no touch and shows nothing. Android lists this under Settings, Apps, Special app
 access, **Turn screen on**. The lock screen stays: whoever drives the phone gets past it as
-anyone at the phone would.
+anyone at the phone would, dragging up to the PIN pad and clicking the PIN.
 
 Then the phone is a device you can drive, from `lpview` or across an edge like any other:
 

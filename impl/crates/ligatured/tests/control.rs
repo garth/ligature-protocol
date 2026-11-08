@@ -105,3 +105,33 @@ async fn a_stale_socket_file_is_replaced() {
         .unwrap();
     daemon.shutdown();
 }
+
+/// `permissions` is answered by the router itself, whatever capabilities the
+/// daemon has (LP-169): the Mac lists its three, any other platform an empty
+/// list.
+#[tokio::test]
+async fn permissions_are_answered_over_the_socket() {
+    use ligatured::control::Permissions;
+
+    let dir = tempfile::tempdir().unwrap();
+    let loc = Locations::resolve(Some(dir.path()), None);
+    let (daemon, _events) =
+        Daemon::open(loc.clone(), "127.0.0.1:0".parse().unwrap(), Some("laptop")).unwrap();
+    let daemon: Arc<Daemon> = daemon;
+    let _server = serve(daemon.clone(), &loc.control_socket()).unwrap();
+
+    let mut client = Client::connect(&loc.control_socket()).await.unwrap();
+    let held: Permissions = client
+        .request(Request::new(types::PERMISSIONS, 0))
+        .await
+        .unwrap();
+    let names: Vec<&str> = held.permissions.iter().map(|p| p.name.as_str()).collect();
+    if cfg!(target_os = "macos") {
+        assert_eq!(
+            names,
+            ["accessibility", "input-monitoring", "screen-recording"]
+        );
+    } else {
+        assert!(names.is_empty());
+    }
+}

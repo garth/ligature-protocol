@@ -784,6 +784,7 @@ pub async fn handle(
     let id = request.id;
     let result: Result<Response, Error> = match request.request_type.as_str() {
         types::STATUS => Response::ok(id, &daemon.status()),
+        types::PERMISSIONS => Response::ok(id, &permissions()),
         types::INIT => match request.name.as_deref() {
             Some(name) if !name.trim().is_empty() => daemon
                 .init(name.trim(), request.device_name.as_deref())
@@ -1159,7 +1160,6 @@ async fn handle_input(
             Err(e) => Err(e),
         },
         types::INPUT_STATUS => Response::ok(id, &input.status()),
-        types::PERMISSIONS => Response::ok(id, &permissions()),
         types::INPUT_DRIVE => match request.key {
             Some(peer) => {
                 let enter = lp_core::input::Enter::absolute(

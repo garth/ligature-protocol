@@ -296,12 +296,13 @@ fn capturer(
                     Vec::new()
                 }
             },
-            TapEvent::Flags { code, flags } => s
-                .modifiers
-                .changed(code, flags)
-                .into_iter()
-                .filter_map(|(code, pressed)| KeyMeaning::modifier(code, pressed, flags))
-                .collect(),
+            TapEvent::Flags { code, flags } => {
+                let changed = s.modifiers.changed(code, flags);
+                changed
+                    .into_iter()
+                    .flat_map(|(code, pressed)| s.meaning.modifier(code, pressed, flags))
+                    .collect()
+            }
         };
         drop(guard);
         for e in captured {

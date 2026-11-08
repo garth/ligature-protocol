@@ -568,6 +568,8 @@ pub fn character_flags(held: u64, carbon: u32) -> u64 {
 pub struct KeyMeaning {
     dead: u32,
     unsent: HashSet<u16>,
+    /// Right Option's press went out, with left Option down (LP-171).
+    right_option_sent: bool,
 }
 
 /// A layout's translation: what the key types with the Carbon modifiers,
@@ -636,30 +638,52 @@ impl KeyMeaning {
         })
     }
 
-    /// The key event for a modifier's press or release, by evdev code, with
-    /// the flags after it; `None` for right Option, the Mac's AltGr, whose
-    /// characters carry it (ADR 0046).
-    #[must_use]
-    pub fn modifier(evdev: u16, pressed: bool, f: u64) -> Option<lp_core::input::InputEvent> {
-        // Right Option is the Mac's AltGr (ADR 0046): the characters it
-        // chooses carry it, so its own key is not sent.
-        if evdev == lp_core::input::KEY_RIGHTALT {
-            return None;
-        }
-        Some(lp_core::input::InputEvent::Key {
-            code: evdev,
+    /// The key events for a modifier's press or release, by evdev code, with
+    /// the flags after it. Right Option alone is the Mac's AltGr, whose
+    /// characters carry it, so its own key is not sent (ADR 0046); with left
+    /// Option down as well it is, so both Option keys make the release chord
+    /// (LP-171), in either order.
+    pub fn modifier(
+        &mut self,
+        evdev: u16,
+        pressed: bool,
+        f: u64,
+    ) -> Vec<lp_core::input::InputEvent> {
+        use lp_core::input::{KEY_LEFTALT, KEY_RIGHTALT};
+        let event = |code: u16, pressed: bool| lp_core::input::InputEvent::Key {
+            code,
             pressed,
             id: pressed
-                .then(|| lp_core::input::keyid::named_for_evdev(evdev))
+                .then(|| lp_core::input::keyid::named_for_evdev(code))
                 .flatten(),
             mods: Some(mask_of_flags(f)),
-        })
+        };
+        match (evdev, pressed) {
+            (KEY_RIGHTALT, true) if f & LEFT_OPTION != 0 => {
+                self.right_option_sent = true;
+                vec![event(KEY_RIGHTALT, true)]
+            }
+            (KEY_RIGHTALT, true) => Vec::new(),
+            (KEY_RIGHTALT, false) => {
+                if std::mem::replace(&mut self.right_option_sent, false) {
+                    vec![event(KEY_RIGHTALT, false)]
+                } else {
+                    Vec::new()
+                }
+            }
+            (KEY_LEFTALT, true) if f & RIGHT_OPTION != 0 && !self.right_option_sent => {
+                self.right_option_sent = true;
+                vec![event(KEY_LEFTALT, true), event(KEY_RIGHTALT, true)]
+            }
+            _ => vec![event(evdev, pressed)],
+        }
     }
 
     /// Forgets a dead key in progress, when a capture starts or ends.
     pub fn clear(&mut self) {
         self.dead = 0;
         self.unsent.clear();
+        self.right_option_sent = false;
     }
 }
 
@@ -873,11 +897,15 @@ mod tests {
         assert_eq!(id(meaning.key(30, true, 0, None)), Some((None, 0)));
         // A modifier is its named key; Option is Alt and Command Super.
         assert_eq!(
-            id(KeyMeaning::modifier(56, true, flags::ALTERNATE)),
+            id(KeyMeaning::default()
+                .modifier(56, true, flags::ALTERNATE)
+                .pop()),
             Some((Some(keyid::ALT_L), mask::ALT))
         );
         assert_eq!(
-            id(KeyMeaning::modifier(125, true, flags::COMMAND)),
+            id(KeyMeaning::default()
+                .modifier(125, true, flags::COMMAND)
+                .pop()),
             Some((Some(keyid::SUPER_L), mask::SUPER))
         );
     }
@@ -939,13 +967,58 @@ mod tests {
             Some((Some(u32::from('e')), mask::SUPER))
         );
         // Right Option's own key is not sent; left Option's is Alt.
-        assert_eq!(KeyMeaning::modifier(100, true, right), None);
+        assert!(KeyMeaning::default().modifier(100, true, right).is_empty());
         assert_eq!(
-            id(KeyMeaning::modifier(56, true, left)),
+            id(KeyMeaning::default().modifier(56, true, left).pop()),
             Some((Some(lp_core::input::keyid::ALT_L), mask::ALT))
         );
         assert_eq!(mask_of_flags(right), 0);
         assert_eq!(mask_of_flags(left), mask::ALT);
+    }
+
+    #[test]
+    fn both_option_keys_are_sent_so_the_release_chord_works() {
+        // LP-171's chord is both Alt keys; right Option alone is not sent
+        // (ADR 0046), so with both down both go, in either order.
+        use lp_core::input::{InputEvent, KEY_LEFTALT, KEY_RIGHTALT};
+        let codes = |events: Vec<InputEvent>| -> Vec<(u16, bool)> {
+            events
+                .into_iter()
+                .filter_map(|e| match e {
+                    InputEvent::Key { code, pressed, .. } => Some((code, pressed)),
+                    _ => None,
+                })
+                .collect()
+        };
+        let both = flags::ALTERNATE | LEFT_OPTION | RIGHT_OPTION;
+        // Right first, then left: the left press brings the right with it.
+        let mut m = KeyMeaning::default();
+        assert!(
+            m.modifier(KEY_RIGHTALT, true, flags::ALTERNATE | RIGHT_OPTION)
+                .is_empty()
+        );
+        assert_eq!(
+            codes(m.modifier(KEY_LEFTALT, true, both)),
+            vec![(KEY_LEFTALT, true), (KEY_RIGHTALT, true)]
+        );
+        assert_eq!(
+            codes(m.modifier(KEY_RIGHTALT, false, flags::ALTERNATE | LEFT_OPTION)),
+            vec![(KEY_RIGHTALT, false)]
+        );
+        // Left first, then right: the right press is sent.
+        let mut m = KeyMeaning::default();
+        assert_eq!(
+            codes(m.modifier(KEY_LEFTALT, true, flags::ALTERNATE | LEFT_OPTION)),
+            vec![(KEY_LEFTALT, true)]
+        );
+        assert_eq!(
+            codes(m.modifier(KEY_RIGHTALT, true, both)),
+            vec![(KEY_RIGHTALT, true)]
+        );
+        // A right Option never sent is never released either.
+        let mut m = KeyMeaning::default();
+        m.modifier(KEY_RIGHTALT, true, flags::ALTERNATE | RIGHT_OPTION);
+        assert!(m.modifier(KEY_RIGHTALT, false, 0).is_empty());
     }
 
     #[test]

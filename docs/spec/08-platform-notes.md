@@ -218,7 +218,10 @@ protocol of its own. LineageOS is the first target (no Google services, sideload
   service never answers the dialog. On a locked phone the dialog first sends the keyguard to
   its PIN, pattern or password, a secure window a viewer cannot see. A wake lock lights the
   screen from the background only with `TURN_SCREEN_ON` on Android 14 and later (Android 17
-  still lets it through without, and logs it). The capture runs in a foreground service of
+  still lets it through without, and logs it). The `PROJECT_MEDIA` app op, which only
+  `adb shell appops set` changes, makes the dialog answer itself: on Android 17 a request
+  then shares within about half a second, even on a locked phone, whose lock screen is shared
+  but whose PIN, pattern or password screen is not. The capture runs in a foreground service of
   the media projection type while Android shows its cast indicator, and `MediaCodec`
   encodes it; stopping the cast from the system ends the share with `consent`. A shared
   desktop is decoded by `MediaCodec` into a surface on the app's watch screen, where touch

@@ -1,6 +1,7 @@
 package org.ligatureprotocol.android
 
 import android.app.Activity
+import android.app.AppOpsManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -22,6 +23,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.Process
 import android.util.Log
 import androidx.core.content.ContextCompat
 
@@ -50,6 +52,20 @@ object ScreenShare {
     /** Whether a main activity is in front, so the dialog may open at once. */
     @Volatile
     var foreground: Boolean = false
+
+    /**
+     * Whether the owner has let this app capture the screen without Android's
+     * dialog, which only `adb shell appops set ... PROJECT_MEDIA allow` does:
+     * then a viewer's request is answered with nobody at the phone, as long as
+     * the accessibility service is on to open the request from the background.
+     */
+    fun unattended(context: Context): Boolean = runCatching {
+        context.getSystemService(AppOpsManager::class.java).unsafeCheckOpNoThrow(
+            "android:project_media",
+            Process.myUid(),
+            context.packageName,
+        ) == AppOpsManager.MODE_ALLOWED
+    }.getOrDefault(false)
 
     /** Whether this phone has an H.264 encoder, which sharing needs. */
     fun hasEncoder(): Boolean = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.any { info ->

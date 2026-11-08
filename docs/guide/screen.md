@@ -65,7 +65,8 @@ again of the network, so on a slow link `--chroma 4:2:0` asks for the lighter on
 - **The Mac** asks once for permission to record the screen, and refuses that first share
   ([Install](install.md#macos) has the steps). While a share runs, macOS shows its own
   sharing indicator in the menu bar, and stopping the share there ends it.
-- **The phone** asks every time, since Android never lets an app keep that consent. The
+- **The phone** asks every time, since Android never lets an app keep that consent, unless
+  you grant it once from a computer ([below](#watching-the-phone-with-nobody-at-it)). The
   request shows as a notification, **Tap to choose whether to share it**, or straight away as
   Android's dialog while the app is open or Ligature is on under Accessibility
   ([Driving the phone](input.md#driving-the-phone)). Someone must answer it at the phone,
@@ -74,6 +75,27 @@ again of the network, so on a slow link `--chroma 4:2:0` asks for the lighter on
   password before the dialog, and that screen cannot be seen from the viewer. A request
   nobody answers within a minute is withdrawn and the dialog closes. While the screen is
   shared, the notification's **Stop sharing** ends it.
+
+### Watching the phone with nobody at it
+
+Android has no setting for letting an app share the screen without its dialog. A computer with
+`adb` and the phone's USB debugging on can grant it once:
+
+```sh
+adb shell appops set org.ligatureprotocol.android PROJECT_MEDIA allow
+```
+
+With that and Ligature on under Accessibility, a request to watch wakes the phone and shares
+at once, and **Remote control** on the app's screen says your devices can watch with nobody
+there. Every device you have paired can then watch the phone without asking, a lost one too
+until you revoke it, so grant it only if you want that. The phone still shows that it is
+sharing, and **Stop sharing** still ends a share. A locked phone shares its lock screen, but
+not its PIN, pattern or password screen, which Android keeps out of every share, so leave the
+phone unlocked to use it from another computer. To ask every time again:
+
+```sh
+adb shell appops set org.ligatureprotocol.android PROJECT_MEDIA ignore
+```
 
 ## Watching a desktop from the phone
 

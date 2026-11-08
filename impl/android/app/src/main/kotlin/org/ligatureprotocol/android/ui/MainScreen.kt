@@ -58,6 +58,7 @@ fun MainScreen(
     onBatterySettings: () -> Unit,
     batteryUnrestricted: Boolean,
     onDriveSettings: () -> Unit,
+    watchUnattended: Boolean,
     onNotificationSettings: () -> Unit,
     onToggleApp: (String, Boolean) -> Unit,
     onTouchpad: (InputTarget) -> Unit,
@@ -105,8 +106,12 @@ fun MainScreen(
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Remote control", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    if (state.drivable) {
-                        "Your other devices can control this phone with their mouse and keyboard."
+                    if (state.drivable && watchUnattended) {
+                        "Your other devices can control this phone with their mouse and keyboard, " +
+                            "and watch its screen with nobody here."
+                    } else if (state.drivable) {
+                        "Your other devices can control this phone with their mouse and keyboard. " +
+                            "Watching its screen asks you here each time."
                     } else {
                         "To let your other devices control this phone, turn Ligature on under " +
                             "Accessibility: Android lets an app act on the screen in no other way."

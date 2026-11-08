@@ -139,7 +139,10 @@ is stored, and the sharing device shows that it shares for the share's life, by 
 platform's own indicator where the platform has one and by a notification of the daemon's
 where it has none, so a share never runs unseen. The same lost device that can drive the
 desktop can watch it until it is revoked, which is one more reason revocation takes
-effect at the next session start and ends a live one.
+effect at the next session start and ends a live one. A phone asks its user for every share
+unless the owner has granted the app screen capture without asking, which Android allows
+only from a computer over `adb`; then any device of the person's can watch the phone with
+nobody at it, and only the phone's own sharing indicator shows it.
 
 ### 4.5 No remote trust
 

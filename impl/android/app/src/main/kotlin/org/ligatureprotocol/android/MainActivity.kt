@@ -85,6 +85,7 @@ class MainActivity : ComponentActivity() {
                         onBatterySettings = ::batterySettings,
                         batteryUnrestricted = batteryUnrestricted(),
                         onDriveSettings = ::driveSettings,
+                        watchUnattended = ScreenShare.unattended(this),
                         onNotificationSettings = ::notificationSettings,
                         onToggleApp = NodeHolder::setAppEnabled,
                         onTouchpad = NodeHolder::startTouchpad,

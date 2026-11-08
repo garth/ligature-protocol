@@ -172,7 +172,8 @@ The reference implementation is Rust and is also the production implementation
   `07-shared-input.md` and `08-remote-desktop.md` are done, their implementation decisions
   beside them. `06-phone-and-media.md` (the phone's SMS and calls, media control) and
   `09-cast-and-sound.md` (a screen or a window cast to another device, every share with its
-  sound, epic LP-193) are drafts.
+  sound, epic LP-193) and `10-camera.md` (a camera watched from another device or presented to
+  a desktop's programs as a webcam, epic LP-194) are drafts.
 - Sponsors are listed in two places that stay identical: the README's "Sponsors" section
   and the landing page `docs/index.md`, grouped by tier (Gold, Silver, Bronze; a tier is
   written only once it has a sponsor), each with a logo under `docs/assets/sponsors/` (a

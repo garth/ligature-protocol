@@ -284,6 +284,7 @@ side, at [ligatureprotocol.org](https://ligatureprotocol.org/).
 - [Milestone 7 plan: one keyboard and mouse across the desktops](docs/milestones/07-shared-input.md)
 - [Milestone 8 plan: a screen viewed, then controlled, from another device](docs/milestones/08-remote-desktop.md)
 - [Milestone 9 plan: a screen or a window cast to another device, with its sound](docs/milestones/09-cast-and-sound.md)
+- [Milestone 10 plan: a camera used from another device, as a picture and as a webcam](docs/milestones/10-camera.md)
 - [Architecture decisions](docs/adr/)
 - [Glossary](docs/glossary.md)
 - [Prior art](docs/prior-art.md)

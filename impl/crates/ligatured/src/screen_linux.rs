@@ -1603,7 +1603,11 @@ mod tests {
         let cap = 4 * bit_rate(1280, 720, 30);
         let vaapi = encoder_args(Encoder::Vaapi, &input, &settings(1280, 720, 30)).join(" ");
         assert!(vaapi.contains("-vaapi_device /dev/dri/renderD128"));
-        assert!(vaapi.contains("scale=1280:720,format=nv12,hwupload -c:v h264_vaapi -aud 1"));
+        assert!(
+            vaapi.contains(
+                "scale=1280:720,format=nv12,hwupload -c:v h264_vaapi -async_depth 1 -aud 1"
+            )
+        );
         assert!(vaapi.contains(&format!("-b:v {}", bit_rate(1280, 720, 30))));
         assert!(vaapi.contains(&format!("-maxrate {cap} -bufsize {cap}")));
         assert_eq!(bit_rate(1280, 720, 30), 2_211_840);

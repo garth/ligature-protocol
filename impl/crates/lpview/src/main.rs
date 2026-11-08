@@ -273,6 +273,57 @@ fn watch_only(input: Option<InputParams>) -> Option<&'static str> {
     }
 }
 
+/// An access unit delimiter, the NAL unit that starts a frame.
+const DELIMITER: [u8; 6] = [0, 0, 0, 1, 0x09, 0xf0];
+
+/// The share's stream as the decoder is fed it: a delimiter written right
+/// after each frame, where it would otherwise come only with the next one,
+/// so ffmpeg's parser hands the frame on at once instead of a frame later
+/// (LP-176), and the next frame's own leading delimiter dropped.
+#[derive(Debug, Default)]
+struct Delimiting {
+    /// A delimiter has been written after the last frame.
+    delimited: bool,
+    /// The next chunk begins a frame.
+    in_frame: bool,
+}
+
+impl Delimiting {
+    /// The bytes to write for one chunk of a frame.
+    fn chunk(&mut self, bytes: &[u8], last: bool) -> Vec<u8> {
+        let mut out = Vec::with_capacity(bytes.len() + DELIMITER.len());
+        let starting = !self.in_frame;
+        let body = if starting && self.delimited {
+            strip_delimiter(bytes)
+        } else {
+            bytes
+        };
+        out.extend_from_slice(body);
+        self.in_frame = !last;
+        if last {
+            out.extend_from_slice(&DELIMITER);
+            self.delimited = true;
+        }
+        out
+    }
+}
+
+/// `bytes` without a leading access unit delimiter, if it has one.
+fn strip_delimiter(bytes: &[u8]) -> &[u8] {
+    let code = if bytes.starts_with(&[0, 0, 0, 1]) {
+        4
+    } else if bytes.starts_with(&[0, 0, 1]) {
+        3
+    } else {
+        return bytes;
+    };
+    // The delimiter is its header and one byte of picture type.
+    match bytes.get(code) {
+        Some(header) if header & 0x1f == 0x09 && bytes.len() >= code + 2 => &bytes[code + 2..],
+        _ => bytes,
+    }
+}
+
 /// The arguments of the ffmpeg that decodes the share's H.264 into raw 0RGB
 /// pictures of its size.
 fn decoder_args(started: &Started) -> Vec<String> {
@@ -637,12 +688,14 @@ async fn network(
     req.formats = options.formats.clone();
     req.frame_rate = Some(options.rate);
     let mut feed: Option<std::process::ChildStdin> = None;
+    let mut delimiting = Delimiting::default();
     let response = watch
         .call(req, |event: &Event| {
             if let Some(started) = &event.started {
                 match decoder(started) {
                     Ok(mut c) => {
                         feed = c.stdin.take();
+                        delimiting = Delimiting::default();
                         if let Some(mut out) = c.stdout.take() {
                             let (w, h) = (started.width, started.height);
                             let picture = picture.clone();
@@ -682,7 +735,9 @@ async fn network(
             }
             if let Some(frame) = &event.frame
                 && let Some(stdin) = feed.as_mut()
-                && stdin.write_all(&frame.bytes.0).is_err()
+                && stdin
+                    .write_all(&delimiting.chunk(&frame.bytes.0, frame.last))
+                    .is_err()
             {
                 feed = None;
             }
@@ -1392,6 +1447,27 @@ fn evdev_code(key: KeyCode) -> Option<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn each_frame_is_followed_by_a_delimiter_and_none_is_doubled() {
+        let aud = DELIMITER.to_vec();
+        let f1 = [aud.as_slice(), &[0, 0, 0, 1, 0x65, 1, 2]].concat();
+        let f2 = [aud.as_slice(), &[0, 0, 0, 1, 0x41, 3]].concat();
+        let mut d = Delimiting::default();
+        let mut stream = Vec::new();
+        // The first frame in two chunks, the second in one.
+        stream.extend(d.chunk(&f1[..5], false));
+        stream.extend(d.chunk(&f1[5..], true));
+        stream.extend(d.chunk(&f2, true));
+        let want = [f1.as_slice(), &aud, &[0, 0, 0, 1, 0x41, 3], &aud].concat();
+        assert_eq!(stream, want);
+        // A three-byte start code's delimiter goes too, and nothing else does.
+        assert_eq!(strip_delimiter(&[0, 0, 1, 0x09, 0x10, 7]), &[7]);
+        assert_eq!(
+            strip_delimiter(&[0, 0, 0, 1, 0x41, 3]),
+            &[0, 0, 0, 1, 0x41, 3]
+        );
+    }
 
     #[test]
     fn a_picture_the_same_as_the_last_is_passed_over() {

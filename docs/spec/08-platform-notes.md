@@ -61,7 +61,10 @@ chooses what is shared, so a viewer's choice of display is a request, and the re
 it hands back is kept so the picker shows once. The PipeWire stream is read by GStreamer's
 `pipewiresrc` and encoded by ffmpeg (VA-API where a test encode works, `libx264`
 otherwise), child processes the daemon feeds and reads, so neither library is needed for
-the rest of the daemon. Hyprland shows no indicator of a screen cast, so the daemon posts a
+the rest of the daemon. `h264_vaapi` keeps two frames in flight by default, 31 ms at 30 fps
+here, so it runs with `-async_depth 1`; a raw H.264 stream marks where a frame begins but
+not where it ends, so the daemon takes a whole-looking frame when the encoder pauses rather
+than when the next one begins. Hyprland shows no indicator of a screen cast, so the daemon posts a
 notification with a Stop action for the share's life. `pipewiresrc` can stop delivering
 while the portal logs "Out of buffers"; the daemon starts a capture that has gone quiet
 again on the same portal session. Where the portal is missing, `wlr-screencopy` copies an

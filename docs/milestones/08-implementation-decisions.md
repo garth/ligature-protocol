@@ -377,3 +377,24 @@ with ffprobe that the stream is High 4:4:4 Predictive in `yuv444p` and that ever
 decodes; `lpview`'s decoder test decodes 90 frames at each format; the two-daemon test checks
 the pick (the viewer's order over the sharer's, a format the sharer stopped encoding refused,
 one it never listed not asked for).
+
+## LP-176: latency, the frames no longer wait for the next
+
+LP-152's run measured 120 ms to 380 ms glass to glass against the plan's 150 ms. Measured on the
+Linux machine with the daemon's own ffmpeg arguments at 30 fps, three waits were the daemon's:
+
+| Where | Before | After |
+| --- | --- | --- |
+| `h264_vaapi`'s default `async_depth` of 2 | out after 39 ms | 8 ms with `-async_depth 1` |
+| `AccessUnits` cutting at the next frame's delimiter | whole after 72 ms | cut on a 3 ms pause |
+| `lpview`'s ffmpeg parser waiting for the next frame | decoded after 71 ms | 37 ms |
+
+A frame begins with its delimiter, so cutting there holds each frame until the next starts: a
+frame interval at best, the settling copy or the keepalive on a still screen. `read_frames` now
+reads on one thread and cuts on another, which also takes a frame that begins with a delimiter
+and holds a slice once the stream has been quiet for 3 ms. ffmpeg writes a packet in
+back-to-back writes (`-flush_packets 1`), so a frame's own gaps are microseconds; bytes after a
+cut that do not begin a frame are counted and logged as a frame cut short. `lpview` writes a
+delimiter after each frame and drops the next frame's own, so the parser hands each frame on at
+once. GStreamer's `videorate` in drop-only mode holds nothing (about 1 ms). The phone needs
+neither change: `MediaCodec` gives and takes whole frames.

@@ -134,6 +134,10 @@ pub fn encoder_args(encoder: Encoder, input: &RawInput, settings: &Settings) -> 
                 &format!("{scale},format=nv12,hwupload"),
                 "-c:v",
                 "h264_vaapi",
+                // One frame in flight, not the default two: it held each
+                // frame 39 ms here (LP-176).
+                "-async_depth",
+                "1",
                 "-aud",
                 "1",
                 "-bsf:v",
@@ -212,11 +216,23 @@ pub fn encoder_args(encoder: Encoder, input: &RawInput, settings: &Settings) -> 
 }
 
 /// Splits an H.264 Annex B byte stream into access units at the access unit
-/// delimiters the encoder puts before every frame.
+/// delimiters the encoder puts before every frame, and, through
+/// [`AccessUnits::take_quiet`], cuts a frame that looks whole when the
+/// encoder pauses, rather than holding it until the next frame begins
+/// (LP-176).
 #[derive(Debug, Default)]
 pub struct AccessUnits {
     pending: Vec<u8>,
+    /// A frame was cut on a pause, and the next bytes must start a frame.
+    after_cut: bool,
+    /// Frames found cut short: bytes after a cut that did not start a frame.
+    cut_short: u64,
 }
+
+/// How long the encoder's stream must be quiet before a whole-looking frame is
+/// cut: ffmpeg writes a packet with back-to-back writes (`-flush_packets 1`),
+/// so a frame's own gaps are microseconds.
+pub const QUIET: Duration = Duration::from_millis(3);
 
 /// The NAL unit type of an access unit delimiter.
 const NAL_AUD: u8 = 9;
@@ -240,6 +256,13 @@ fn nal_units(bytes: &[u8]) -> Vec<(usize, usize, u8)> {
     out
 }
 
+/// Whether bytes begin with an access unit delimiter.
+fn starts_with_delimiter(bytes: &[u8]) -> bool {
+    nal_units(bytes)
+        .first()
+        .is_some_and(|(code, _, t)| *code == 0 && *t == NAL_AUD)
+}
+
 /// Whether an access unit holds an IDR slice, so a decoder can start there.
 #[must_use]
 pub fn is_keyframe(unit: &[u8]) -> bool {
@@ -250,6 +273,13 @@ impl AccessUnits {
     /// Takes more bytes and returns every access unit they complete.
     pub fn push(&mut self, bytes: &[u8]) -> Vec<Vec<u8>> {
         self.pending.extend_from_slice(bytes);
+        if self.after_cut && self.pending.len() >= 5 {
+            self.after_cut = false;
+            if !starts_with_delimiter(&self.pending) {
+                self.cut_short += 1;
+                tracing::warn!("a frame was cut short on a pause in the encoder's stream");
+            }
+        }
         let starts: Vec<usize> = nal_units(&self.pending)
             .into_iter()
             .filter(|(_, _, t)| *t == NAL_AUD)
@@ -268,6 +298,29 @@ impl AccessUnits {
         self.pending.drain(..cut);
         out.retain(|u| !u.is_empty());
         out
+    }
+
+    /// The frame waiting for the next delimiter, if it looks whole: it
+    /// begins with a delimiter and holds a slice. Called when the encoder's
+    /// stream has been quiet for [`QUIET`].
+    pub fn take_quiet(&mut self) -> Option<Vec<u8>> {
+        if !starts_with_delimiter(&self.pending) {
+            return None;
+        }
+        let has_slice = nal_units(&self.pending)
+            .iter()
+            .any(|(_, header, t)| (1..=5).contains(t) && *header + 1 < self.pending.len());
+        if !has_slice {
+            return None;
+        }
+        self.after_cut = true;
+        Some(std::mem::take(&mut self.pending))
+    }
+
+    /// How many frames were found cut short by [`AccessUnits::take_quiet`].
+    #[must_use]
+    pub fn cut_short(&self) -> u64 {
+        self.cut_short
     }
 
     /// What is left when the stream ends.
@@ -362,27 +415,46 @@ pub fn read_frames(
     frames: mpsc::UnboundedSender<Captured>,
     stopping: Arc<AtomicBool>,
 ) -> std::io::Result<()> {
+    // One thread reads; the other cuts, on a delimiter or on a pause, since a
+    // blocked read cannot time out.
+    let (chunks, chunks_rx) = std::sync::mpsc::channel::<Vec<u8>>();
     std::thread::Builder::new()
         .name("screen-encoded".into())
         .spawn(move || {
             let mut encoded = encoded;
-            let mut units = AccessUnits::default();
             let mut buf = vec![0u8; 256 * 1024];
             loop {
                 match encoded.read(&mut buf) {
                     Ok(0) | Err(_) => break,
                     Ok(n) => {
-                        for unit in units.push(&buf[..n]) {
-                            let key = is_keyframe(&unit);
-                            let frame = EncodedFrame {
-                                at: 0,
-                                key,
-                                bytes: unit,
-                            };
-                            if frames.send(Captured::Frame(frame)).is_err() {
-                                return;
-                            }
+                        if chunks.send(buf[..n].to_vec()).is_err() {
+                            return;
                         }
+                    }
+                }
+            }
+        })?;
+    std::thread::Builder::new()
+        .name("screen-framer".into())
+        .spawn(move || {
+            let mut units = AccessUnits::default();
+            loop {
+                let ready = match chunks_rx.recv_timeout(QUIET) {
+                    Ok(chunk) => units.push(&chunk),
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                        units.take_quiet().into_iter().collect()
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                };
+                for unit in ready {
+                    let key = is_keyframe(&unit);
+                    let frame = EncodedFrame {
+                        at: 0,
+                        key,
+                        bytes: unit,
+                    };
+                    if frames.send(Captured::Frame(frame)).is_err() {
+                        return;
                     }
                 }
             }
@@ -679,6 +751,70 @@ impl LiveEncoder {
 mod tests {
     use super::*;
 
+    const AUD: [u8; 6] = [0, 0, 0, 1, 0x09, 0xf0];
+    const SPS: [u8; 7] = [0, 0, 0, 1, 0x67, 1, 2];
+    const IDR: [u8; 7] = [0, 0, 1, 0x65, 9, 9, 9];
+    const P: [u8; 7] = [0, 0, 0, 1, 0x41, 7, 7];
+
+    #[test]
+    fn a_frame_that_looks_whole_is_cut_when_the_stream_goes_quiet() {
+        // The next frame's delimiter may be a frame interval away, or longer
+        // on a still screen: a whole-looking frame goes when the encoder
+        // pauses (LP-176).
+        let mut units = AccessUnits::default();
+        let frame = [AUD.as_slice(), &SPS, &IDR].concat();
+        assert!(units.push(&frame).is_empty());
+        assert_eq!(units.take_quiet(), Some(frame.clone()));
+        assert_eq!(units.take_quiet(), None);
+        // The next frame comes whole through the delimiter rule as before.
+        let next = [AUD.as_slice(), &P].concat();
+        assert!(units.push(&next).is_empty());
+        assert_eq!(units.push(&AUD), vec![next]);
+    }
+
+    #[test]
+    fn a_frame_without_a_slice_yet_is_not_cut() {
+        let mut units = AccessUnits::default();
+        assert!(units.push(&[AUD.as_slice(), &SPS].concat()).is_empty());
+        assert_eq!(units.take_quiet(), None);
+        // A frame not starting with a delimiter is not taken for whole.
+        let mut units = AccessUnits::default();
+        assert!(units.push(&P).is_empty());
+        assert_eq!(units.take_quiet(), None);
+    }
+
+    #[test]
+    fn bytes_after_a_cut_that_do_not_start_a_frame_are_noted() {
+        let mut units = AccessUnits::default();
+        units.push(&[AUD.as_slice(), &P].concat());
+        assert!(units.take_quiet().is_some());
+        // The rest of a frame cut short: it still goes out, at the next
+        // delimiter, and the cut is counted.
+        units.push(&[9, 9, 9, 9, 9, 9]);
+        assert_eq!(units.cut_short(), 1);
+        let out = units.push(&AUD);
+        assert_eq!(out, vec![vec![9, 9, 9, 9, 9, 9]]);
+    }
+
+    #[test]
+    fn vaapi_does_not_pipeline_frames() {
+        let input = RawInput {
+            width: 1280,
+            height: 720,
+            pix_fmt: "bgr0".to_owned(),
+        };
+        let settings = Settings {
+            display: "1".to_owned(),
+            format: Format::H264,
+            width: 1280,
+            height: 720,
+            frame_rate: 30,
+            viewer: String::new(),
+        };
+        let args = encoder_args(Encoder::Vaapi, &input, &settings).join(" ");
+        assert!(args.contains("-c:v h264_vaapi -async_depth 1"), "{args}");
+    }
+
     #[test]
     fn videotoolbox_gets_delimiters_and_parameter_sets_from_bitstream_filters() {
         let input = RawInput {
@@ -830,25 +966,29 @@ mod tests {
                 }
             }
         };
-        // The first picture comes out once its settling copy follows it.
+        // Every frame comes out as soon as it is encoded (LP-176): the first
+        // picture, then its settling copy.
         live.write(&picture(0)).unwrap();
-        until(1, &mut keys);
-        assert_eq!(keys, [true]);
-        // A change: the settling copy of the first, then the change.
-        live.write(&picture(90)).unwrap();
-        until(3, &mut keys);
-        assert_eq!(keys, [true, false, false]);
-        // The same picture again is encoded but not settled: its frame waits.
+        until(2, &mut keys);
+        assert_eq!(keys, [true, false]);
+        // A change, then its settling copy.
         live.write(&picture(90)).unwrap();
         until(4, &mut keys);
         assert_eq!(keys, [true, false, false, false]);
-        // A keyframe asked for: a new encoder on the last picture.
-        live.keyframe();
+        // The same picture again is encoded but not settled again.
+        live.write(&picture(90)).unwrap();
         until(5, &mut keys);
-        assert_eq!(keys, [true, false, false, false, true]);
-        live.write(&picture(180)).unwrap();
+        assert_eq!(keys, [true, false, false, false, false]);
+        // A keyframe asked for: a new encoder on the last picture, settled.
+        live.keyframe();
         until(7, &mut keys);
-        assert_eq!(keys, [true, false, false, false, true, false, false]);
+        assert_eq!(keys, [true, false, false, false, false, true, false]);
+        live.write(&picture(180)).unwrap();
+        until(9, &mut keys);
+        assert_eq!(
+            keys,
+            [true, false, false, false, false, true, false, false, false]
+        );
         live.stop();
         std::thread::sleep(SETTLE * 4);
         assert!(

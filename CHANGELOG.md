@@ -10,6 +10,10 @@ release workflow publishes the section as the release notes with the installers.
 
 ### Added
 
+- A shared screen reaches its viewer sooner: each frame leaves the sharer as soon as it is
+  encoded rather than when the next one begins, VA-API no longer holds a frame back, and
+  `lpview` decodes each frame without waiting for the next (LP-176).
+
 - Driving another device from a Mac, the right Option key types the characters it makes on
   the Mac, accents included (right Option+E, then E, for é), as AltGr does on a PC; the left
   Option key stays Alt (ADR 0046, LP-175).

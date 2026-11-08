@@ -399,3 +399,18 @@ cut that do not begin a frame are counted and logged as a frame cut short. `lpvi
 delimiter after each frame and drops the next frame's own, so the parser hands each frame on at
 once. GStreamer's `videorate` in drop-only mode holds nothing (about 1 ms). The phone needs
 neither change: `MediaCodec` gives and takes whole frames.
+
+## LP-186: the viewer takes no more than it asked for
+
+The security audit of 2026-11-08 (finding 8-F) found the viewer trusting the sharer, one of
+the person's own devices, without bounds: `started` was taken as it came, a frame's chunks
+were joined until one carried `last`, and whole frames went into an unbounded queue. Now the
+viewer refuses a `started` outside its `start` (an empty picture, one larger than asked, a
+faster rate, a format not offered, another display or an empty or over-long display name),
+resetting the stream as malformed; a chunk over `CHUNK_BYTES` or a frame over the picture's
+raw size (width by height by four bytes, at least 1 MiB) ends the share as an error; and the
+frames wait for the viewer in a queue of eight, beyond which they are dropped until the next
+keyframe, which the sharer is asked for at once, so the decoder never sees a frame whose
+reference it missed. `lpview` sizes its picture buffers through a checked multiplication and
+the app's aspect ratio falls back to square for an unusable size, both of which the daemon's
+check makes unreachable.

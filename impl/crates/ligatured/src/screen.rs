@@ -19,8 +19,9 @@ use std::time::{Duration, Instant};
 
 use lp_core::input::Region;
 use lp_core::screen::{
-    Display, Displays, Format, Frame, RefuseReason, Refused, SCREEN_TYPE, ScreenMessage,
-    ScreenParams, Start, Started, Stop, StopReason, chunk_frame, fit, screen_descriptor,
+    CHUNK_BYTES, Display, Displays, Format, Frame, RefuseReason, Refused, SCREEN_TYPE,
+    ScreenMessage, ScreenParams, Start, Started, Stop, StopReason, chunk_frame, fit,
+    screen_descriptor,
 };
 use lp_core::{Error, PublicKey};
 use lp_identity::trust::Recognition;
@@ -40,6 +41,10 @@ const ADVERTISE_POLL: Duration = Duration::from_secs(1);
 const START_TIMEOUT: Duration = Duration::from_secs(60);
 /// The fastest frame rate a sharer agrees to.
 const MAX_FRAME_RATE: u32 = 60;
+/// Whole frames waiting for the viewer before the oldest are dropped.
+const QUEUED_FRAMES: usize = 8;
+/// The smallest cap on a reassembled frame, for a tiny picture.
+const MIN_FRAME_CAP: usize = 1 << 20;
 
 /// One encoded frame from the platform's encoder.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -154,8 +159,9 @@ pub enum Viewed {
 pub struct Watching {
     /// What the sharer settled on.
     pub started: Started,
-    /// The frames and the end.
-    pub frames: mpsc::UnboundedReceiver<Viewed>,
+    /// The frames and the end. Bounded: a viewer that falls behind loses
+    /// frames up to the next keyframe rather than queueing them (LP-186).
+    pub frames: mpsc::Receiver<Viewed>,
     /// Keyframe requests and the stop.
     pub control: mpsc::UnboundedSender<ShareControl>,
 }
@@ -409,7 +415,7 @@ impl ScreenSync {
             ..start
         };
         let mut stream = self.open(peer).await?;
-        stream.send(&ScreenMessage::Start(start)).await?;
+        stream.send(&ScreenMessage::Start(start.clone())).await?;
         let answer = tokio::time::timeout(START_TIMEOUT, stream.recv::<ScreenMessage>())
             .await
             .map_err(|_| Error::Transport(format!("{peer} did not answer start")))??;
@@ -431,7 +437,13 @@ impl ScreenSync {
                 )));
             }
         };
-        let (frames_tx, frames) = mpsc::unbounded_channel();
+        if let Err(why) = check_started(&start, &started) {
+            stream.reset(lp_core::frame::MALFORMED_CODE);
+            return Err(Error::Transport(format!(
+                "{peer} answered start with what was not asked for: {why}"
+            )));
+        }
+        let (frames_tx, frames) = mpsc::channel(QUEUED_FRAMES);
         let (control, control_rx) = mpsc::unbounded_channel();
         let key = (*peer, started.display.clone());
         lock(&self.watching).insert(
@@ -529,28 +541,48 @@ impl ScreenSync {
         self: Arc<Self>,
         key: (PublicKey, String),
         mut stream: FramedStream,
-        frames: mpsc::UnboundedSender<Viewed>,
+        frames: mpsc::Sender<Viewed>,
         mut control: mpsc::UnboundedReceiver<ShareControl>,
     ) {
-        let mut pending: Option<(u64, u64, bool, Vec<u8>)> = None;
+        let cap = lock(&self.watching).get(&key).map_or(MIN_FRAME_CAP, |w| {
+            frame_cap(w.started.width, w.started.height)
+        });
+        let mut pending = Reassembly::new(cap);
+        // Set when the viewer fell behind: frames are dropped until the next
+        // keyframe, which the sharer has been asked for, so the decoder never
+        // sees a frame whose reference it missed.
+        let mut waiting_key = false;
         let reason = loop {
             tokio::select! {
                 incoming = stream.recv::<ScreenMessage>() => {
                     match incoming {
-                        Ok(Some(ScreenMessage::Frame(Frame { seq, at, key: is_key, last, bytes }))) => {
-                            let buffer = match &mut pending {
-                                Some((s, _, _, buf)) if *s == seq => buf,
-                                _ => {
-                                    pending = Some((seq, at, is_key, Vec::new()));
-                                    &mut pending.as_mut().expect("just set").3
+                        Ok(Some(ScreenMessage::Frame(frame))) => {
+                            let whole = match pending.push(frame) {
+                                Ok(Some(whole)) => whole,
+                                Ok(None) => continue,
+                                Err(why) => {
+                                    tracing::warn!(peer = %key.0, why, "the sharer's frame is out of bounds; ending the share");
+                                    stream.reset(lp_core::frame::MALFORMED_CODE);
+                                    break StopReason::Error;
                                 }
                             };
-                            buffer.extend_from_slice(&bytes.0);
-                            if last && let Some((seq, at, is_key, bytes)) = pending.take() {
-                                if let Some(w) = lock(&self.watching).get_mut(&key) {
-                                    w.frames += 1;
+                            if let Some(w) = lock(&self.watching).get_mut(&key) {
+                                w.frames += 1;
+                            }
+                            if waiting_key && !whole.key {
+                                continue;
+                            }
+                            match frames.try_send(Viewed::Frame { seq: whole.seq, at: whole.at, key: whole.key, bytes: whole.bytes }) {
+                                Ok(()) => waiting_key = false,
+                                Err(mpsc::error::TrySendError::Full(_)) => {
+                                    // The viewer is behind: drop until a keyframe arrives
+                                    // and the queue has room, asking for one now.
+                                    waiting_key = true;
+                                    if stream.send(&ScreenMessage::Keyframe).await.is_err() {
+                                        break StopReason::Error;
+                                    }
                                 }
-                                if frames.send(Viewed::Frame { seq, at, key: is_key, bytes }).is_err() {
+                                Err(mpsc::error::TrySendError::Closed(_)) => {
                                     // The viewer went away: tell the sharer.
                                     let _ = stream.send(&ScreenMessage::Stop(Stop { reason: StopReason::Viewer })).await;
                                     stream.finish();
@@ -582,7 +614,7 @@ impl ScreenSync {
             }
         };
         lock(&self.watching).remove(&key);
-        let _ = frames.send(Viewed::Stopped(reason));
+        let _ = frames.send(Viewed::Stopped(reason)).await;
         tracing::info!(peer = %key.0, display = %key.1, %reason, "stopped watching");
     }
 
@@ -1099,9 +1131,258 @@ impl Capture for FakeCapture {
     }
 }
 
+/// Whether what the sharer settled on is within what the viewer asked for
+/// (LP-186): a picture at least one pixel and no larger, a rate no faster, a
+/// format from the offer, and the display asked for where one was. A sharer
+/// is one of the person's own devices, but a buggy or compromised one must not
+/// choose the viewer's buffers for it.
+fn check_started(start: &Start, started: &Started) -> Result<(), &'static str> {
+    if started.width == 0 || started.height == 0 {
+        return Err("an empty picture");
+    }
+    if started.width > start.width || started.height > start.height {
+        return Err("a picture larger than asked for");
+    }
+    if started.frame_rate == 0 || started.frame_rate > start.frame_rate {
+        return Err("a frame rate outside what was asked for");
+    }
+    if !start.formats.contains(&started.format) {
+        return Err("a format that was not offered");
+    }
+    if started.display.is_empty() || started.display.chars().count() > 128 {
+        return Err("a display name that is empty or too long");
+    }
+    if let Some(asked) = &start.display
+        && *asked != started.display
+    {
+        return Err("a display other than the one asked for");
+    }
+    Ok(())
+}
+
+/// The most bytes a reassembled frame may hold: the picture's raw size, which
+/// no encoded frame of it exceeds, and at least [`MIN_FRAME_CAP`].
+fn frame_cap(width: u32, height: u32) -> usize {
+    let raw = u64::from(width) * u64::from(height) * 4;
+    usize::try_from(raw)
+        .unwrap_or(usize::MAX)
+        .max(MIN_FRAME_CAP)
+}
+
+/// A frame received whole, its chunks joined.
+#[derive(Debug, PartialEq, Eq)]
+struct WholeFrame {
+    seq: u64,
+    at: u64,
+    key: bool,
+    bytes: Vec<u8>,
+}
+
+/// Joins a frame's chunks, within bounds: no chunk over [`CHUNK_BYTES`] and
+/// no frame over its cap, since a sharer that never sends `last` would
+/// otherwise grow the viewer's memory without end (LP-186).
+struct Reassembly {
+    cap: usize,
+    pending: Option<WholeFrame>,
+}
+
+impl Reassembly {
+    fn new(cap: usize) -> Self {
+        Self { cap, pending: None }
+    }
+
+    /// Takes one chunk; returns the frame once its last chunk is in.
+    fn push(&mut self, frame: Frame) -> Result<Option<WholeFrame>, &'static str> {
+        if frame.bytes.0.len() > CHUNK_BYTES {
+            self.pending = None;
+            return Err("a chunk over the chunk bound");
+        }
+        let whole = match &mut self.pending {
+            Some(w) if w.seq == frame.seq => w,
+            _ => {
+                self.pending = Some(WholeFrame {
+                    seq: frame.seq,
+                    at: frame.at,
+                    key: frame.key,
+                    bytes: Vec::new(),
+                });
+                self.pending.as_mut().expect("just set")
+            }
+        };
+        if whole.bytes.len() + frame.bytes.0.len() > self.cap {
+            self.pending = None;
+            return Err("a frame over the picture's size");
+        }
+        whole.bytes.extend_from_slice(&frame.bytes.0);
+        if frame.last {
+            return Ok(self.pending.take());
+        }
+        Ok(None)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn asked() -> Start {
+        Start {
+            display: Some("1".to_owned()),
+            formats: vec![Format::H264],
+            width: 1280,
+            height: 720,
+            frame_rate: 60,
+        }
+    }
+
+    fn settled() -> Started {
+        Started {
+            display: "1".to_owned(),
+            format: Format::H264,
+            width: 1280,
+            height: 720,
+            frame_rate: 60,
+        }
+    }
+
+    #[test]
+    fn a_started_within_the_request_passes_and_one_outside_it_is_refused() {
+        // LP-186: the sharer chooses nothing the viewer did not ask for.
+        assert_eq!(check_started(&asked(), &settled()), Ok(()));
+        let smaller = Started {
+            width: 640,
+            height: 360,
+            frame_rate: 30,
+            ..settled()
+        };
+        assert_eq!(check_started(&asked(), &smaller), Ok(()));
+        let any_display = Start {
+            display: None,
+            ..asked()
+        };
+        assert_eq!(check_started(&any_display, &settled()), Ok(()));
+        for (bad, why) in [
+            (
+                Started {
+                    width: 0,
+                    ..settled()
+                },
+                "empty",
+            ),
+            (
+                Started {
+                    height: 0,
+                    ..settled()
+                },
+                "empty",
+            ),
+            (
+                Started {
+                    width: 1281,
+                    ..settled()
+                },
+                "larger",
+            ),
+            (
+                Started {
+                    height: u32::MAX,
+                    ..settled()
+                },
+                "larger",
+            ),
+            (
+                Started {
+                    frame_rate: 61,
+                    ..settled()
+                },
+                "rate",
+            ),
+            (
+                Started {
+                    frame_rate: 0,
+                    ..settled()
+                },
+                "rate",
+            ),
+            (
+                Started {
+                    format: Format::H264_444,
+                    ..settled()
+                },
+                "format",
+            ),
+            (
+                Started {
+                    display: "2".to_owned(),
+                    ..settled()
+                },
+                "display",
+            ),
+            (
+                Started {
+                    display: String::new(),
+                    ..settled()
+                },
+                "display",
+            ),
+            (
+                Started {
+                    display: "x".repeat(129),
+                    ..settled()
+                },
+                "display",
+            ),
+        ] {
+            assert!(
+                check_started(&asked(), &bad).is_err(),
+                "{why}: {bad:?} should be refused"
+            );
+        }
+    }
+
+    fn chunk(seq: u64, last: bool, len: usize) -> Frame {
+        Frame {
+            seq,
+            at: 7,
+            key: seq == 1,
+            last,
+            bytes: lp_core::wire::Bytes(vec![0xAB; len]),
+        }
+    }
+
+    #[test]
+    fn a_frame_is_joined_from_its_chunks_within_its_bounds() {
+        let mut r = Reassembly::new(1000);
+        assert!(r.push(chunk(1, false, 400)).unwrap().is_none());
+        let whole = r.push(chunk(1, true, 300)).unwrap().expect("whole");
+        assert_eq!(
+            (whole.seq, whole.at, whole.key, whole.bytes.len()),
+            (1, 7, true, 700)
+        );
+        // A chunk of another frame drops what was pending.
+        assert!(r.push(chunk(2, false, 100)).unwrap().is_none());
+        let whole = r.push(chunk(3, true, 100)).unwrap().expect("whole");
+        assert_eq!((whole.seq, whole.bytes.len()), (3, 100));
+    }
+
+    #[test]
+    fn a_frame_over_the_cap_or_a_chunk_over_the_bound_is_refused() {
+        let mut r = Reassembly::new(1000);
+        assert!(r.push(chunk(1, false, 600)).unwrap().is_none());
+        assert_eq!(
+            r.push(chunk(1, false, 600)),
+            Err("a frame over the picture's size")
+        );
+        // What was pending is gone with it.
+        assert!(r.push(chunk(1, true, 10)).unwrap().is_some());
+        let mut r = Reassembly::new(usize::MAX);
+        assert_eq!(
+            r.push(chunk(1, true, CHUNK_BYTES + 1)),
+            Err("a chunk over the chunk bound")
+        );
+        assert_eq!(frame_cap(2, 2), MIN_FRAME_CAP);
+        assert_eq!(frame_cap(1280, 720), 1280 * 720 * 4);
+    }
 
     #[test]
     fn a_viewer_takes_and_asks_for_sixty_frames_a_second() {

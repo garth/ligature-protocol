@@ -159,7 +159,7 @@ private fun Picture(
     Box(modifier.background(Color.Black), contentAlignment = Alignment.Center) {
         Box(
             Modifier
-                .aspectRatio(width.toFloat() / height.toFloat())
+                .aspectRatio((width.toFloat() / height.toFloat()).takeIf { it.isFinite() && it > 0f } ?: 1f)
                 .clipToBounds()
                 .onSizeChanged {
                     boxWidth = it.width.toFloat()

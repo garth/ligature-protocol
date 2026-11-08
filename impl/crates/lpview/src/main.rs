@@ -327,6 +327,18 @@ fn strip_delimiter(bytes: &[u8]) -> &[u8] {
 
 /// The arguments of the ffmpeg that decodes the share's H.264 into raw 0RGB
 /// pictures of its size.
+/// The bytes of one decoded picture, or `None` for a size that is empty or
+/// does not fit, which the daemon refuses before it reaches here (LP-186).
+fn picture_bytes(width: u32, height: u32) -> Option<usize> {
+    if width == 0 || height == 0 {
+        return None;
+    }
+    usize::try_from(width)
+        .ok()?
+        .checked_mul(usize::try_from(height).ok()?)?
+        .checked_mul(4)
+}
+
 fn decoder_args(started: &Started) -> Vec<String> {
     let mut args: Vec<String> = [
         "-hide_banner",
@@ -697,12 +709,15 @@ async fn network(
                     Ok(mut c) => {
                         feed = c.stdin.take();
                         delimiting = Delimiting::default();
-                        if let Some(mut out) = c.stdout.take() {
+                        if let (Some(mut out), Some(bytes)) = (
+                            c.stdout.take(),
+                            picture_bytes(started.width, started.height),
+                        ) {
                             let (w, h) = (started.width, started.height);
                             let picture = picture.clone();
                             let proxy = proxy.clone();
                             std::thread::spawn(move || {
-                                let mut pictures = Pictures::new(w as usize * h as usize * 4);
+                                let mut pictures = Pictures::new(bytes);
                                 while let Ok(new) = pictures.next(&mut out) {
                                     let Some(new) = new else { continue };
                                     let pixels: Vec<u32> = new
@@ -1487,6 +1502,14 @@ mod tests {
         // A first picture of all zeros is still drawn.
         let mut zeros: &[u8] = &[0, 0];
         assert!(Pictures::new(2).next(&mut zeros).unwrap().is_some());
+    }
+
+    #[test]
+    fn a_picture_s_bytes_refuse_an_empty_or_absurd_size() {
+        assert_eq!(picture_bytes(320, 240), Some(320 * 240 * 4));
+        assert_eq!(picture_bytes(0, 240), None);
+        assert_eq!(picture_bytes(320, 0), None);
+        assert_eq!(picture_bytes(u32::MAX, u32::MAX), None);
     }
 
     #[test]

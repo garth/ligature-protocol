@@ -50,8 +50,10 @@ release workflow publishes the section as the release notes with the installers.
   (LP-149, LP-150, LP-151, LP-167).
 - A share is light and quick: frames leave the sharer as soon as they are encoded, at 60 a
   second by default, a keyframe comes at the start and on request rather than every second, a
-  still screen sends almost nothing, and a Linux capture that stalls restarts itself (LP-149,
-  LP-150, LP-151, LP-176, LP-177).
+  still screen sends almost nothing, a Linux capture that stalls restarts itself, and a viewer
+  takes from a sharer only a picture no larger or faster than it asked for, every frame
+  bounded by that picture, dropping to the next keyframe when it falls behind (LP-149,
+  LP-150, LP-151, LP-176, LP-177, LP-186).
 - A share's picture format is agreed between the two devices: full colour detail (4:4:4),
   which keeps coloured text sharp, where both ends handle it, and 4:2:0 otherwise; `lpview
   --chroma` narrows the choice (ADR 0044, LP-162).

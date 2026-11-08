@@ -3,7 +3,7 @@
 //! This crate will generate Headscale/WireGuard peer configurations from the
 //! user's LP device list, for users who want full network access to their home
 //! (SSH, NAS, media) in addition to LP's capability model. See
-//! [ADR 0013](https://github.com/ligature-protocol/ligature-protocol/blob/main/docs/adr/0013-wireguard-optional-integration.md).
+//! [ADR 0013](https://github.com/garth/ligature-protocol/blob/main/docs/adr/0013-wireguard-optional-integration.md).
 //!
 //! Why it is not core: WireGuard needs a virtual network interface, which takes
 //! the single VPN slot on Android and iOS and needs elevated privileges on

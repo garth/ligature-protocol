@@ -21,7 +21,7 @@ members = [
 version = "0.1.1-alpha"
 edition = "2024"
 license = "Apache-2.0"
-repository = "https://github.com/ligature-protocol/ligature-protocol"
+repository = "https://github.com/garth/ligature-protocol"
 rust-version = "1.89"
 
 [workspace.dependencies]

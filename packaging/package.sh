@@ -47,7 +47,7 @@ starts at login. \`./uninstall.sh\` removes both and leaves your identity
 in place. Then \`lpctl init --name "Your Name"\` on your first device, or \`lpctl pair\` with
 an offer from a device that already has your keys; \`lpctl status\` shows the daemon.
 The daemon listens on UDP port 47471: allow it through the firewall so your other
-devices can dial in. Documentation and source: https://github.com/ligature-protocol/ligature-protocol
+devices can dial in. Documentation and source: https://github.com/garth/ligature-protocol
 EOF
 
 tar -C "$stage" -czf "$out_dir/$name.tar.gz" "$name"

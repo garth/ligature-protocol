@@ -104,6 +104,8 @@ unsafe extern "C" {
 unsafe extern "C" {
     /// `Boolean`, an unsigned char.
     fn AXIsProcessTrusted() -> u8;
+    fn AXIsProcessTrustedWithOptions(options: CFTypeRef) -> u8;
+    static kAXTrustedCheckOptionPrompt: CFStringRef;
 }
 
 #[link(name = "Carbon", kind = "framework")]
@@ -136,6 +138,17 @@ unsafe extern "C" {
 unsafe extern "C" {
     static kCFRunLoopCommonModes: CFStringRef;
     static kCFBooleanTrue: CFTypeRef;
+    /// Structs of callbacks; only their addresses are used.
+    static kCFTypeDictionaryKeyCallBacks: u8;
+    static kCFTypeDictionaryValueCallBacks: u8;
+    fn CFDictionaryCreate(
+        allocator: CFTypeRef,
+        keys: *const CFTypeRef,
+        values: *const CFTypeRef,
+        count: isize,
+        key_callbacks: *const c_void,
+        value_callbacks: *const c_void,
+    ) -> CFTypeRef;
     fn CFRelease(cf: CFTypeRef);
     fn CFDataGetBytePtr(data: CFTypeRef) -> *const u8;
     fn CFDataGetLength(data: CFTypeRef) -> isize;
@@ -418,14 +431,49 @@ impl KeyboardLayout {
 /// Asks for whichever of the two permissions is missing: macOS shows its
 /// prompt, which leads to System Settings, once per permission.
 pub fn request_access() {
+    request_listen_access();
+    // SAFETY: a plain query and request with no arguments.
+    if !unsafe { CGPreflightPostEventAccess() } {
+        // Registers the posting half (`PostEvent`) without an alert; the
+        // prompt below shows macOS's alert for Accessibility.
+        unsafe { CGRequestPostEventAccess() };
+        prompt_accessibility();
+    }
+}
+
+/// Asks for Input Monitoring if it is not held, which also lists Ligature
+/// under it in System Settings.
+pub fn request_listen_access() {
     // SAFETY: plain requests with no arguments.
     unsafe {
         if !CGPreflightListenEventAccess() {
             CGRequestListenEventAccess();
         }
-        if !CGPreflightPostEventAccess() {
-            CGRequestPostEventAccess();
+    }
+}
+
+/// Asks for Accessibility with macOS's own alert, which offers to open System
+/// Settings and lists Ligature there; `CGRequestPostEventAccess` shows none
+/// (LP-169). Returns whether it is held already.
+pub fn prompt_accessibility() -> bool {
+    // SAFETY: a dictionary of one CF key and value made here with the CF
+    // type callbacks, handed to the query and released after it.
+    unsafe {
+        let keys = [kAXTrustedCheckOptionPrompt];
+        let values = [kCFBooleanTrue];
+        let options = CFDictionaryCreate(
+            std::ptr::null(),
+            keys.as_ptr(),
+            values.as_ptr(),
+            1,
+            (&raw const kCFTypeDictionaryKeyCallBacks).cast(),
+            (&raw const kCFTypeDictionaryValueCallBacks).cast(),
+        );
+        let trusted = AXIsProcessTrustedWithOptions(options) != 0;
+        if !options.is_null() {
+            CFRelease(options);
         }
+        trusted
     }
 }
 

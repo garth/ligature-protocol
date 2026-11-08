@@ -108,7 +108,9 @@ The daemon runs as a per-user launchd agent that starts at login.
 
     `lpctl permissions` lists the three permissions with which the daemon holds, and `lpctl
     permissions open accessibility` (or `input-monitoring`, `screen-recording`) opens the
-    page where each is turned on. macOS lets nothing but you turn one on.
+    page where each is turned on, asking macOS first so that Ligature is listed there.
+    macOS lets nothing but you turn one on. Changing Input Monitoring later turns
+    Accessibility off as well, so turn it back on afterwards.
 
 6. Check it:
 

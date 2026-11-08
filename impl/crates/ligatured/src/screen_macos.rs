@@ -155,7 +155,7 @@ impl Capture for MacScreen {
             sck::request_screen_access();
             tracing::info!(
                 "screen sharing needs Ligature allowed under Screen Recording in System Settings, \
-                 Privacy and Security; restart the daemon after allowing it"
+                 Privacy and Security; the daemon restarts by itself once it is allowed"
             );
             return Err(RefuseReason::Consent);
         }

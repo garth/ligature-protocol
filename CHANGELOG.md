@@ -27,8 +27,9 @@ release workflow publishes the section as the release notes with the installers.
 - A permission allowed on the Mac takes effect without restarting anything: the daemon sees
   the grant and restarts itself. `lpctl permissions` lists which of Accessibility, Input
   Monitoring and Screen Recording the daemon holds, `lpctl permissions open <permission>`
-  opens its page in System Settings, and `lpctl permissions reset` clears all three and
-  restarts the daemon so macOS asks again (LP-169).
+  opens its page in System Settings, with Ligature listed there, and `lpctl permissions reset`
+  clears all three and restarts the daemon so macOS asks again, with its alert for
+  Accessibility (LP-169).
 
 - What you copy on the phone is sent by itself once you turn Ligature on under Accessibility,
   on any ROM, including a second copy made within seconds of the first and one made with

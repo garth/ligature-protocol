@@ -108,6 +108,8 @@ The daemon logs each connection and each refusal with the peer's key at `info`;
   Accessibility switch under Device Control and Data Access. The daemon restarts by itself
   a few seconds after you allow one, so it takes effect without a restart of your own.
   `lpctl caps` on another device shows whether the Mac offers input.
+- Turning Input Monitoring off and on again turns Ligature's Accessibility off as well, which
+  macOS does without saying so: check Accessibility afterwards (`lpctl permissions`).
 - A switch that shows as on can belong to a previous version: macOS ties these permissions
   to the app's signature, which changes with every version. `lpctl permissions reset` clears
   them and restarts the daemon; allow each again when macOS asks

@@ -50,7 +50,8 @@
         "org.ligatureprotocol.control.screen.status",
         "org.ligatureprotocol.control.input.drive",
         "org.ligatureprotocol.control.input.send",
-        "org.ligatureprotocol.control.permissions"
+        "org.ligatureprotocol.control.permissions",
+        "org.ligatureprotocol.control.permissions.request"
       ]
     },
     "eventType": {

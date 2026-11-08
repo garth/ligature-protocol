@@ -208,6 +208,28 @@ pub async fn granted_since_start() -> Vec<Permission> {
     }
 }
 
+/// Asks macOS for `permission`, which lists Ligature under it in System
+/// Settings and, for Accessibility, shows macOS's alert. A permission held
+/// already is left as it is.
+#[cfg(target_os = "macos")]
+pub fn request(permission: Permission) {
+    match permission {
+        Permission::Accessibility => {
+            lp_macos::input::prompt_accessibility();
+        }
+        Permission::InputMonitoring => lp_macos::input::request_listen_access(),
+        Permission::ScreenRecording => {
+            if !lp_macos::screen::screen_access() {
+                lp_macos::screen::request_screen_access();
+            }
+        }
+    }
+}
+
+/// Nothing to ask for: only macOS has these permissions.
+#[cfg(not(target_os = "macos"))]
+pub fn request(_permission: Permission) {}
+
 /// Never resolves: only macOS has permissions that need a new process.
 #[cfg(not(target_os = "macos"))]
 pub async fn granted_since_start() -> Vec<Permission> {

@@ -109,6 +109,9 @@ pub mod types {
     pub const SCREEN_STATUS: &str = "org.ligatureprotocol.control.screen.status";
     /// `permissions`: the platform permissions the daemon holds (macOS).
     pub const PERMISSIONS: &str = "org.ligatureprotocol.control.permissions";
+    /// `permissions.request`: ask the platform for one permission (`name`),
+    /// so it lists Ligature where the permission is turned on (macOS).
+    pub const PERMISSIONS_REQUEST: &str = "org.ligatureprotocol.control.permissions.request";
     /// Event: the share started, with what the sharer settled on.
     pub const SCREEN_STARTED: &str = "org.ligatureprotocol.control.screen.started";
     /// Event: one chunk of one frame, in order.
@@ -785,6 +788,23 @@ pub async fn handle(
     let result: Result<Response, Error> = match request.request_type.as_str() {
         types::STATUS => Response::ok(id, &daemon.status()),
         types::PERMISSIONS => Response::ok(id, &permissions()),
+        types::PERMISSIONS_REQUEST => match request
+            .name
+            .as_deref()
+            .and_then(crate::permissions::Permission::from_name)
+        {
+            Some(permission) => {
+                crate::permissions::request(permission);
+                Response::ok(id, &Empty {})
+            }
+            None => Ok(Response::error(
+                id,
+                ErrorBody::new(
+                    "bad-request",
+                    "permissions.request needs accessibility, input-monitoring or screen-recording",
+                ),
+            )),
+        },
         types::INIT => match request.name.as_deref() {
             Some(name) if !name.trim().is_empty() => daemon
                 .init(name.trim(), request.device_name.as_deref())

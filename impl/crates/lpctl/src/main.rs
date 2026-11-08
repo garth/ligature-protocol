@@ -299,7 +299,7 @@ async fn main() {
         } => permissions_reset(),
         Command::Permissions {
             action: Some(PermissionsAction::Open { permission }),
-        } => permissions_open(permission),
+        } => permissions_open(&locations, permission).await,
         _ => {
             newer = upgrade::begin(&locations, &current);
             run(&options, &locations).await
@@ -578,13 +578,25 @@ fn pair_refusal(join: bool, refused: &ligatured::control::ErrorBody) -> Error {
 }
 
 /// `lpctl permissions open`: the permission's page in System Settings.
-fn permissions_open(name: &str) -> Result<(), Error> {
+async fn permissions_open(locations: &Locations, name: &str) -> Result<(), Error> {
     mac_only()?;
     let permission = Permission::from_name(name).ok_or_else(|| {
         Error::Refused(format!(
             "no permission {name}; use accessibility, input-monitoring or screen-recording"
         ))
     })?;
+    // macOS lists Ligature on the page only once the daemon has asked for the
+    // permission (LP-169); the page opens whether or not the daemon answers.
+    if let Ok(mut client) = Client::connect(&locations.control_socket()).await {
+        let mut req = Request::new(types::PERMISSIONS_REQUEST, 0);
+        req.name = Some(permission.name().to_owned());
+        let asked: Result<Empty, Error> = client.request(req).await;
+        if let Err(e) = asked {
+            eprintln!(
+                "lpctl: the daemon did not ask macOS for it ({e}); Ligature may be missing from the page"
+            );
+        }
+    }
     system("open", &[settings_url(permission)])?;
     println!(
         "opened {} in System Settings: turn Ligature on there",
@@ -1446,7 +1458,13 @@ mod tests {
     fn only_a_mac_has_permissions_to_manage() {
         assert_eq!(mac_only().is_ok(), cfg!(target_os = "macos"));
         if !cfg!(target_os = "macos") {
-            assert!(permissions_open("accessibility").is_err());
+            let nowhere = Locations::resolve(None, None);
+            assert!(
+                tokio::runtime::Runtime::new()
+                    .unwrap()
+                    .block_on(permissions_open(&nowhere, "accessibility"))
+                    .is_err()
+            );
             assert!(permissions_reset().is_err());
         }
     }

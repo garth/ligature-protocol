@@ -120,7 +120,10 @@ extra components. What a third-party daemon may offer is bounded by platform per
   Monitoring takes effect only in a new process (System Settings offers to quit and reopen
   an application for it). While a permission was missing at start the daemon asks a
   short-lived copy of itself what a new process holds, and restarts when one has been
-  granted, launchd starting it again.
+  granted, launchd starting it again. On the owner's Mac (an ad hoc signed bundle), turning
+  Input Monitoring off and on turned Accessibility off with it. `CGRequestPostEventAccess`
+  shows no alert; `AXIsProcessTrustedWithOptions` with the prompt option does, and a
+  permission's page in System Settings lists the bundle only once it has asked.
 - **Displays**: ScreenCaptureKit captures a display for a share, and serves only a process with
   the Screen Recording permission, which the user grants to the bundle once under Privacy and
   Security. macOS applies a newly granted permission to the next start of the process, so the

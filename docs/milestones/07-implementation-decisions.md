@@ -335,3 +335,9 @@ grant replaces by the restart), and `lpctl permissions reset` and `open` need no
 `tccutil reset` for `Accessibility`, `PostEvent`, `ListenEvent` and `ScreenCapture` with a
 `launchctl kickstart -k` after it, and `open` on the `x-apple.systempreferences` page.
 Turning a permission on is left to the user, as macOS requires.
+
+The owner's run showed that `CGRequestPostEventAccess` shows no alert, so the daemon also asks
+through `AXIsProcessTrustedWithOptions` with `kAXTrustedCheckOptionPrompt`, whose alert offers to
+open System Settings. A permission's page lists Ligature only after it has been asked for, so
+`lpctl permissions open` first sends `permissions.request`, which asks for that one permission,
+and opens the page whether or not the daemon answers.

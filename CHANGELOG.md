@@ -10,6 +10,9 @@ release workflow publishes the section as the release notes with the installers.
 
 ### Added
 
+- Watching a desktop on the phone turns the screen to landscape for a wide desktop, and a
+  pinch zooms the picture and pans it, with taps landing where they touch (LP-173).
+
 - `lpctl caps` names each connected device, as `lpctl status` does, instead of heading it with
   its key alone (LP-172).
 

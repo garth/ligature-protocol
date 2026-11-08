@@ -102,13 +102,16 @@ adb shell appops set org.ligatureprotocol.android PROJECT_MEDIA ignore
 ## Watching a desktop from the phone
 
 On the app's main screen, under **Watch a screen**, tap **Watch** followed by the desktop's
-name. The picture fills the screen, and touch drives the desktop:
+name. A desktop wider than it is tall turns the phone's screen to landscape while you watch
+it, and the picture fills the screen. Touch drives the desktop:
 
 - a tap clicks where it lands, and a drag moves the pointer there;
 - a touch held still and then moved drags with the button down;
-- two fingers scroll;
+- two fingers moved together scroll;
+- pinching zooms the picture, up to five times, and moving the fingers while pinching pans
+  it; taps land where they touch at any zoom;
 - the field types into the desktop;
-- **Done**, or leaving the screen, ends the watch.
+- **Done**, or leaving the screen, ends the watch and returns the screen to how it was.
 
 ## Stopping and checking
 

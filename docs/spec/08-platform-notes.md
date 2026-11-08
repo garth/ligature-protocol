@@ -110,7 +110,10 @@ extra components. What a third-party daemon may offer is bounded by platform per
   once. The Mac accepts input while Accessibility is held and provides it while both are,
   so withdrawing either removes the family from every peer's view. macOS has no pointer
   barriers: the daemon watches the cursor in its tap and starts a drive when the cursor
-  reaches a mapped edge. With Terminal's Secure Keyboard Entry on, the keys still reached
+  reaches a mapped edge. The taps see the events Ligature posts as they see the user's, so a
+  Mac the phone's touchpad drives carries that pointer on across its edge, as Linux's
+  InputCapture does; a drive that entered by an edge, or an edge leading back to the driving
+  device, leads nowhere. With Terminal's Secure Keyboard Entry on, the keys still reached
   the driven device; other password fields are not yet tried. Every event of the session
   waits for a filtering tap, and a
   filtering tap whose process loses Accessibility holds back every click and key until it

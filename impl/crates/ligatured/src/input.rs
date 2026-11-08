@@ -786,6 +786,15 @@ impl InputSync {
                             let Some(peer) = lock(&self.layout).get(&edge).copied() else {
                                 continue;
                             };
+                            // Never lead on to the device driving this one:
+                            // each would drive the other, and a viewer's own
+                            // pointer would feed itself (LP-174).
+                            if self.driven_by() == Some(peer) {
+                                tracing::info!(?edge, "the edge leads to the device driving this one; giving the input back");
+                                capture.release(Some((edge, at)));
+                                stray_released = true;
+                                continue;
+                            }
                             stray_released = false;
                             match self.drive(peer, Enter::edge(edge.opposite(), at)).await {
                                 Ok(_) => {

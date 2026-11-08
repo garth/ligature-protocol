@@ -140,10 +140,12 @@ fn end_capture(
 ) -> bool {
     let was = {
         let mut s = lock(state);
-        if let Some(at) = back_at {
+        let was = std::mem::replace(&mut s.captured, false);
+        // Only a capture's frozen cursor is put back: an edge reached while
+        // another device drives this Mac moves nothing (LP-174).
+        if was && let Some(at) = back_at {
             quartz::warp(at);
         }
-        let was = std::mem::replace(&mut s.captured, false);
         if was {
             // Reconnecting the mouse after the warp also lifts the pause
             // macOS puts on mouse events after a warp.

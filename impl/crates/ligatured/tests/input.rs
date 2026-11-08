@@ -375,15 +375,19 @@ async fn a_device_driven_by_a_touchpad_still_follows_its_layout() {
     // then the touchpad's, as if a mouse were plugged into b, and b's edge
     // leads on to the next desktop. Only a drive that entered by an edge is
     // kept from following b's layout, since that is what could loop.
-    let (a, b, _c, _c_dir) = three().await;
+    let (a, b, c, _c_dir) = three().await;
+    // c takes input in this test, so b's edge has a third device to lead to.
+    c.attach_input(None, Some(FakeInject::new(800, 600)));
+    until("b sees c's input", || {
+        b.daemon.registry().peers_offering(INPUT_TYPE).len() == 2
+    })
+    .await;
     a.sync
         .drive(*b.daemon.binding().public(), Enter::absolute(0.5, 0.5))
         .await
         .unwrap();
     until("b is driven", || b.sync.driven_by().is_some()).await;
-    b.sync
-        .set_edge(Edge::Right, *a.daemon.binding().public())
-        .unwrap();
+    b.sync.set_edge(Edge::Right, *c.binding().public()).unwrap();
     b.capture.hit_edge(Edge::Right, 0.5);
     until("b drives on from its edge", || b.sync.is_driving()).await;
     assert_eq!(b.capture.taken(), Some(Edge::Right));
@@ -391,6 +395,30 @@ async fn a_device_driven_by_a_touchpad_still_follows_its_layout() {
         b.capture.releases().is_empty(),
         "the input was not given back"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_driven_device_never_leads_on_to_the_device_driving_it() {
+    // A viewer on a drives b; b's edge leads back to a. Leading on would make
+    // each drive the other, and a viewer's own pointer would feed itself
+    // (LP-174): b gives the input back instead.
+    let (a, b, _c, _c_dir) = three().await;
+    a.sync
+        .drive(*b.daemon.binding().public(), Enter::absolute(0.5, 0.5))
+        .await
+        .unwrap();
+    until("b is driven", || b.sync.driven_by().is_some()).await;
+    b.sync
+        .set_edge(Edge::Left, *a.daemon.binding().public())
+        .unwrap();
+    b.capture.hit_edge(Edge::Left, 0.5);
+    until("b gave the input back", || {
+        b.capture.releases() == vec![Some((Edge::Left, 0.5))]
+    })
+    .await;
+    assert!(!b.sync.is_driving());
+    assert_eq!(b.capture.taken(), None);
+    assert_eq!(b.sync.driven_by(), Some(*a.daemon.binding().public()));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

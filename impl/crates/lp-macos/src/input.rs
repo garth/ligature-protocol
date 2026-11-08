@@ -4,10 +4,11 @@
 //! freezing and hiding; the displays; and the two permissions both need.
 //!
 //! The tap runs on a thread of its own with its own run loop. Its handler is
-//! called for every event and answers whether to swallow it. Events this
-//! crate posted carry a tag in their source's user data, and the tap passes
-//! them without calling the handler, so a Mac being driven does not mistake
-//! the pointer it is driven by for the user's.
+//! called for every event and answers whether to swallow it, events this
+//! crate posted included: a Mac the phone's touchpad drives sees that pointer
+//! reach its edges and carries it on to the next device, as Linux does, and
+//! the daemon decides when a driven device's edges lead nowhere (LP-174).
+//! Posted events still carry a tag in their source's user data.
 
 use std::ffi::{c_char, c_void};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -207,7 +208,6 @@ const SCROLL_DELTA_AXIS_2: u32 = 12;
 const SCROLL_IS_CONTINUOUS: u32 = 88;
 const SCROLL_POINT_DELTA_AXIS_1: u32 = 96;
 const SCROLL_POINT_DELTA_AXIS_2: u32 = 97;
-const SOURCE_USER_DATA: u32 = 42;
 
 // Tap placement and posting.
 const HID_EVENT_TAP: u32 = 0;
@@ -821,7 +821,7 @@ extern "C" fn tap_callback(
             let _ = catch_unwind(AssertUnwindSafe(|| (context.handler)(TapEvent::Disabled)));
             return event;
         }
-        if event.is_null() || CGEventGetIntegerValueField(event, SOURCE_USER_DATA) == INJECTED_TAG {
+        if event.is_null() {
             return event;
         }
         let Some(decoded) = decode(kind, event) else {

@@ -68,8 +68,9 @@ On the app's main screen, under **Touchpad**, tap **Drive** followed by the desk
   **Right click** are buttons of their own;
 - **Done**, or leaving the screen, ends the drive.
 
-A desktop that the phone is driving still follows its own layout, so the phone can push the
-pointer on across an edge to the next desktop.
+A desktop that the phone is driving still follows its own layout, Linux and the Mac alike,
+so the phone can push the pointer on across an edge to the next desktop, though never back
+to the phone itself.
 
 ## Driving the phone
 

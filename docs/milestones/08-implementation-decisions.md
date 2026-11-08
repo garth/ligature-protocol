@@ -331,7 +331,8 @@ applications appears.
 
 **A display reports its scale (ADR 0045).** Linux lists each output's pixel size, its current
 mode turned by its transform, and the scale as the pixels over the logical width from
-`xdg-output`, rounded to three places; the Mac the pixel width over the point width; the
+`xdg-output`, rounded to three places; the Mac the display mode's pixel width over the
+point width, since `CGDisplayPixelsWide` answers in points on a Retina display (LP-182); the
 phone Android's density, passed by the app with the screen's size. A Linux display had been
 listed at its logical size, which the share treats as the most pixels it may send, so a
 screen at scale 2 was shared at half its resolution each way; it is now listed in pixels,

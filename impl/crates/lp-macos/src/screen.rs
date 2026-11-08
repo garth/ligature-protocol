@@ -36,6 +36,33 @@ unsafe extern "C" {
     fn CGDisplayPixelsWide(display: u32) -> usize;
     fn CGDisplayPixelsHigh(display: u32) -> usize;
     fn CGDisplayIsBuiltin(display: u32) -> u32;
+    fn CGDisplayCopyDisplayMode(display: u32) -> *mut core::ffi::c_void;
+    fn CGDisplayModeGetPixelWidth(mode: *mut core::ffi::c_void) -> usize;
+    fn CGDisplayModeGetPixelHeight(mode: *mut core::ffi::c_void) -> usize;
+    fn CGDisplayModeRelease(mode: *mut core::ffi::c_void);
+}
+
+/// The display's size in backing pixels. `CGDisplayPixelsWide` and `High`
+/// answer in points on a Retina display, whatever their names, so a scale-2
+/// screen came out at half its size and scale 1 (LP-182); the current display
+/// mode knows the pixels. Falls back to them when there is no mode.
+fn pixel_size(display: u32) -> (usize, usize) {
+    // SAFETY: plain queries on an id the system just listed; the mode is a
+    // CoreFoundation object this function owns until it releases it.
+    unsafe {
+        let mode = CGDisplayCopyDisplayMode(display);
+        if !mode.is_null() {
+            let size = (
+                CGDisplayModeGetPixelWidth(mode),
+                CGDisplayModeGetPixelHeight(mode),
+            );
+            CGDisplayModeRelease(mode);
+            if size.0 > 0 && size.1 > 0 {
+                return size;
+            }
+        }
+        (CGDisplayPixelsWide(display), CGDisplayPixelsHigh(display))
+    }
 }
 
 /// How long ScreenCaptureKit has to list the displays or start a stream.
@@ -87,14 +114,9 @@ pub fn screen_displays() -> Vec<ScreenDisplay> {
     crate::input::display_list()
         .into_iter()
         .map(|(id, r)| {
-            // SAFETY: plain queries on an id the system just listed.
-            let (pixel_width, pixel_height, builtin) = unsafe {
-                (
-                    CGDisplayPixelsWide(id),
-                    CGDisplayPixelsHigh(id),
-                    CGDisplayIsBuiltin(id) != 0,
-                )
-            };
+            let (pixel_width, pixel_height) = pixel_size(id);
+            // SAFETY: a plain query on an id the system just listed.
+            let builtin = unsafe { CGDisplayIsBuiltin(id) != 0 };
             ScreenDisplay {
                 id,
                 x: r.x,

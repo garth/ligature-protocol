@@ -584,6 +584,9 @@ async fn a_barrier_firing_on_the_entering_pointer_never_drives_the_driver_back()
         b.capture.releases() == vec![Some((Edge::Left, 0.5))]
     })
     .await;
+    // a's drive stands only once b's `ready` is back, after the fake's
+    // `begin` has finished; then a moment for a wrong lead-on to show.
+    until("a's drive is established", || a.sync.is_driving()).await;
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     assert!(
         !b.sync.is_driving(),

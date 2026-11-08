@@ -166,6 +166,7 @@ async fn the_pointer_crosses_an_edge_drives_the_other_device_and_comes_back() {
     let mut b_changes = b.sync.subscribe();
     a.capture.hit_edge(Edge::Right, 0.4);
     until("b is driven", || b.sync.driven_by().is_some()).await;
+    until("a drives", || a.sync.is_driving()).await;
     until("a's capture is taken", || {
         a.capture.taken() == Some(Edge::Right)
     })
@@ -263,6 +264,7 @@ async fn an_absolute_entry_types_text_and_release_ends_it() {
         .unwrap();
     assert_eq!((ready.width, ready.height), (2000, 1000));
     until("b is driven", || b.sync.driven_by().is_some()).await;
+    until("a drives", || a.sync.is_driving()).await;
     assert_eq!(b.inject.begun(), vec![(0.5, 0.25)]);
     // A touchpad sends events already in the driven device's terms.
     a.sync
@@ -313,6 +315,7 @@ async fn the_release_chord_gives_the_input_back() {
         .unwrap();
     a.capture.hit_edge(Edge::Left, 0.5);
     until("b is driven", || b.sync.driven_by().is_some()).await;
+    until("a drives", || a.sync.is_driving()).await;
     a.capture.feed(InputEvent::key(KEY_LEFTCTRL, true));
     a.capture.feed(InputEvent::key(KEY_RIGHTCTRL, true));
     until("a let go", || !a.sync.is_driving()).await;
@@ -329,6 +332,7 @@ async fn both_alt_keys_give_the_input_back_too() {
         .unwrap();
     a.capture.hit_edge(Edge::Left, 0.5);
     until("b is driven", || b.sync.driven_by().is_some()).await;
+    until("a drives", || a.sync.is_driving()).await;
     a.capture.feed(InputEvent::key(KEY_LEFTALT, true));
     a.capture.feed(InputEvent::key(KEY_RIGHTALT, true));
     until("a let go", || !a.sync.is_driving()).await;
@@ -346,6 +350,7 @@ async fn a_super_key_in_alts_place_makes_the_chord_too() {
         .unwrap();
     a.capture.hit_edge(Edge::Left, 0.5);
     until("b is driven", || b.sync.driven_by().is_some()).await;
+    until("a drives", || a.sync.is_driving()).await;
     a.capture.feed(InputEvent::key(125, true));
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert!(a.sync.is_driving(), "one key alone ends nothing");
@@ -367,6 +372,7 @@ async fn a_driven_device_never_follows_its_own_layout() {
     b.sync.set_edge(Edge::Right, *c.binding().public()).unwrap();
     a.capture.hit_edge(Edge::Right, 0.5);
     until("b is driven", || b.sync.driven_by().is_some()).await;
+    until("a drives", || a.sync.is_driving()).await;
     // The pointer a drives reaches b's edges, which b's capture sees as it
     // would the user's own pointer (a Mac's event tap does): b starts nothing.
     b.capture.hit_edge(Edge::Left, 0.5);
@@ -404,6 +410,7 @@ async fn a_device_driven_by_a_touchpad_still_follows_its_layout() {
         .await
         .unwrap();
     until("b is driven", || b.sync.driven_by().is_some()).await;
+    until("a drives", || a.sync.is_driving()).await;
     b.sync.set_edge(Edge::Right, *c.binding().public()).unwrap();
     b.capture.hit_edge(Edge::Right, 0.5);
     until("b drives on from its edge", || b.sync.is_driving()).await;
@@ -431,6 +438,7 @@ async fn text_a_driven_device_is_sent_goes_on_to_the_device_it_drives() {
         .await
         .unwrap();
     until("b is driven", || b.sync.driven_by().is_some()).await;
+    until("a drives", || a.sync.is_driving()).await;
     b.sync.set_edge(Edge::Right, *c.binding().public()).unwrap();
     b.capture.hit_edge(Edge::Right, 0.5);
     until("b drives c", || b.sync.is_driving()).await;
@@ -543,6 +551,7 @@ async fn a_driven_device_never_leads_on_to_the_device_driving_it() {
         .await
         .unwrap();
     until("b is driven", || b.sync.driven_by().is_some()).await;
+    until("a drives", || a.sync.is_driving()).await;
     b.sync
         .set_edge(Edge::Left, *a.daemon.binding().public())
         .unwrap();
@@ -610,6 +619,7 @@ async fn a_drive_of_the_device_driving_this_one_is_refused() {
         .await
         .unwrap();
     until("b is driven", || b.sync.driven_by().is_some()).await;
+    until("a drives", || a.sync.is_driving()).await;
     let refused = b
         .sync
         .drive(*a.daemon.binding().public(), Enter::absolute(0.5, 0.5))
@@ -663,6 +673,7 @@ async fn a_disconnect_mid_drive_lifts_everything_and_returns_the_pointer() {
         .unwrap();
     a.capture.hit_edge(Edge::Bottom, 0.75);
     until("b is driven", || b.sync.driven_by().is_some()).await;
+    until("a drives", || a.sync.is_driving()).await;
     assert_eq!(b.inject.begun(), vec![(0.75, 0.0)]);
     a.capture.feed(InputEvent::key(42, true));
     until("the key is held on b", || b.inject.injected().len() == 1).await;

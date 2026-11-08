@@ -388,6 +388,49 @@ fn permissions_reset() -> Result<(), Error> {
     Ok(())
 }
 
+/// `lpctl permissions` without an action: each permission with whether the
+/// daemon holds it and what it enables, then how a missing one is granted (the
+/// `open` command for each) and how all are forgotten (`reset`), so the output
+/// itself says how the command is used.
+fn permissions_report(held: &Permissions) -> String {
+    use std::fmt::Write as _;
+    if held.permissions.is_empty() {
+        return "this device needs no permissions\n".to_owned();
+    }
+    let mut out = String::new();
+    for p in &held.permissions {
+        let _ = writeln!(
+            out,
+            "{:<17} {:<8} {}",
+            p.label,
+            if p.granted { "granted" } else { "missing" },
+            p.enables
+        );
+    }
+    out.push('\n');
+    let missing: Vec<_> = held.permissions.iter().filter(|p| !p.granted).collect();
+    if missing.is_empty() {
+        out.push_str("all granted\n");
+    } else {
+        out.push_str(
+            "A missing permission is turned on under System Settings, Privacy & Security; the \
+             daemon restarts by itself once it is granted:\n",
+        );
+        for p in missing {
+            let _ = writeln!(
+                out,
+                "  lpctl permissions open {:<17} opens the {} page",
+                p.name, p.label
+            );
+        }
+    }
+    out.push_str(
+        "  lpctl permissions reset                  forgets all three and restarts the daemon, \
+         so macOS asks again\n",
+    );
+    out
+}
+
 /// `lpctl permissions open`: the permission's page in System Settings.
 fn permissions_open(name: &str) -> Result<(), Error> {
     mac_only()?;
@@ -433,24 +476,7 @@ async fn run(options: &Options, locations: &Locations) -> Result<(), Error> {
         | Command::Permissions { action: Some(_) } => unreachable!("handled in main"),
         Command::Permissions { action: None } => {
             let held: Permissions = client.request(Request::new(types::PERMISSIONS, 0)).await?;
-            if held.permissions.is_empty() {
-                println!("this device needs no permissions");
-            }
-            for p in &held.permissions {
-                println!(
-                    "{:<17} {:<8} {}",
-                    p.label,
-                    if p.granted { "granted" } else { "missing" },
-                    p.enables
-                );
-            }
-            if let Some(missing) = held.permissions.iter().find(|p| !p.granted) {
-                println!(
-                    "lpctl permissions open {} shows where to turn it on; the daemon restarts by \
-                     itself once it is granted",
-                    missing.name
-                );
-            }
+            print!("{}", permissions_report(&held));
         }
         Command::Init { name, device_name } => {
             let mut req = Request::new(types::INIT, 0);
@@ -1237,5 +1263,59 @@ mod tests {
             assert!(permissions_open("accessibility").is_err());
             assert!(permissions_reset().is_err());
         }
+    }
+
+    #[test]
+    fn the_permissions_report_says_how_each_missing_one_is_granted() {
+        use ligatured::control::{PermissionState, Permissions};
+        let state = |name: &str, label: &str, granted: bool| PermissionState {
+            name: name.to_owned(),
+            label: label.to_owned(),
+            granted,
+            enables: "something".to_owned(),
+        };
+        let held = Permissions {
+            permissions: vec![
+                state("accessibility", "Accessibility", true),
+                state("input-monitoring", "Input Monitoring", false),
+                state("screen-recording", "Screen Recording", false),
+            ],
+        };
+        let report = permissions_report(&held);
+        assert!(
+            report.contains("Accessibility     granted  something\n"),
+            "{report}"
+        );
+        assert!(
+            report.contains("Input Monitoring  missing  something\n"),
+            "{report}"
+        );
+        assert!(!report.contains("open accessibility"), "{report}");
+        assert!(
+            report.contains("lpctl permissions open input-monitoring"),
+            "{report}"
+        );
+        assert!(
+            report.contains("lpctl permissions open screen-recording"),
+            "{report}"
+        );
+        assert!(report.contains("lpctl permissions reset"), "{report}");
+        assert!(report.contains("restarts by itself"), "{report}");
+
+        let all = Permissions {
+            permissions: vec![state("accessibility", "Accessibility", true)],
+        };
+        let report = permissions_report(&all);
+        assert!(report.contains("all granted"), "{report}");
+        assert!(!report.contains("open "), "{report}");
+        assert!(report.contains("lpctl permissions reset"), "{report}");
+
+        let none = Permissions {
+            permissions: vec![],
+        };
+        assert_eq!(
+            permissions_report(&none),
+            "this device needs no permissions\n"
+        );
     }
 }

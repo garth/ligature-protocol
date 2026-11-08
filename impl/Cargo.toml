@@ -18,18 +18,18 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.1-alpha"
+version = "0.2.0-alpha"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/garth/ligature-protocol"
 rust-version = "1.89"
 
 [workspace.dependencies]
-lp-core = { path = "crates/lp-core", version = "0.1.1-alpha" }
-lp-identity = { path = "crates/lp-identity", version = "0.1.1-alpha" }
-lp-crypto = { path = "crates/lp-crypto", version = "0.1.1-alpha" }
-lp-transport = { path = "crates/lp-transport", version = "0.1.1-alpha" }
-lp-vectors = { path = "crates/lp-vectors", version = "0.1.1-alpha" }
+lp-core = { path = "crates/lp-core", version = "0.2.0-alpha" }
+lp-identity = { path = "crates/lp-identity", version = "0.2.0-alpha" }
+lp-crypto = { path = "crates/lp-crypto", version = "0.2.0-alpha" }
+lp-transport = { path = "crates/lp-transport", version = "0.2.0-alpha" }
+lp-vectors = { path = "crates/lp-vectors", version = "0.2.0-alpha" }
 
 # Crypto, encoding, runtime, store (LP-27). Versions are pinned by Cargo.lock;
 # bumps are deliberate commits of their own.
@@ -57,8 +57,8 @@ if-addrs = "0.15"
 
 # The daemon, the CLI and the Android library: the daemon's own crates, logging,
 # the command line, the device name and the pairing QR code.
-ligatured = { path = "crates/ligatured", version = "0.1.1-alpha" }
-lp-macos = { path = "crates/lp-macos", version = "0.1.1-alpha" }
+ligatured = { path = "crates/ligatured", version = "0.2.0-alpha" }
+lp-macos = { path = "crates/lp-macos", version = "0.2.0-alpha" }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4.6", features = ["derive", "env"] }

@@ -8,6 +8,8 @@ release workflow publishes the section as the release notes with the installers.
 
 ## [Unreleased]
 
+## [0.2.0-alpha] - 2026-11-08
+
 ### Added
 
 - One keyboard and mouse across the desktops (milestone 7): the pointer crosses from one

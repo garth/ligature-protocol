@@ -458,6 +458,34 @@ async fn text_a_driven_device_is_sent_goes_on_to_the_device_it_drives() {
             .any(|e| matches!(e, InputEvent::Text { .. })),
         "b typed it too"
     );
+    // The touchpad's keys (Backspace) go on in the same way.
+    a.sync
+        .send(
+            vec![InputEvent::key(14, true), InputEvent::key(14, false)],
+            None,
+        )
+        .await
+        .unwrap();
+    until("c presses Backspace", || {
+        c_inject.injected().iter().any(|e| {
+            matches!(
+                e,
+                InputEvent::Key {
+                    code: 14,
+                    pressed: true,
+                    ..
+                }
+            )
+        })
+    })
+    .await;
+    assert!(
+        !b.inject
+            .injected()
+            .iter()
+            .any(|e| matches!(e, InputEvent::Key { code: 14, .. })),
+        "b pressed it too"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -211,9 +211,9 @@ pub struct InputSync {
     offered: tokio::sync::Mutex<Option<InputParams>>,
     /// Local events, for the fakes and tests: a drive began or ended.
     changes: broadcast::Sender<Change>,
-    /// Text the controller sent while this device drives another: it goes on
-    /// with the capture's next batch rather than being typed here and
-    /// captured again, which loses it (LP-174).
+    /// Keys and text the controller sent while this device drives another:
+    /// they go on with the capture's next batch rather than being typed here
+    /// and captured again, which loses them (LP-174).
     onward: tokio::sync::mpsc::UnboundedSender<InputEvent>,
     onward_rx: Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<InputEvent>>>,
 }
@@ -972,7 +972,10 @@ impl InputSync {
                                 inject.inject(&InputEvent::Position { x: mx, y: my })?;
                                 continue;
                             }
-                            InputEvent::Text { .. } if onward => {
+                            // Keys and text go on to the device this one
+                            // drives: typed here they come back through the
+                            // capture as other keys, or as none (LP-174).
+                            InputEvent::Text { .. } | InputEvent::Key { .. } if onward => {
                                 let _ = self.onward.send(event.clone());
                                 continue;
                             }

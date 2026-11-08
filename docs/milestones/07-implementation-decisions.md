@@ -351,8 +351,11 @@ The phone's touchpad drives a desktop, which drives the next across its edge. Th
 events Ligature posts, as Linux's InputCapture sees what its virtual devices inject, so pointer and
 keys go on along the chain; the Mac posts a relative move with the movement asked for, not the one
 left after keeping its own pointer on its displays, or the next device's pointer stays at its edge.
-Text is not typed again: Linux types it through a keymap swapped in for it, which its capture reads
-through the compositor's keymap as nothing, and the Mac on a key event carrying it, which its tap
-read as that event's key. So a driven device that is itself driving sends the text it is sent on
-with its capture's next batch (`InputSync`'s `onward` channel), and the Mac's tap passes posted
-text on as text in any case. A device never leads on to the device driving it.
+Keys and text are not typed again: Linux types text through a keymap swapped in for it, which its
+capture reads through the compositor's keymap as nothing, and a key such as the touchpad's
+Backspace did not come back through it either; the Mac types text on a key event carrying it,
+which its tap read as that event's key. So a driven device that is itself driving sends the keys
+and text it is sent on with its capture's next batch (`InputSync`'s `onward` channel), and the
+Mac's tap passes posted text on as text in any case. Pointer motion, buttons and scrolling still
+go through the local pointer, which is how the pointer finds the edge back. A device never leads
+on to the device driving it.

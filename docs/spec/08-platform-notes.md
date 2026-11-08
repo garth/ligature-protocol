@@ -116,17 +116,20 @@ extra components. What a third-party daemon may offer is bounded by platform per
   filtering tap whose process loses Accessibility holds back every click and key until it
   is gone, so the daemon watches with a listen-only tap and filters only while it drives
   another device. The permission checks a process can make at no cost answer from what it
-  held at start, so a withdrawal is read through the live checks.
-- **Displays**: ScreenCaptureKit captures a display for a share, and serves only a process
-  with the Screen Recording permission, which the user grants to the bundle once under
-  Privacy and Security. macOS applies a newly granted permission to the next start of the
-  process, so the first share is refused and the daemon is restarted after the user allows
-  it. While a share runs the menu bar shows the system's own sharing indicator, and
-  stopping the share there ends it with `consent`. ScreenCaptureKit delivers a frame only
-  when the display changed, so a still screen's frame is repeated once a second. A launchd
-  agent of process type `Background` is throttled so as not to disturb the user, which
-  halved the frame rate and slowed input to a quarter of a second, so the agent is
-  `Interactive`.
+  held at start, so a withdrawal is read through the live checks, and a grant of Input
+  Monitoring takes effect only in a new process (System Settings offers to quit and reopen
+  an application for it). While a permission was missing at start the daemon asks a
+  short-lived copy of itself what a new process holds, and restarts when one has been
+  granted, launchd starting it again.
+- **Displays**: ScreenCaptureKit captures a display for a share, and serves only a process with
+  the Screen Recording permission, which the user grants to the bundle once under Privacy and
+  Security. macOS applies a newly granted permission to the next start of the process, so the
+  first share is refused, and the daemon restarts by itself once it sees the permission allowed,
+  as for input. While a share runs the menu bar shows the system's own sharing indicator, and
+  stopping the share there ends it with `consent`. ScreenCaptureKit delivers a frame only when the
+  display changed, so a still screen's frame is repeated once a second. A launchd agent of process
+  type `Background` is throttled so as not to disturb the user, which halved the frame rate and
+  slowed input to a quarter of a second, so the agent is `Interactive`.
 - **Keys**: the Keychain stores the local store's keys; the Secure Enclave holds only
   P-256 keys, so an Ed25519 key is software-held and may be wrapped by one
   ([ADR 0027](../adr/0027-ed25519.md)).

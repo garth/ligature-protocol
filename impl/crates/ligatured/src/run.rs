@@ -191,6 +191,15 @@ pub async fn run(
         () = stop_signal() => {
             tracing::info!("stopping: closing the connections so the peers know at once");
         }
+        granted = crate::permissions::granted_since_start() => {
+            // macOS puts the grant in force for a new process only; launchd
+            // starts the daemon again (KeepAlive).
+            let names: Vec<&str> = granted.iter().map(|p| p.label()).collect();
+            tracing::info!(
+                granted = %names.join(", "),
+                "restarting so the newly granted permission takes effect"
+            );
+        }
     }
     // A peer told that the connection closed redials at once; one that is
     // not keeps the dead connection until it times out (LP-158).

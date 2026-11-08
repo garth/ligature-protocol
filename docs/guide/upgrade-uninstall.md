@@ -25,16 +25,18 @@ result is kept in `update-check.json` in the data directory.
 **macOS permissions after an upgrade**: the app is signed ad hoc, so to macOS every new
 version is a new app. Accessibility, Input Monitoring and Screen Recording are asked for
 again, and a switch left on in System Settings for the previous version no longer applies,
-even though it still shows as on. Clear the old entries and restart the daemon, then allow
-each one when macOS asks:
+even though it still shows as on. Clear the old entries, which also restarts the daemon,
+then allow each one when macOS asks:
 
 ```sh
-tccutil reset Accessibility org.ligatureprotocol.ligatured
-tccutil reset PostEvent org.ligatureprotocol.ligatured
-tccutil reset ListenEvent org.ligatureprotocol.ligatured
-tccutil reset ScreenCapture org.ligatureprotocol.ligatured
-launchctl kickstart -k gui/$(id -u)/org.ligatureprotocol.ligatured
+lpctl permissions reset
 ```
+
+It runs `tccutil reset` for Accessibility, its `PostEvent` half, `ListenEvent` (Input
+Monitoring) and `ScreenCapture` on `org.ligatureprotocol.ligatured`, then restarts the
+agent. macOS asks for Accessibility and Input Monitoring at once and for Screen Recording at
+the first share; the daemon restarts by itself as each is allowed, and `lpctl permissions`
+shows which it holds.
 
 **Android**: install the new APK over the old one. The release APK is signed with the
 project's key, so the update keeps the app's identity and data. The version code grows with

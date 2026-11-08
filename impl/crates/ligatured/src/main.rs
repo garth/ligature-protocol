@@ -56,6 +56,10 @@ enum Command {
     InputHelper,
     /// The Wayland screen helper the daemon starts for itself (Linux):
     /// `list`, or `capture OUTPUT RATE`.
+    /// What a new process of this program holds of the macOS permissions,
+    /// as one line; the daemon asks it to see a grant take effect (macOS).
+    #[command(hide = true)]
+    Permissions,
     #[command(hide = true)]
     ScreenHelper {
         /// The command and its arguments.
@@ -109,6 +113,18 @@ fn main() {
         {
             let _ = args;
             eprintln!("screen helper is Linux only");
+            std::process::exit(1);
+        }
+    }
+    if let Some(Command::Permissions) = options.command {
+        #[cfg(target_os = "macos")]
+        {
+            println!("{}", ligatured::permissions::at_start().line());
+            return;
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            eprintln!("only macOS has these permissions");
             std::process::exit(1);
         }
     }

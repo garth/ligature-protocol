@@ -1,0 +1,314 @@
+//! The permissions macOS asks the user for (LP-169): Accessibility to be
+//! driven, Input Monitoring to drive others, Screen Recording to share the
+//! screen. Other platforms need none of them.
+//!
+//! macOS answers the preflight checks for a process from what was granted
+//! when it started, and an Input Monitoring or Screen Recording grant takes
+//! effect only in a new process. So while one was missing at start, the
+//! daemon asks a short-lived copy of itself (`ligatured permissions`, which
+//! prints [`Access::line`]) what a new process would see, and when one it
+//! lacked has been granted it stops, for launchd's `KeepAlive` to start it
+//! again with the grant in force.
+
+use std::time::Duration;
+
+/// One permission macOS asks the user for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Permission {
+    /// Accessibility: posting events, so other devices can drive this Mac.
+    Accessibility,
+    /// Input Monitoring: watching the keyboard and mouse, so this Mac can
+    /// drive others.
+    InputMonitoring,
+    /// Screen Recording: capturing the screen, so other devices can watch it.
+    ScreenRecording,
+}
+
+impl Permission {
+    /// Every permission, in the order they are shown.
+    pub const ALL: [Self; 3] = [
+        Self::Accessibility,
+        Self::InputMonitoring,
+        Self::ScreenRecording,
+    ];
+
+    /// The name on the command line and in [`Access::line`].
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Accessibility => "accessibility",
+            Self::InputMonitoring => "input-monitoring",
+            Self::ScreenRecording => "screen-recording",
+        }
+    }
+
+    /// The name System Settings gives it.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Accessibility => "Accessibility",
+            Self::InputMonitoring => "Input Monitoring",
+            Self::ScreenRecording => "Screen Recording",
+        }
+    }
+
+    /// What it lets this device do.
+    #[must_use]
+    pub const fn enables(self) -> &'static str {
+        match self {
+            Self::Accessibility => "your other devices drive this one",
+            Self::InputMonitoring => "this device's keyboard and mouse drive your others",
+            Self::ScreenRecording => "your other devices watch this screen",
+        }
+    }
+
+    /// The permission a name means, if any.
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|p| p.name() == name)
+    }
+}
+
+/// Which of the permissions a process holds.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Access {
+    /// Accessibility.
+    pub accessibility: bool,
+    /// Input Monitoring.
+    pub input_monitoring: bool,
+    /// Screen Recording.
+    pub screen_recording: bool,
+}
+
+impl Access {
+    /// Whether `permission` is held.
+    #[must_use]
+    pub const fn holds(&self, permission: Permission) -> bool {
+        match permission {
+            Permission::Accessibility => self.accessibility,
+            Permission::InputMonitoring => self.input_monitoring,
+            Permission::ScreenRecording => self.screen_recording,
+        }
+    }
+
+    /// Whether every permission is held, so there is nothing to wait for.
+    #[must_use]
+    pub fn complete(&self) -> bool {
+        Permission::ALL.into_iter().all(|p| self.holds(p))
+    }
+
+    /// One line naming each permission with 1 or 0, as `ligatured
+    /// permissions` prints it.
+    #[must_use]
+    pub fn line(&self) -> String {
+        Permission::ALL
+            .into_iter()
+            .map(|p| format!("{}={}", p.name(), u8::from(self.holds(p))))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    /// Reads [`Access::line`]; `None` unless every permission is named.
+    #[must_use]
+    pub fn parse(line: &str) -> Option<Self> {
+        let mut seen = [None; 3];
+        for pair in line.split_whitespace() {
+            let (name, value) = pair.split_once('=')?;
+            let held = match value {
+                "1" => true,
+                "0" => false,
+                _ => return None,
+            };
+            if let Some(i) = Permission::ALL.iter().position(|p| p.name() == name) {
+                seen[i] = Some(held);
+            }
+        }
+        Some(Self {
+            accessibility: seen[0]?,
+            input_monitoring: seen[1]?,
+            screen_recording: seen[2]?,
+        })
+    }
+
+    /// The permissions missing here and held in `now`: what a restart would
+    /// bring into force. A withdrawal is not among them; the input capture
+    /// already follows that live.
+    #[must_use]
+    pub fn newly_granted(&self, now: &Self) -> Vec<Permission> {
+        Permission::ALL
+            .into_iter()
+            .filter(|&p| !self.holds(p) && now.holds(p))
+            .collect()
+    }
+}
+
+/// How long to wait between asking a new process: often at first, while
+/// the user is likely in System Settings after the prompts, then rarely.
+#[must_use]
+pub fn poll_interval(since_start: Duration) -> Duration {
+    if since_start < Duration::from_secs(10 * 60) {
+        Duration::from_secs(3)
+    } else {
+        Duration::from_secs(30)
+    }
+}
+
+/// What this process holds, as macOS answered it at start.
+#[cfg(target_os = "macos")]
+#[must_use]
+pub fn at_start() -> Access {
+    Access {
+        accessibility: lp_macos::input::post_access(),
+        input_monitoring: lp_macos::input::listen_access(),
+        screen_recording: lp_macos::screen::screen_access(),
+    }
+}
+
+/// What this process holds right now: Accessibility and Input Monitoring
+/// follow System Settings live; Screen Recording is as at start, and a grant
+/// of it restarts the daemon.
+#[cfg(target_os = "macos")]
+#[must_use]
+pub fn current() -> Access {
+    Access {
+        accessibility: lp_macos::input::accessibility_live(),
+        input_monitoring: lp_macos::input::listen_access_live(),
+        screen_recording: lp_macos::screen::screen_access(),
+    }
+}
+
+/// Resolves with the permissions granted since start, once a new process
+/// would hold one this one lacks; never when nothing was missing.
+#[cfg(target_os = "macos")]
+pub async fn granted_since_start() -> Vec<Permission> {
+    let start = at_start();
+    if start.complete() {
+        return std::future::pending().await;
+    }
+    let Ok(exe) = std::env::current_exe() else {
+        tracing::warn!("cannot find this program to check for new permissions");
+        return std::future::pending().await;
+    };
+    let began = std::time::Instant::now();
+    loop {
+        tokio::time::sleep(poll_interval(began.elapsed())).await;
+        let exe = exe.clone();
+        let asked = tokio::task::spawn_blocking(move || {
+            std::process::Command::new(exe).arg("permissions").output()
+        })
+        .await;
+        let Ok(Ok(out)) = asked else { continue };
+        let Some(now) = Access::parse(&String::from_utf8_lossy(&out.stdout)) else {
+            continue;
+        };
+        let granted = start.newly_granted(&now);
+        if !granted.is_empty() {
+            return granted;
+        }
+    }
+}
+
+/// Never resolves: only macOS has permissions that need a new process.
+#[cfg(not(target_os = "macos"))]
+pub async fn granted_since_start() -> Vec<Permission> {
+    std::future::pending().await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const NONE: Access = Access {
+        accessibility: false,
+        input_monitoring: false,
+        screen_recording: false,
+    };
+
+    #[test]
+    fn a_line_reads_back_as_it_was_written() {
+        let a = Access {
+            accessibility: true,
+            input_monitoring: false,
+            screen_recording: true,
+        };
+        assert_eq!(
+            a.line(),
+            "accessibility=1 input-monitoring=0 screen-recording=1"
+        );
+        assert_eq!(Access::parse(&a.line()), Some(a));
+        assert_eq!(Access::parse(&format!("{}\n", a.line())), Some(a));
+    }
+
+    #[test]
+    fn a_line_missing_a_permission_or_garbled_reads_as_nothing() {
+        assert_eq!(Access::parse("accessibility=1 input-monitoring=1"), None);
+        assert_eq!(
+            Access::parse("accessibility=yes input-monitoring=1 screen-recording=1"),
+            None
+        );
+        assert_eq!(Access::parse(""), None);
+        assert_eq!(Access::parse("error: no such command"), None);
+    }
+
+    #[test]
+    fn a_name_the_line_does_not_know_is_passed_over() {
+        let read = Access::parse("accessibility=1 input-monitoring=1 screen-recording=0 camera=1");
+        assert_eq!(
+            read,
+            Some(Access {
+                accessibility: true,
+                input_monitoring: true,
+                screen_recording: false,
+            })
+        );
+    }
+
+    #[test]
+    fn only_what_was_missing_and_is_now_held_restarts() {
+        let start = Access {
+            accessibility: true,
+            input_monitoring: false,
+            screen_recording: false,
+        };
+        let now = Access {
+            accessibility: false,
+            input_monitoring: true,
+            screen_recording: false,
+        };
+        assert_eq!(start.newly_granted(&now), vec![Permission::InputMonitoring]);
+        assert!(start.newly_granted(&start).is_empty());
+        assert!(NONE.newly_granted(&NONE).is_empty());
+    }
+
+    #[test]
+    fn nothing_is_waited_for_once_all_are_held() {
+        let all = Access {
+            accessibility: true,
+            input_monitoring: true,
+            screen_recording: true,
+        };
+        assert!(all.complete());
+        assert!(!NONE.complete());
+    }
+
+    #[test]
+    fn the_check_slows_down_after_ten_minutes() {
+        assert_eq!(poll_interval(Duration::ZERO), Duration::from_secs(3));
+        assert_eq!(
+            poll_interval(Duration::from_secs(9 * 60)),
+            Duration::from_secs(3)
+        );
+        assert_eq!(
+            poll_interval(Duration::from_secs(11 * 60)),
+            Duration::from_secs(30)
+        );
+    }
+
+    #[test]
+    fn names_round_trip() {
+        for p in Permission::ALL {
+            assert_eq!(Permission::from_name(p.name()), Some(p));
+        }
+        assert_eq!(Permission::from_name("camera"), None);
+    }
+}

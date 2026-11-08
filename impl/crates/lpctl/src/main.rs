@@ -11,12 +11,13 @@ use std::sync::{Arc, Mutex};
 
 use ligatured::control::{
     Caps, Client, ClipboardPasted, ClipboardText, Devices, Empty, Event, InitResult, InputLayout,
-    Offers, Request, ScreenDisplays, ScreenStopped, Transfers, types,
+    Offers, Permissions, Request, ScreenDisplays, ScreenStopped, Transfers, types,
 };
 use ligatured::daemon::Status;
 use ligatured::files_sync::{FileState, TransferEnd, TransferProgress};
 use ligatured::grants::Grants;
 use ligatured::input::InputStatus;
+use ligatured::permissions::Permission;
 use ligatured::screen::ScreenStatus;
 use lp_core::paths::{DATA_DIR_ENV, Locations, RUNTIME_DIR_ENV};
 use lp_core::{Error, PublicKey};
@@ -117,6 +118,25 @@ enum Command {
     Screen {
         #[command(subcommand)]
         action: ScreenAction,
+    },
+    /// The permissions macOS asks for: which the daemon holds, or reset them
+    /// so macOS asks again, or open one's page in System Settings.
+    Permissions {
+        #[command(subcommand)]
+        action: Option<PermissionsAction>,
+    },
+}
+
+/// `lpctl permissions` actions (macOS).
+#[derive(Debug, Subcommand)]
+enum PermissionsAction {
+    /// Forget Ligature's Accessibility, Input Monitoring and Screen Recording
+    /// permissions and restart the daemon, so macOS asks for them again.
+    Reset,
+    /// Open a permission's page in System Settings, where it is turned on.
+    Open {
+        /// accessibility, input-monitoring or screen-recording.
+        permission: String,
     },
 }
 
@@ -273,6 +293,12 @@ async fn main() {
         Command::RefreshUpdateCache => {
             upgrade::refresh(&upgrade::Source::default(), &locations, &current)
         }
+        Command::Permissions {
+            action: Some(PermissionsAction::Reset),
+        } => permissions_reset(),
+        Command::Permissions {
+            action: Some(PermissionsAction::Open { permission }),
+        } => permissions_open(permission),
         _ => {
             newer = upgrade::begin(&locations, &current);
             run(&options, &locations).await
@@ -289,6 +315,93 @@ async fn main() {
     if failed {
         std::process::exit(1);
     }
+}
+
+/// The bundle identifier macOS grants Ligature's permissions to, which is
+/// also the launchd agent's label.
+const MAC_BUNDLE: &str = "org.ligatureprotocol.ligatured";
+
+/// The `tccutil` services behind the three permissions (`PostEvent` is the
+/// posting half of Accessibility).
+const TCC_SERVICES: [&str; 4] = ["Accessibility", "PostEvent", "ListenEvent", "ScreenCapture"];
+
+/// The System Settings page where a permission is turned on.
+fn settings_url(permission: Permission) -> &'static str {
+    match permission {
+        Permission::Accessibility => {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        }
+        Permission::InputMonitoring => {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
+        }
+        Permission::ScreenRecording => {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+        }
+    }
+}
+
+fn mac_only() -> Result<(), Error> {
+    if cfg!(target_os = "macos") {
+        Ok(())
+    } else {
+        Err(Error::Refused(
+            "only macOS asks for these permissions; this device needs none".to_owned(),
+        ))
+    }
+}
+
+/// Runs a system command, failing with its own message.
+fn system(program: &str, args: &[&str]) -> Result<String, Error> {
+    let out = std::process::Command::new(program)
+        .args(args)
+        .output()
+        .map_err(|e| Error::Io(format!("{program}: {e}")))?;
+    if !out.status.success() {
+        return Err(Error::Io(format!(
+            "{program} {}: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr).trim()
+        )));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
+}
+
+/// `lpctl permissions reset`: macOS forgets the answers, and the restarted
+/// daemon asks for Accessibility and Input Monitoring at once and for Screen
+/// Recording at the first share.
+fn permissions_reset() -> Result<(), Error> {
+    mac_only()?;
+    for service in TCC_SERVICES {
+        system("tccutil", &["reset", service, MAC_BUNDLE])?;
+    }
+    println!("reset Accessibility, Input Monitoring and Screen Recording for Ligature");
+    let uid = system("id", &["-u"])?;
+    system(
+        "launchctl",
+        &["kickstart", "-k", &format!("gui/{uid}/{MAC_BUNDLE}")],
+    )?;
+    println!(
+        "restarted the daemon: macOS asks for Accessibility and Input Monitoring now, and for \
+         Screen Recording when a device first watches this screen. Once each is allowed the \
+         daemon restarts by itself to use it; lpctl permissions shows where things stand."
+    );
+    Ok(())
+}
+
+/// `lpctl permissions open`: the permission's page in System Settings.
+fn permissions_open(name: &str) -> Result<(), Error> {
+    mac_only()?;
+    let permission = Permission::from_name(name).ok_or_else(|| {
+        Error::Refused(format!(
+            "no permission {name}; use accessibility, input-monitoring or screen-recording"
+        ))
+    })?;
+    system("open", &[settings_url(permission)])?;
+    println!(
+        "opened {} in System Settings: turn Ligature on there",
+        permission.label()
+    );
+    Ok(())
 }
 
 /// `lpctl upgrade`: no daemon needed, so it runs before the control socket is
@@ -315,7 +428,30 @@ fn upgrade_command(check_only: bool, current: semver::Version) -> Result<(), Err
 async fn run(options: &Options, locations: &Locations) -> Result<(), Error> {
     let mut client = Client::connect(&locations.control_socket()).await?;
     match &options.command {
-        Command::Upgrade { .. } | Command::RefreshUpdateCache => unreachable!("handled in main"),
+        Command::Upgrade { .. }
+        | Command::RefreshUpdateCache
+        | Command::Permissions { action: Some(_) } => unreachable!("handled in main"),
+        Command::Permissions { action: None } => {
+            let held: Permissions = client.request(Request::new(types::PERMISSIONS, 0)).await?;
+            if held.permissions.is_empty() {
+                println!("this device needs no permissions");
+            }
+            for p in &held.permissions {
+                println!(
+                    "{:<17} {:<8} {}",
+                    p.label,
+                    if p.granted { "granted" } else { "missing" },
+                    p.enables
+                );
+            }
+            if let Some(missing) = held.permissions.iter().find(|p| !p.granted) {
+                println!(
+                    "lpctl permissions open {} shows where to turn it on; the daemon restarts by \
+                     itself once it is granted",
+                    missing.name
+                );
+            }
+        }
         Command::Init { name, device_name } => {
             let mut req = Request::new(types::INIT, 0);
             req.name = Some(name.clone());
@@ -1074,4 +1210,32 @@ fn directions(d: &lp_core::capability::Descriptor) -> String {
         );
     }
     String::new()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn each_permission_opens_its_own_page() {
+        assert!(settings_url(Permission::Accessibility).ends_with("Privacy_Accessibility"));
+        assert!(settings_url(Permission::InputMonitoring).ends_with("Privacy_ListenEvent"));
+        assert!(settings_url(Permission::ScreenRecording).ends_with("Privacy_ScreenCapture"));
+    }
+
+    #[test]
+    fn a_reset_covers_every_service_behind_the_three() {
+        for service in ["Accessibility", "PostEvent", "ListenEvent", "ScreenCapture"] {
+            assert!(TCC_SERVICES.contains(&service), "{service}");
+        }
+    }
+
+    #[test]
+    fn only_a_mac_has_permissions_to_manage() {
+        assert_eq!(mac_only().is_ok(), cfg!(target_os = "macos"));
+        if !cfg!(target_os = "macos") {
+            assert!(permissions_open("accessibility").is_err());
+            assert!(permissions_reset().is_err());
+        }
+    }
 }

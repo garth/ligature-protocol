@@ -100,13 +100,16 @@ The daemon logs each connection and each refusal with the peer's key at `info`;
 
 ## Input sharing does not start on the Mac
 
-- `lpctl caps` on another device shows whether the Mac offers input. When it offers none,
-  Ligature is not allowed under Accessibility and Input Monitoring in System Settings,
-  Privacy & Security; some macOS versions list the Accessibility switch under Device Control
-  and Data Access.
+- `lpctl permissions` on the Mac lists which permissions the daemon holds. A missing one is
+  turned on under System Settings, Privacy & Security (`lpctl permissions open
+  accessibility`, or `input-monitoring`, opens the page); some macOS versions list the
+  Accessibility switch under Device Control and Data Access. The daemon restarts by itself
+  a few seconds after you allow one, so it takes effect without a restart of your own.
+  `lpctl caps` on another device shows whether the Mac offers input.
 - A switch that shows as on can belong to a previous version: macOS ties these permissions
-  to the app's signature, which changes with every version. Clear them as
-  [Upgrading](upgrade-uninstall.md#upgrading) shows and allow them again.
+  to the app's signature, which changes with every version. `lpctl permissions reset` clears
+  them and restarts the daemon; allow each again when macOS asks
+  ([Upgrading](upgrade-uninstall.md#upgrading)).
 - The log says what the daemon sees: `grep -i "input capture" ~/Library/Logs/ligature/ligatured.log`.
 
 ## A file does not arrive

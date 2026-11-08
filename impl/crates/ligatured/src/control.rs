@@ -107,6 +107,8 @@ pub mod types {
     pub const SCREEN_STOP: &str = "org.ligatureprotocol.control.screen.stop";
     /// `screen.status`: what this device shares and watches.
     pub const SCREEN_STATUS: &str = "org.ligatureprotocol.control.screen.status";
+    /// `permissions`: the platform permissions the daemon holds (macOS).
+    pub const PERMISSIONS: &str = "org.ligatureprotocol.control.permissions";
     /// Event: the share started, with what the sharer settled on.
     pub const SCREEN_STARTED: &str = "org.ligatureprotocol.control.screen.started";
     /// Event: one chunk of one frame, in order.
@@ -1157,6 +1159,7 @@ async fn handle_input(
             Err(e) => Err(e),
         },
         types::INPUT_STATUS => Response::ok(id, &input.status()),
+        types::PERMISSIONS => Response::ok(id, &permissions()),
         types::INPUT_DRIVE => match request.key {
             Some(peer) => {
                 let enter = lp_core::input::Enter::absolute(
@@ -1202,6 +1205,50 @@ async fn handle_input(
     match result {
         Ok(r) => r,
         Err(e) => Response::error(id, ErrorBody::from_error(&e)),
+    }
+}
+
+/// One permission the platform asks the user for, as `permissions` lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PermissionState {
+    /// Its name on the command line (`accessibility`, `input-monitoring`,
+    /// `screen-recording`).
+    pub name: String,
+    /// Its name in System Settings.
+    pub label: String,
+    /// Whether the daemon holds it.
+    pub granted: bool,
+    /// What it lets this device do.
+    pub enables: String,
+}
+
+/// The `permissions` result: empty where the platform asks for none.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Permissions {
+    /// Each permission, in order.
+    pub permissions: Vec<PermissionState>,
+}
+
+/// What the daemon holds of the platform's permissions.
+fn permissions() -> Permissions {
+    #[cfg(target_os = "macos")]
+    let held = Some(crate::permissions::current());
+    #[cfg(not(target_os = "macos"))]
+    let held: Option<crate::permissions::Access> = None;
+    Permissions {
+        permissions: held
+            .map(|held| {
+                crate::permissions::Permission::ALL
+                    .into_iter()
+                    .map(|p| PermissionState {
+                        name: p.name().to_owned(),
+                        label: p.label().to_owned(),
+                        granted: held.holds(p),
+                        enables: p.enables().to_owned(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
     }
 }
 

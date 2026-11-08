@@ -26,6 +26,7 @@ pub mod notifications;
 pub mod notifications_linux;
 #[cfg(target_os = "macos")]
 pub mod notifications_macos;
+pub mod permissions;
 #[cfg(target_os = "linux")]
 pub mod portal_gate;
 pub mod run;

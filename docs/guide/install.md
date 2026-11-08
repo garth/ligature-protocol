@@ -85,12 +85,10 @@ The daemon runs as a per-user launchd agent that starts at login.
 3. To share the Mac's screen, and to watch another device's with `lpview`, install ffmpeg
     (`brew install ffmpeg`). The first time another device asks to see the Mac's screen,
     macOS asks whether Ligature may record the screen, and that first share is refused.
-    Allow Ligature under System Settings, Privacy & Security, Screen Recording, then restart
-    the daemon, since macOS applies the permission to the next start:
-
-    ```sh
-    launchctl kickstart -k gui/$(id -u)/org.ligatureprotocol.ligatured
-    ```
+    Allow Ligature under System Settings, Privacy & Security, Screen Recording
+    (`lpctl permissions open screen-recording` opens that page). macOS applies the
+    permission only to a new start, so the daemon restarts by itself within a few seconds of
+    seeing it allowed, and the next share works.
 
     While the screen is shared the menu bar shows macOS's own sharing indicator, and
     stopping the share there ends it.
@@ -104,7 +102,13 @@ The daemon runs as a per-user launchd agent that starts at login.
     & Security, where some macOS versions list Ligature's Accessibility switch under Device
     Control and Data Access instead. With Accessibility allowed your other devices can drive
     the Mac's pointer and keyboard; with Input Monitoring as well, the Mac's own keyboard and
-    mouse can drive theirs. Until then the Mac leaves input alone and offers none.
+    mouse can drive theirs. Until then the Mac leaves input alone and offers none. As with
+    Screen Recording, the daemon restarts by itself once you allow either, so they take
+    effect without your restarting anything.
+
+    `lpctl permissions` lists the three permissions with which the daemon holds, and `lpctl
+    permissions open accessibility` (or `input-monitoring`, `screen-recording`) opens the
+    page where each is turned on. macOS lets nothing but you turn one on.
 
 6. Check it:
 

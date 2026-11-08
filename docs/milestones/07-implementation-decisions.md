@@ -318,3 +318,20 @@ seen by a bind on `SHIFT, 2`, and not Shift and the quote key, which a bind on
 on `SHIFT, at` never fires. Both sides' tables are unit-tested against the system's British,
 US, US international and swapped Alt and Super keymaps; the Mac's logic is tested with a
 stand-in translation, and its Quartz and Text Input Sources calls are only type-checked here.
+
+## LP-169: a granted macOS permission takes effect by itself
+
+macOS answers a process's preflight checks from what it held at start, and puts an Input
+Monitoring or Screen Recording grant in force only for a new process, so before LP-169 the
+owner restarted the agent after allowing either. While Accessibility, Input Monitoring or
+Screen Recording was missing at start, the daemon now runs `ligatured permissions` (hidden),
+which prints what a new process holds, every 3 s for ten minutes and every 30 s after; when
+a permission it lacked has been granted it stops through the same path as SIGTERM, closing
+its connections, and launchd's `KeepAlive` starts it again. A child of the daemon is checked
+against the same bundle, so its answer is the next start's. A withdrawal does not restart:
+the input capture already follows it through the live checks. The `permissions` control
+request lists the three with the live answers (Screen Recording's is the start's, which a
+grant replaces by the restart), and `lpctl permissions reset` and `open` need no daemon:
+`tccutil reset` for `Accessibility`, `PostEvent`, `ListenEvent` and `ScreenCapture` with a
+`launchctl kickstart -k` after it, and `open` on the `x-apple.systempreferences` page.
+Turning a permission on is left to the user, as macOS requires.

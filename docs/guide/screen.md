@@ -62,7 +62,8 @@ again of the network, so on a slow link `--chroma 4:2:0` asks for the lighter on
   remembers your choice, so later shares start without asking. While a share runs, a
   notification "Sharing *display* with *device*" stays up, and its **Stop sharing** button
   ends the share.
-- **The Mac** asks once for permission to record the screen, and refuses that first share
+- **The Mac** asks once for permission to record the screen, and refuses that first share;
+  once you allow it, the daemon restarts by itself and the next share works
   ([Install](install.md#macos) has the steps). While a share runs, macOS shows its own
   sharing indicator in the menu bar, and stopping the share there ends it.
 - **The phone** asks every time, since Android never lets an app keep that consent, unless

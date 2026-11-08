@@ -55,9 +55,10 @@ limits on this:
   Security and privacy, Privacy controls (**Privacy controls** on the app's screen goes
   there). That switch is for every app, so you no longer see when any app reads your
   clipboard. Nothing else on the screen changes, and an open keyboard stays open.
-- A copy made while the system's indicator from the last one is still up gives no sign, so
-  Ligature looks again once the indicator has gone. That copy arrives about seven seconds
-  late.
+- Touching the screen to make a copy closes the system's indicator from the last one, so
+  copies made one after another go at once. A copy made while that indicator is still up,
+  without touching the screen, gives no sign, so Ligature looks again once the indicator has
+  gone, and that copy arrives about seven seconds late.
 - What the copying app marks as sensitive, as a password manager should, is not sent by itself.
 
 Without that switch, sending is on your request. Any of these sends what is on the clipboard:

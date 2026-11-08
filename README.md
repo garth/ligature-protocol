@@ -14,7 +14,12 @@ phones and tablets, home hubs. Any device can discover and use the capabilities 
 others: paste on the laptop what was copied on the phone, see the phone's notifications on
 the desktop, send a file to the tablet, put a photo on the living-room TV. It is an open
 protocol with no vendor, account or server behind it, built on existing open standards, so
-that devices from different makers work together the way one maker's devices do.
+that devices from different makers work together the way one maker's devices do. It exists
+in part as an open alternative to closed ecosystems such as Apple's, in which a person no
+longer fully owns the devices they paid for: what they may run, read or connect is decided
+for them. Where LP leaves out a capability of such a system, it is only because the system
+is closed and does not give people the freedom to use their own hardware as they choose,
+and the documentation says so each time.
 
 ## Principles
 
@@ -171,8 +176,9 @@ sharing device's own consent, and drive it from the picture
 [milestone 7](docs/milestones/07-shared-input.md) and
 [milestone 8](docs/milestones/08-remote-desktop.md). Everything else in the specification is
 unimplemented.
-Apple phones and tablets are off the roadmap for now; what the platform would allow is
-recorded in the [platform notes](docs/spec/08-platform-notes.md#4-ios-and-ipados).
+Apple phones and tablets are off the roadmap for now, because iOS does not let a person run
+an always-on peer on a device they own; what the platform would allow is recorded in the
+[platform notes](docs/spec/08-platform-notes.md#4-ios-and-ipados).
 
 ### Install
 
@@ -258,7 +264,8 @@ follow them.
    0.2.0-alpha ([plan](docs/milestones/08-remote-desktop.md)).
 
 Not planned: Apple phones and tablets, for the reasons in the
-[platform notes](docs/spec/08-platform-notes.md#4-ios-and-ipados).
+[platform notes](docs/spec/08-platform-notes.md#4-ios-and-ipados): the platform is closed,
+and the limit is Apple's choice about the owner's device, not the protocol's.
 
 ## Documentation
 

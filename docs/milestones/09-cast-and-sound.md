@@ -138,7 +138,11 @@ milestone pins:
     already has (WebRTC brings ICE, DTLS and SRTP for a session LP has authenticated and
     encrypted, and RTSP with RTP is unencrypted on its own) or are closed or licensed
     (Google Cast, AirPlay, Miracast's specification and its Wi-Fi Direct link), and none runs
-    on the pairwise session that chapter 09 relies on. What LP does take from them is the
+    on the pairwise session that chapter 09 relies on. Leaving AirPlay and Google Cast out
+    is the project's stance as much as a constraint: they are the closed systems LP is an
+    open alternative to, in which the maker decides which devices may show which screens,
+    and the documentation says so wherever one of their capabilities is absent. What LP
+    does take from them is the
     shape: a `frame` and an `audio` message carry what an RTP header carries (a sequence
     number, a timestamp, a marker for the last chunk) and a `keyframe` is RTCP's picture loss
     indication, so the datagram path of ADR 0041 can carry RTP packets as the IETF's RTP over

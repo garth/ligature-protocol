@@ -43,7 +43,10 @@ feature they have today.
 Each page says what a platform cannot do as well as what it can: the Mac cannot read its own
 notifications, the phone sends what you copy only on a tap unless Ligature is on under
 Accessibility, and so on. Those are limits of the platforms, recorded in the
-[platform notes](../spec/08-platform-notes.md), not bugs to report.
+[platform notes](../spec/08-platform-notes.md), not bugs to report. Where the limit comes
+from a closed platform, such as a Mac that may not read its own notifications or an iPhone
+that may not run Ligature at all, it is the maker's choice about what you may do with your
+own device, and Ligature exists in part as an open alternative to that.
 
 ## Status
 

@@ -9,8 +9,11 @@ household shares, into a single trusted group so that any device can discover an
 capabilities of the others, whoever made them. Linux desktops are the reference platform,
 with macOS desktops, Android phones and tablets and home hubs as full peers
 ([ADR 0033](../adr/0033-supported-platforms.md)); what Apple phones and tablets could offer
-is recorded in chapter 08 section 4 and none is planned. This chapter sets out the goals,
-the layering, and how the remaining chapters fit together.
+is recorded in chapter 08 section 4 and none is planned, because the platform does not let a
+person run an always-on peer on a device they own. The project is in part an open
+alternative to such closed systems, and wherever a closed platform keeps a capability out of
+LP, the documentation says that the limit is the platform's choice and not the protocol's.
+This chapter sets out the goals, the layering, and how the remaining chapters fit together.
 
 ## 2. Goals and non-goals
 

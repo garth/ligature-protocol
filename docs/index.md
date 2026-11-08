@@ -3,7 +3,9 @@
 **Your devices, working as one.** What you copy, the notifications you get, the files you
 share, and your keyboard, mouse and screen move between the devices you own, directly, over
 your own network: no account, no server, no company in between. An open protocol, with apps
-for Linux, macOS and Android.
+for Linux, macOS and Android, and an open alternative to the closed ecosystems in which the
+maker decides what your devices may do with each other. Apple's phones and tablets are not
+supported only because iOS does not let you run such a thing on a device you own.
 
 **[Install the apps](guide/install.md)** · [Read the user guide](guide/index.md) ·
 [Releases](https://github.com/garth/ligature-protocol/releases)

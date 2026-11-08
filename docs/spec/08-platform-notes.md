@@ -94,7 +94,9 @@ principal daemon, when it exists, will be a launchd daemon, mirroring the Linux 
 presence from
 the console-user and session state that the system exposes to daemons. Bonjour is the
 native mDNS/DNS-SD implementation and CoreBluetooth the BLE stack, so discovery needs no
-extra components. What a third-party daemon may offer is bounded by platform permissions:
+extra components. What a third-party daemon may offer is bounded by what Apple lets a
+program do on the owner's machine, and where the Mac does less than Linux below, that is
+why; each such limit is recorded as the platform's choice and not worked around:
 
 - **Clipboard**: NSPasteboard has no change notification, so the watcher polls the change
   count (every 250 ms in the reference daemon); reading the pasteboard from a background
@@ -272,7 +274,10 @@ protocol of its own. LineageOS is the first target (no Google services, sideload
 Apple's phones and tablets are a closed platform: a third-party app runs only while the
 user has it open or for the few background modes Apple grants, may not read other
 applications' notifications or, without a prompt, their clipboard, and gets no daemon of any
-kind. An iPhone or iPad can therefore never be the always-on peer that Android is. This
+kind. An iPhone or iPad can therefore never be the always-on peer that Android is. That is
+Apple's choice about what the owner of the device may run on it, not a limit of the
+protocol, and the project exists in part as an open alternative to it: capabilities are left
+out here only because the platform is closed, never because they would not fit. This
 section records what is possible, in three tiers, so a later milestone can start from it.
 **No milestone is planned for Apple phones and tablets**: they stay last in
 [ADR 0033](../adr/0033-supported-platforms.md) and are off the roadmap until the project

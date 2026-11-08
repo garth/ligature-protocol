@@ -97,6 +97,8 @@ What this milestone pins:
    bundle is ad hoc signed (LP-94) and its releases are signed with minisign, not by Apple
    (ADR 0042). So the Mac shares and shows a camera but advertises no `presents`, and the guide
    says why; a Developer ID signature is a project decision for later, named in section 7.
+   The limit is Apple's: a person may not add a camera to the programs on their own Mac
+   without Apple's signature on the software, and the guide says so in those terms.
    Android has no virtual camera for other apps without root, so the phone shares and shows
    and never presents. The platform notes name both.
 7. **Consent and indicators.** Android asks for the camera and microphone permissions once,

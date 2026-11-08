@@ -10,6 +10,9 @@ release workflow publishes the section as the release notes with the installers.
 
 ### Added
 
+- `lpctl caps` names each connected device, as `lpctl status` does, instead of heading it with
+  its key alone (LP-172).
+
 - Every `lpctl` listing ends with the commands that act on what it shows, each with what it
   does: `status`, `devices`, `input layout`, `input status`, `screen status`, `files offers`,
   `files transfers` and `permissions`. `lpctl pair` on a device that already has its keys says

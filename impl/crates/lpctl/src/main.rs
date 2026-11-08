@@ -821,8 +821,14 @@ async fn run(options: &Options, locations: &Locations) -> Result<(), Error> {
             if caps.peers.is_empty() {
                 println!("no connected peers");
             }
+            let known: Devices = client.request(Request::new(types::DEVICES, 1)).await?;
             for p in caps.peers {
-                println!("{} ({}…) offers:", p.peer, p.peer.fingerprint());
+                let name = known
+                    .devices
+                    .iter()
+                    .find(|d| d.key == p.peer)
+                    .and_then(|d| d.display_name.as_deref());
+                println!("{}", caps_heading(name, &p.peer));
                 if p.capabilities.is_empty() {
                     println!("  (nothing)");
                 }
@@ -838,6 +844,15 @@ async fn run(options: &Options, locations: &Locations) -> Result<(), Error> {
         }
     }
     Ok(())
+}
+
+/// A peer's heading in `lpctl caps`: its name and fingerprint, or its key
+/// when it has no name.
+fn caps_heading(name: Option<&str>, key: &PublicKey) -> String {
+    match name {
+        Some(name) => format!("{name} ({}…) offers:", key.fingerprint()),
+        None => format!("{key} ({}…) offers:", key.fingerprint()),
+    }
 }
 
 /// `lpctl input`.
@@ -1400,6 +1415,18 @@ fn directions(d: &lp_core::capability::Descriptor) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_peer_in_caps_is_headed_by_its_name() {
+        let key: PublicKey = "z6MktXkoADzaQgSWxx6t4GMKmdB6GyBAe6vvyaLmYFpatQqU"
+            .parse()
+            .unwrap();
+        let named = caps_heading(Some("Garths-MacBook-Pro"), &key);
+        assert!(named.starts_with("Garths-MacBook-Pro ("), "{named}");
+        assert!(named.ends_with("offers:"));
+        assert!(!named.contains("z6Mk"));
+        assert!(caps_heading(None, &key).starts_with("z6MktXko"));
+    }
 
     #[test]
     fn each_permission_opens_its_own_page() {

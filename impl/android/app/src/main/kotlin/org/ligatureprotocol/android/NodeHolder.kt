@@ -385,11 +385,28 @@ object NodeHolder : Host {
      * and sends it. A send nobody asked for ([automatic]) passes over what the
      * copying app marked sensitive, such as a password manager's copy.
      */
-    fun readAndSend(context: Context, automatic: Boolean = false, onDone: (Int?) -> Unit = {}) {
-        val n = node ?: return onDone(0)
+    fun readAndSend(context: Context, automatic: Boolean = false, onDone: (Int?) -> Unit = {}): Boolean {
+        val n = node ?: run {
+            onDone(0)
+            return false
+        }
+        // A clip read before is not read again by itself: Android stamps each
+        // clip when it is set, and a read for a copy may find the same one.
+        val stamp = runCatching {
+            context.getSystemService(ClipboardManager::class.java).primaryClipDescription?.timestamp
+        }.getOrNull()
+        if (automatic && stamp != null && stamp == lastClipStamp) {
+            Log.d(TAG, "clipboard read: unchanged, automatic=true")
+            onDone(null)
+            return false
+        }
+        if (stamp != null) lastClipStamp = stamp
         val clip = readClip(context, skipSensitive = automatic)
         Log.d(TAG, "clipboard read: ${if (clip == null) "nothing" else "a clip"}, automatic=$automatic")
-        if (clip == null) return onDone(null)
+        if (clip == null) {
+            onDone(null)
+            return stamp != null
+        }
         async {
             val read = openClip(context, clip)
             if (read == null) {
@@ -407,7 +424,12 @@ object NodeHolder : Host {
             refresh()
             onDone(runCatching { n.status().clipboardPeers.size }.getOrDefault(0))
         }
+        return true
     }
+
+    /** When the clip last read here was set, by Android's stamp on it. */
+    @Volatile
+    private var lastClipStamp = 0L
 
     /** Asks every connected device for its clipboard (**Receive now**); [onDone] gets how many. */
     fun requestClipboard(onDone: (Int) -> Unit) = async {

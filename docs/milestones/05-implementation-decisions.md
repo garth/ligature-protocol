@@ -190,3 +190,13 @@ callback and removes it afterwards, since removing it inside the callback crashe
 `ViewRootImpl`. `ClipEchoGuard` tells a change the node made from the user's, as neither the
 listener nor the indicator can say, and a read this path makes passes over what is marked
 `EXTRA_IS_SENSITIVE`, where a read the user asked for does not.
+
+A copy while the indicator is still up raises no event at all (seen on Android 15 and 17), and
+the indicator sometimes carries one text item. So the indicator test takes none or one, with no
+content change type, which leaves out the shade's closing event (one item, a pane that
+disappears). Each read for a copy is followed by another once the indicator would have gone (its
+six seconds through `getRecommendedTimeoutMillis`, and a second), and that by another while each
+finds a clip with a new `ClipDescription` timestamp, up to twenty; a read that finds the same
+stamp looks only at the description, which Android shows no toast for. A driven Control+C or
+Control+X starts the same read 300 ms after the key, without waiting for the indicator; that
+path has not yet run on a device.

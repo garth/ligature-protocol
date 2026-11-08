@@ -166,9 +166,12 @@ protocol of its own. LineageOS is the first target (no Google services, sideload
   has the accessibility service on, which sees SystemUI's clipboard indicator appear (the
   listener does not fire for an unfocused app, as LineageOS 24 on Android 17 confirmed), adds
   an invisible window to take the focus for a moment, reads and sends. Android shows its own
-  toast for each such read. A second copy while the indicator is still up, about six seconds,
-  makes no new event and waits for the next, and a clip the copying app marked sensitive is
-  passed over. Or on the user's request,
+  toast for the first read of each clip. A second copy while the indicator is still up, about
+  six seconds, makes no new event, so the service reads again once it would have gone and
+  keeps doing so while each read finds a new clip, by the timestamp Android puts on it; a
+  clip the copying app marked sensitive is passed over. The indicator's event carries no text
+  or one item, where the notification shade's and quick settings' carry many, and their
+  closing one is a pane that disappears. Or on the user's request,
   from a quick-settings tile, a notification action, the app's own screen or the share
   sheet, each of which gives the app a moment of focus or hands it the text directly. The
   capability is advertised in both cases: what differs is when a `set` goes out, not

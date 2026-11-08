@@ -50,10 +50,12 @@ has the steps, and the same switch lets your devices control the phone). Ligatur
 for the system's copy indicator, takes the focus for a moment, and sends. Android sets a few
 limits on this:
 
-- Android shows **Ligature pasted from your clipboard** each time, since it tells you about
-  every read. Nothing else on the screen changes, and an open keyboard stays open.
-- A second copy within about six seconds of the first, while the system's indicator is still up,
-  is not noticed, so tap **Send clipboard** for that one.
+- Android shows **Ligature pasted from your clipboard** once for each thing you copy, since it
+  tells you about every read. Nothing else on the screen changes, and an open keyboard stays
+  open.
+- A copy made while the system's indicator from the last one is still up gives no sign, so
+  Ligature looks again once the indicator has gone. That copy arrives about seven seconds
+  late.
 - What the copying app marks as sensitive, as a password manager should, is not sent by itself.
 
 Without that switch, sending is on your request. Any of these sends what is on the clipboard:

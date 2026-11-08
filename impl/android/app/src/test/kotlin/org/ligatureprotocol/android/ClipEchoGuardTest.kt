@@ -40,22 +40,77 @@ class CopyIndicatorTest {
     private val stateChanged = 32
     private val frame = "android.widget.FrameLayout"
     private val systemUi = "com.android.systemui"
+    private val paneDisappeared = 32
 
     @Test
     fun systemUisEmptyFrameIsTheIndicator() {
-        assertTrue(DriveService.isCopyIndicator(stateChanged, systemUi, frame, 0))
+        assertTrue(DriveService.isCopyIndicator(stateChanged, systemUi, frame, 0, 0))
+    }
+
+    @Test
+    fun theIndicatorMayCarryOneText() {
+        // Seen on Android 15: the same copy indicator with one text item.
+        assertTrue(DriveService.isCopyIndicator(stateChanged, systemUi, frame, 1, 0))
     }
 
     @Test
     fun theShadeIsTheSameWindowWithText() {
-        assertFalse(DriveService.isCopyIndicator(stateChanged, systemUi, frame, 7))
+        assertFalse(DriveService.isCopyIndicator(stateChanged, systemUi, frame, 7, 0))
+    }
+
+    @Test
+    fun theShadeClosingIsAPaneDisappearing() {
+        assertFalse(DriveService.isCopyIndicator(stateChanged, systemUi, frame, 1, paneDisappeared))
     }
 
     @Test
     fun nothingElseIs() {
-        assertFalse(DriveService.isCopyIndicator(stateChanged, "com.example", frame, 0))
-        assertFalse(DriveService.isCopyIndicator(stateChanged, systemUi, "android.app.Dialog", 0))
-        assertFalse(DriveService.isCopyIndicator(2048, systemUi, frame, 0))
-        assertFalse(DriveService.isCopyIndicator(stateChanged, null, null, 0))
+        assertFalse(DriveService.isCopyIndicator(stateChanged, "com.example", frame, 0, 0))
+        assertFalse(DriveService.isCopyIndicator(stateChanged, systemUi, "android.app.Dialog", 0, 0))
+        assertFalse(DriveService.isCopyIndicator(2048, systemUi, frame, 0, 0))
+        assertFalse(DriveService.isCopyIndicator(stateChanged, null, null, 0, 0))
+    }
+}
+
+class CopyFollowUpTest {
+    @Test
+    fun theIndicatorsReadIsAlwaysFollowedUp() {
+        // A copy while the indicator is up raises no event: read again later.
+        assertTrue(DriveService.followsUp(changed = false, done = 0))
+        assertTrue(DriveService.followsUp(changed = true, done = 0))
+    }
+
+    @Test
+    fun aFollowUpThatFoundSomethingNewIsFollowedUpAgain() {
+        assertTrue(DriveService.followsUp(changed = true, done = 1))
+        assertFalse(DriveService.followsUp(changed = false, done = 1))
+    }
+
+    @Test
+    fun theChainEnds() {
+        assertFalse(DriveService.followsUp(changed = true, done = DriveService.MAX_FOLLOW_UPS))
+    }
+}
+
+class CopyShortcutTest {
+    private fun key(c: String, control: Boolean = true, alt: Boolean = false) =
+        org.ligatureprotocol.core.DriveAction.Key(
+            org.ligatureprotocol.core.DriveKey.Char(c),
+            shift = false,
+            control = control,
+            alt = alt,
+        )
+
+    @Test
+    fun controlCAndXCopy() {
+        assertTrue(DriveService.copies(key("c")))
+        assertTrue(DriveService.copies(key("X")))
+    }
+
+    @Test
+    fun otherKeysDoNot() {
+        assertFalse(DriveService.copies(key("v")))
+        assertFalse(DriveService.copies(key("c", control = false)))
+        assertFalse(DriveService.copies(key("c", alt = true)))
     }
 }

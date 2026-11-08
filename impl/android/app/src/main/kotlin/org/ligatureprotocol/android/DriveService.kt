@@ -17,6 +17,7 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityManager
 import org.ligatureprotocol.core.DriveAction
 import org.ligatureprotocol.core.DriveKey
 
@@ -53,7 +54,13 @@ class DriveService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null ||
-            !isCopyIndicator(event.eventType, event.packageName, event.className, event.text.size)
+            !isCopyIndicator(
+                event.eventType,
+                event.packageName,
+                event.className,
+                event.text.size,
+                event.contentChangeTypes,
+            )
         ) {
             return
         }
@@ -63,10 +70,38 @@ class DriveService : AccessibilityService() {
             Log.d("ligature", "the copy indicator, for a clip the node set")
             return
         }
-        lastCopyRead = now
         Log.d("ligature", "the copy indicator: reading the clipboard")
-        ClipboardFocus.read(this) { NodeHolder.readAndSend(this, automatic = true) }
+        readForCopy()
     }
+
+    /**
+     * Reads the clipboard for a copy just seen, then again once the indicator
+     * would have gone: a copy while it is up raises no event, so a read that
+     * finds something new is followed by another, until one finds nothing.
+     */
+    private fun readForCopy(followUp: Int = 0) {
+        main.removeCallbacks(followUpRead)
+        followUps = followUp
+        lastCopyRead = SystemClock.uptimeMillis()
+        ClipboardFocus.read(this) {
+            val changed = NodeHolder.readAndSend(this, automatic = true)
+            if (followsUp(changed, followUps)) main.postDelayed(followUpRead, indicatorLifetimeMs())
+        }
+    }
+
+    private val followUpRead = Runnable {
+        Log.d("ligature", "reading the clipboard again, for a copy the indicator hid")
+        readForCopy(followUps + 1)
+    }
+
+    private var followUps = 0
+
+    /** How long SystemUI keeps its indicator up after the last copy, and a margin. */
+    private fun indicatorLifetimeMs(): Long =
+        getSystemService(AccessibilityManager::class.java).getRecommendedTimeoutMillis(
+            INDICATOR_MS,
+            AccessibilityManager.FLAG_CONTENT_TEXT or AccessibilityManager.FLAG_CONTENT_CONTROLS,
+        ).toLong() + INDICATOR_MARGIN_MS
 
     override fun onInterrupt() = Unit
 
@@ -84,7 +119,15 @@ class DriveService : AccessibilityService() {
             is DriveAction.Back -> performGlobalAction(GLOBAL_ACTION_BACK)
             is DriveAction.Home -> performGlobalAction(GLOBAL_ACTION_HOME)
             is DriveAction.Text -> commit(action.text)
-            is DriveAction.Key -> press(action)
+            is DriveAction.Key -> {
+                press(action)
+                // The app copies when it handles the key: read once it has,
+                // whatever the indicator does.
+                if (copies(action)) {
+                    lastCopyRead = SystemClock.uptimeMillis() + SHORTCUT_SETTLE_MS
+                    main.postDelayed({ readForCopy() }, SHORTCUT_SETTLE_MS)
+                }
+            }
             is DriveAction.TouchDown -> gesture(action, action.x, action.y)
             is DriveAction.TouchMove -> gesture(action, action.x, action.y)
             is DriveAction.TouchUp -> gesture(action, action.x, action.y)
@@ -242,24 +285,51 @@ class DriveService : AccessibilityService() {
         private const val SWIPE_MS = 200L
         private const val POINTER_DP = 20
         private const val COPY_DEBOUNCE_MS = 500L
+
+        /** SystemUI's clipboard indicator stays up this long after a copy. */
+        private const val INDICATOR_MS = 6_000
+        private const val INDICATOR_MARGIN_MS = 1_000L
+
+        /** Time for an app to copy after a driven Control+C. */
+        private const val SHORTCUT_SETTLE_MS = 300L
+
+        /** Follow-up reads in one run of copies, at most. */
+        const val MAX_FOLLOW_UPS = 20
         private const val SYSTEM_UI = "com.android.systemui"
 
         /**
          * Whether this event is SystemUI showing its clipboard indicator. Android
          * tells an app out of focus nothing else of a copy: its listener does not
-         * fire. The notification shade is the same kind of window but carries
-         * text, of which only the count is looked at.
+         * fire. The indicator carries no text or one item; the notification shade
+         * and quick settings are the same kind of window, opening with many and
+         * closing with one as a pane that disappears. Only the count is looked at.
          */
         internal fun isCopyIndicator(
             type: Int,
             packageName: CharSequence?,
             className: CharSequence?,
             texts: Int,
+            contentChangeTypes: Int,
         ): Boolean =
             type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
                 packageName?.toString() == SYSTEM_UI &&
                 className?.toString() == "android.widget.FrameLayout" &&
-                texts == 0
+                texts <= 1 &&
+                contentChangeTypes == 0
+
+        /**
+         * Whether a read for a copy is followed by another: the first always, in
+         * case more was copied while the indicator was up, and after that only
+         * while each finds something new.
+         */
+        internal fun followsUp(changed: Boolean, done: Int): Boolean =
+            done == 0 || (changed && done < MAX_FOLLOW_UPS)
+
+        /** Whether a driven key copies: Control+C or Control+X. */
+        internal fun copies(action: DriveAction.Key): Boolean {
+            val key = action.key as? DriveKey.Char ?: return false
+            return action.control && !action.alt && key.text.lowercase() in setOf("c", "x")
+        }
 
         @Volatile
         private var current: DriveService? = null

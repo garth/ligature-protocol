@@ -10,7 +10,10 @@ use std::time::Duration;
 use ligatured::daemon::Daemon;
 use ligatured::input::{Change, FakeCapture, FakeInject, InputSync};
 use lp_core::facts::Role;
-use lp_core::input::{BTN_LEFT, Edge, Enter, INPUT_TYPE, InputEvent, KEY_LEFTCTRL, KEY_RIGHTCTRL};
+use lp_core::input::{
+    BTN_LEFT, Edge, Enter, INPUT_TYPE, InputEvent, KEY_LEFTALT, KEY_LEFTCTRL, KEY_RIGHTALT,
+    KEY_RIGHTCTRL,
+};
 use lp_core::paths::Locations;
 use lp_core::wire::Timestamp;
 use lp_identity::cross_signing::PersonKeys;
@@ -312,6 +315,22 @@ async fn the_release_chord_gives_the_input_back() {
     until("b is driven", || b.sync.driven_by().is_some()).await;
     a.capture.feed(InputEvent::key(KEY_LEFTCTRL, true));
     a.capture.feed(InputEvent::key(KEY_RIGHTCTRL, true));
+    until("a let go", || !a.sync.is_driving()).await;
+    until("b lifted everything", || b.inject.ends() == 1).await;
+    assert_eq!(a.capture.releases(), vec![None]);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn both_alt_keys_give_the_input_back_too() {
+    // A MacBook's keyboard has one Control key but an Option on each side.
+    let (a, b, _c, _c_dir) = three().await;
+    a.sync
+        .set_edge(Edge::Left, *b.daemon.binding().public())
+        .unwrap();
+    a.capture.hit_edge(Edge::Left, 0.5);
+    until("b is driven", || b.sync.driven_by().is_some()).await;
+    a.capture.feed(InputEvent::key(KEY_LEFTALT, true));
+    a.capture.feed(InputEvent::key(KEY_RIGHTALT, true));
     until("a let go", || !a.sync.is_driving()).await;
     until("b lifted everything", || b.inject.ends() == 1).await;
     assert_eq!(a.capture.releases(), vec![None]);

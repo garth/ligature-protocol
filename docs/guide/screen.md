@@ -16,7 +16,7 @@ picture scaled to fit. **Click the picture** to drive the device: the pointer fo
 over the picture, and your buttons, scroll wheel and keyboard go there. Your keys type what
 your own keyboard says, as when driving across an edge
 ([Keyboard and mouse](input.md#what-your-keys-type)). To take them back, press **both Control
-keys**, or move to another window. Closing the window ends the share.
+keys** or **both Alt keys**, or move to another window. Closing the window ends the share.
 
 | Option | What it does |
 | --- | --- |

@@ -191,7 +191,8 @@ enum InputAction {
     },
     /// What this device advertises, drives and is driven by, with the round trip.
     Status,
-    /// Give the input back: end the drive this device runs.
+    /// Give the input back: end the drive this device runs, as pressing both
+    /// Control keys or both Alt (Option) keys together does.
     Release,
 }
 
@@ -506,7 +507,10 @@ fn layout_next_steps(edges: usize) -> String {
 fn input_status_next_steps(driving: bool) -> String {
     let mut steps = Vec::new();
     if driving {
-        steps.push(("lpctl input release", "gives the input back to this device"));
+        steps.push((
+            "lpctl input release",
+            "gives the input back to this device, as both Control or both Alt keys do",
+        ));
     }
     steps.push((
         "lpctl input layout",

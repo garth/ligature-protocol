@@ -11,7 +11,8 @@
 //! (`enter`, `ready`, `leave`), batches captured events per frame, scales
 //! motion by the two screens' widths, tracks the driven pointer's position to
 //! know when it reaches its entry edge, lifts everything on every way a drive
-//! ends, honours the release chord (both Control keys) and measures the round
+//! ends, honours the release chord (both Control keys, or both Alt keys for a
+//! keyboard with one Control key, as a MacBook's) and measures the round
 //! trip through `seq` and `injected`. A drive is one stream opened by the
 //! controller; the stream's end is a release.
 
@@ -20,8 +21,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use lp_core::input::{
-    Edge, Enter, Events, INPUT_TYPE, Injected, InputEvent, InputMessage, InputParams, KEY_LEFTCTRL,
-    KEY_RIGHTCTRL, Leave, Ready, Region, input_descriptor,
+    Edge, Enter, Events, INPUT_TYPE, Injected, InputEvent, InputMessage, InputParams, KEY_LEFTALT,
+    KEY_LEFTCTRL, KEY_RIGHTALT, KEY_RIGHTCTRL, Leave, Ready, Region, input_descriptor,
 };
 use lp_core::{Error, PublicKey};
 use lp_identity::trust::Recognition;
@@ -533,8 +534,7 @@ impl InputSync {
                         } else {
                             drive.held.remove(&code);
                         }
-                        if drive.held.contains(&KEY_LEFTCTRL) && drive.held.contains(&KEY_RIGHTCTRL)
-                        {
+                        if is_release_chord(&drive.held) {
                             chord = true;
                         }
                         InputEvent::Key {
@@ -1254,6 +1254,13 @@ impl Inject for FakeInject {
     fn end(&self) {
         *lock(&self.ends) += 1;
     }
+}
+
+/// Whether the keys held make the release chord: both Control keys, or both
+/// Alt keys, since a MacBook's keyboard has a Control key on one side only.
+fn is_release_chord(held: &HashSet<u16>) -> bool {
+    (held.contains(&KEY_LEFTCTRL) && held.contains(&KEY_RIGHTCTRL))
+        || (held.contains(&KEY_LEFTALT) && held.contains(&KEY_RIGHTALT))
 }
 
 #[cfg(test)]

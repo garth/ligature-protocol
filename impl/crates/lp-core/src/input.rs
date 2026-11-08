@@ -23,6 +23,10 @@ pub const INPUT_TYPE: &str = "org.ligatureprotocol.capability.input";
 pub const KEY_LEFTCTRL: u16 = 29;
 /// The evdev code of the right Control key.
 pub const KEY_RIGHTCTRL: u16 = 97;
+/// The evdev code of the left Alt key (Option on a Mac).
+pub const KEY_LEFTALT: u16 = 56;
+/// The evdev code of the right Alt key (right Option on a Mac, AltGr's position).
+pub const KEY_RIGHTALT: u16 = 100;
 /// The evdev code of the left mouse button.
 pub const BTN_LEFT: u16 = 272;
 /// The evdev code of the right mouse button.

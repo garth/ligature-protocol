@@ -15,6 +15,9 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- A dark screen gives a viewer no picture and takes no touch. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Since Android 14 a wake lock lights the screen only with this, which
+         the user can take back under Special app access, Turn screen on. -->
+    <uses-permission android:name="android.permission.TURN_SCREEN_ON" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Signature-level: granted only to a build signed with the platform key

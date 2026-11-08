@@ -17,8 +17,8 @@ release workflow publishes the section as the release notes with the installers.
 - The phone can be driven from your other devices, once you turn Ligature on under
   Accessibility: a pointer on the screen, clicks as taps, the right button for Back and the
   middle for Home, the wheel to scroll, and typing into the field in focus. A request to watch
-  its screen then opens Android's dialog at once instead of a notification, and the screen
-  wakes for either (LP-167).
+  its screen then opens Android's dialog at once instead of a notification, the screen wakes
+  for either, and a request nobody answers within a minute closes its dialog (LP-167).
 
 - The phone's node never needs the app opened: it starts by itself after an update as it does
   at boot, a failed start is tried again until it succeeds, and its notification can be

@@ -215,7 +215,10 @@ protocol of its own. LineageOS is the first target (no Google services, sideload
   entire screen. An app in the background may not open the dialog, so a viewer's request
   becomes a notification whose tap opens it, unless the user has the accessibility service
   on, which lifts that limit: then the dialog opens at once and the screen wakes for it. The
-  service never answers the dialog. The capture runs in a foreground service of
+  service never answers the dialog. On a locked phone the dialog first sends the keyguard to
+  its PIN, pattern or password, a secure window a viewer cannot see. A wake lock lights the
+  screen from the background only with `TURN_SCREEN_ON` on Android 14 and later (Android 17
+  still lets it through without, and logs it). The capture runs in a foreground service of
   the media projection type while Android shows its cast indicator, and `MediaCodec`
   encodes it; stopping the cast from the system ends the share with `consent`. A shared
   desktop is decoded by `MediaCodec` into a surface on the app's watch screen, where touch

@@ -23,8 +23,6 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
-import androidx.activity.ComponentActivity
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 
 /**
@@ -106,6 +104,7 @@ object ScreenShare {
     fun clearRequest(context: Context) {
         ScreenWake.release(WAKE_CONSENT)
         pending = null
+        ScreenConsentActivity.withdraw()
         context.getSystemService(NotificationManager::class.java).cancel(REQUEST_NOTIFICATION)
     }
 
@@ -131,21 +130,12 @@ object ScreenShare {
 
 /**
  * Transparent: opens the media projection dialog for the pending request and
- * starts the service on consent, or tells the node the user said no.
+ * starts the service on consent, or tells the node the user said no. A plain
+ * [Activity], so the dialog has a request code of its own and is closed with
+ * [withdraw] when the request ends unanswered.
  */
-class ScreenConsentActivity : ComponentActivity() {
+class ScreenConsentActivity : Activity() {
     private lateinit var request: ScreenShare.Request
-
-    private val consent = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        val data = result.data
-        if (result.resultCode == Activity.RESULT_OK && data != null) {
-            ScreenShareService.start(this, request, result.resultCode, data)
-        } else {
-            ScreenShare.log("the user did not consent")
-            NodeHolder.screenShareAnswered(false)
-        }
-        finish()
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -155,8 +145,49 @@ class ScreenConsentActivity : ComponentActivity() {
             return
         }
         request = r
+        current = this
         val manager = getSystemService(MediaProjectionManager::class.java)
-        consent.launch(manager.createScreenCaptureIntent())
+        startActivityForResult(manager.createScreenCaptureIntent(), CONSENT)
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != CONSENT) return
+        if (withdrawn) {
+            ScreenShare.log("an answer after the request ended, ignored")
+        } else if (resultCode == RESULT_OK && data != null) {
+            ScreenShareService.start(this, request, resultCode, data)
+        } else {
+            ScreenShare.log("the user did not consent")
+            NodeHolder.screenShareAnswered(false)
+        }
+        finish()
+    }
+
+    override fun onDestroy() {
+        if (current === this) current = null
+        super.onDestroy()
+    }
+
+    private var withdrawn = false
+
+    companion object {
+        private const val CONSENT = 1
+
+        @Volatile
+        private var current: ScreenConsentActivity? = null
+
+        /** The request ended unanswered: close Android's dialog and this. */
+        fun withdraw() {
+            val activity = current ?: return
+            activity.runOnUiThread {
+                if (activity.isFinishing) return@runOnUiThread
+                ScreenShare.log("the request ended; closing the dialog")
+                activity.withdrawn = true
+                activity.finishActivity(CONSENT)
+                activity.finish()
+            }
+        }
     }
 }
 

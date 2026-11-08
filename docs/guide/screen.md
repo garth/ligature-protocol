@@ -69,8 +69,11 @@ again of the network, so on a slow link `--chroma 4:2:0` asks for the lighter on
   request shows as a notification, **Tap to choose whether to share it**, or straight away as
   Android's dialog while the app is open or Ligature is on under Accessibility
   ([Driving the phone](input.md#driving-the-phone)). Someone must answer it at the phone,
-  because Ligature never presses it for you. While the screen is shared, the notification's
-  **Stop sharing** ends it.
+  because Ligature never presses it for you. Choose **Share entire screen**, since Android
+  offers one app first. If the phone is locked, Android asks for its PIN, pattern or
+  password before the dialog, and that screen cannot be seen from the viewer. A request
+  nobody answers within a minute is withdrawn and the dialog closes. While the screen is
+  shared, the notification's **Stop sharing** ends it.
 
 ## Watching a desktop from the phone
 

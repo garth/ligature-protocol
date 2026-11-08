@@ -1104,6 +1104,11 @@ fn the_phone_watches_a_desktop_and_shares_its_own_screen() {
     phone.screen_share_started(false);
     let err = runtime.block_on(refused).unwrap().unwrap_err();
     assert!(err.to_string().contains("consent"), "{err}");
+    // A request that ends unanswered or refused is withdrawn from the app, so
+    // Android's dialog does not outlive the viewer who asked.
+    until("the app was told the request is over", || {
+        *phone_host.share_stops.lock().unwrap() == 2
+    });
 
     phone.stop();
     desktop.shutdown();

@@ -323,7 +323,8 @@ pub trait Host: Send + Sync {
     /// `height` at `frame_rate`: ask the user (the media projection dialog),
     /// then answer with [`node::Node::screen_share_started`].
     fn screen_share_requested(&self, viewer: String, width: u32, height: u32, frame_rate: u32);
-    /// The share of this phone's screen ends: stop the projection.
+    /// The share of this phone's screen, or the request for one, ends:
+    /// stop the projection and withdraw anything still asking the user.
     fn screen_share_stop(&self);
     /// The viewer wants a keyframe now.
     fn screen_share_keyframe(&self);

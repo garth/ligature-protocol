@@ -19,7 +19,8 @@ use ligatured::screen::{Capture, Captured, EncodedFrame, Settings, Share, ShareC
 
 use crate::SharedHost;
 
-/// How long the user has to answer the projection dialog.
+/// How long the user has to answer the projection dialog; the app is then
+/// told to stop asking.
 const CONSENT_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Default)]
@@ -142,6 +143,10 @@ impl Capture for HostScreen {
         let ok = rx.recv_timeout(CONSENT_TIMEOUT).unwrap_or(false);
         lock(&self.state).starting = None;
         if !ok {
+            // Unanswered or refused: the app withdraws whatever still asks,
+            // Android's dialog included, so nobody consents after the viewer
+            // has gone.
+            self.host.screen_share_stop();
             return Err(RefuseReason::Consent);
         }
         let (frames_tx, frames) = mpsc::unbounded_channel();

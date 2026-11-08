@@ -198,5 +198,4 @@ disappears). Each read for a copy is followed by another once the indicator woul
 six seconds through `getRecommendedTimeoutMillis`, and a second), and that by another while each
 finds a clip with a new `ClipDescription` timestamp, up to twenty; a read that finds the same
 stamp looks only at the description, which Android shows no toast for. A driven Control+C or
-Control+X starts the same read 300 ms after the key, without waiting for the indicator; that
-path has not yet run on a device.
+Control+X starts the same read 300 ms after the key, without waiting for the indicator.

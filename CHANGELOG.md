@@ -11,7 +11,8 @@ release workflow publishes the section as the release notes with the installers.
 ### Added
 
 - What you copy on the phone is sent by itself once you turn Ligature on under Accessibility,
-  on any ROM, including a second copy made within seconds of the first. Android shows a toast
+  on any ROM, including a second copy made within seconds of the first and one made with
+  Control+C while driving the phone, which arrives at once. Android shows a toast
   for each new clip read, and a clip the copying app marks as sensitive is not sent this way
   (LP-166).
 

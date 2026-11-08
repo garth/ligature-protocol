@@ -87,7 +87,8 @@ Then the phone is a device you can drive, from `lpview` or across an edge like a
 - the right button is Back and the middle button is Home; Escape is Back as well;
 - the wheel scrolls, as a swipe;
 - typing goes to the text field in focus, so click into a field first, and Control or Command
-  shortcuts such as select all work there.
+  shortcuts such as select all work there. What you copy or cut with them reaches your
+  devices' clipboards straight away, and paste pastes what you last copied on any of them.
 
 Android sets some limits on this. Keys reach a text field and nothing else, so an app's own
 keyboard shortcuts outside a field do nothing, and typing needs Android 13. Holding a key does

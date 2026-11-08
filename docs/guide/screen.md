@@ -66,7 +66,9 @@ lighter one.
 - **Linux** shows its screen-sharing picker the first time a device asks to watch. It
   remembers your choice, so later shares start without asking. While a share runs, a
   notification "Sharing *display* with *device*" stays up, and its **Stop sharing** button
-  ends the share.
+  ends the share. That notification is the only sign on Linux that the screen is shared,
+  since the compositor shows none, so a share does not start when it cannot be shown, and
+  closing it brings it back; **Stop sharing** is the way to end the share.
 - **The Mac** asks once for permission to record the screen, and refuses that first share;
   once you allow it, the daemon restarts by itself and the next share works
   ([Install](install.md#macos) has the steps). While a share runs, macOS shows its own

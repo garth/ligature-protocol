@@ -807,6 +807,38 @@ impl Capture for LinuxScreen {
     fn start(&self, settings: &Settings) -> Result<Share, RefuseReason> {
         let probe = lock(&self.probe).clone();
         let encoder = probe.encoder.ok_or(RefuseReason::NoEncoder)?;
+        // The sharing notification first: a share never runs unseen, and on
+        // Linux, where the compositor shows no indicator, the notification is
+        // the only sign, so a share that cannot show it does not start
+        // (LP-187). Its Stop action and its closing are watched for the
+        // share's life; a failure before the share is running closes it.
+        let (frames_tx, frames) = mpsc::unbounded_channel::<Captured>();
+        let notification = Arc::new(Mutex::new(None::<u32>));
+        let (posted_tx, posted_rx) = tokio::sync::oneshot::channel::<zbus::Result<u32>>();
+        {
+            let frames_tx = frames_tx.clone();
+            let notification = notification.clone();
+            let summary = format!("Sharing {} with {}", settings.display, settings.viewer);
+            self.handle.spawn(async move {
+                sharing_notification(&summary, notification, frames_tx, posted_tx).await;
+            });
+        }
+        match posted_rx.blocking_recv() {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => {
+                tracing::warn!(%e, "cannot show the sharing notification; refusing the share");
+                return Err(RefuseReason::Consent);
+            }
+            Err(_) => {
+                tracing::warn!("the sharing notification was not posted; refusing the share");
+                return Err(RefuseReason::Consent);
+            }
+        }
+        let mut notice = NotificationGuard {
+            slot: notification.clone(),
+            handle: self.handle.clone(),
+            armed: true,
+        };
         let Producer {
             child: mut producer,
             input,
@@ -817,7 +849,6 @@ impl Capture for LinuxScreen {
         } else {
             self.producer_screencopy(settings)?
         };
-        let (frames_tx, frames) = mpsc::unbounded_channel::<Captured>();
         // The encoded stream, split into frames, and when it last moved.
         let last = Arc::new(Mutex::new(Instant::now()));
         let live = LiveEncoder::start(
@@ -883,19 +914,7 @@ impl Capture for LinuxScreen {
                 .map_err(|_| RefuseReason::NoEncoder)?;
         }
 
-        // The sharing notification and its Stop action, and the portal
-        // session's end, which is the platform withdrawing consent.
-        let notification = Arc::new(Mutex::new(None::<u32>));
-        {
-            let frames_tx = frames_tx.clone();
-            let notification = notification.clone();
-            let summary = format!("Sharing {} with {}", settings.display, settings.viewer);
-            self.handle.spawn(async move {
-                if let Err(e) = sharing_notification(&summary, notification, frames_tx).await {
-                    tracing::warn!(%e, "cannot show the sharing notification");
-                }
-            });
-        }
+        // The portal session's end is the platform withdrawing consent.
         let portal_session = lock(&running).portal.clone();
         if let Some(p) = portal_session {
             let session_closed = {
@@ -948,11 +967,31 @@ impl Capture for LinuxScreen {
             });
         }
 
+        // Running: the stop path closes the notification from here on.
+        notice.armed = false;
         Ok(Share {
             frames,
             control,
             region,
         })
+    }
+}
+
+/// Closes the sharing notification if the share it was posted for never
+/// started.
+struct NotificationGuard {
+    slot: Arc<Mutex<Option<u32>>>,
+    handle: tokio::runtime::Handle,
+    armed: bool,
+}
+
+impl Drop for NotificationGuard {
+    fn drop(&mut self) {
+        if self.armed
+            && let Some(id) = lock(&self.slot).take()
+        {
+            self.handle.spawn(close_notification(id));
+        }
     }
 }
 
@@ -979,52 +1018,115 @@ trait SharingNotifications {
 
     #[zbus(signal)]
     fn action_invoked(&self, id: u32, action_key: String) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    fn notification_closed(&self, id: u32, reason: u32) -> zbus::Result<()>;
 }
 
 /// The action key of the notification's Stop button.
 const STOP_ACTION: &str = "stop";
 
+/// How long the notification server has to show the notification.
+const NOTIFY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Posts the sharing notification, reports the result on `posted`, and then
+/// watches it for the share's life: its Stop action ends the share, and its
+/// closing, by anyone but this daemon's own stop, shows it again, the share
+/// ending for `consent` when it cannot be (LP-187).
 async fn sharing_notification(
     summary: &str,
     slot: Arc<Mutex<Option<u32>>>,
     frames: mpsc::UnboundedSender<Captured>,
-) -> zbus::Result<()> {
+    posted: tokio::sync::oneshot::Sender<zbus::Result<u32>>,
+) {
     use futures_util::StreamExt as _;
-    let conn = zbus::Connection::session().await?;
-    let proxy = SharingNotificationsProxy::new(&conn).await?;
-    let mut actions = proxy.receive_action_invoked().await?;
-    let mut hints: HashMap<&str, zbus::Variant<'_>> = HashMap::new();
-    // Marked as the daemon's own, so the notifications monitor never sends
-    // it to the person's other devices.
-    hints.insert("x-ligature-origin", zbus::Variant::from("local"));
-    hints.insert("resident", zbus::Variant::from(true));
-    let id = proxy
-        .notify(
-            "Ligature",
-            0,
-            "video-display",
-            summary,
-            "Your screen is being shown on another of your devices.",
-            &[STOP_ACTION, "Stop sharing"],
-            hints,
-            0,
-        )
-        .await?;
+    let opened = async {
+        let conn = zbus::Connection::session().await?;
+        let proxy = SharingNotificationsProxy::new(&conn).await?;
+        let actions = proxy.receive_action_invoked().await?;
+        let closed = proxy.receive_notification_closed().await?;
+        let id = post_sharing_notification(&proxy, summary).await?;
+        Ok::<_, zbus::Error>((proxy, actions, closed, id))
+    }
+    .await;
+    let (proxy, mut actions, mut closed, mut id) = match opened {
+        Ok(opened) => opened,
+        Err(e) => {
+            let _ = posted.send(Err(e));
+            return;
+        }
+    };
     *lock(&slot) = Some(id);
-    while let Some(signal) = actions.next().await {
-        if let Ok(args) = signal.args()
-            && args.id == id
-            && args.action_key == STOP_ACTION
-        {
-            tracing::info!("the user stopped the share from its notification");
-            let _ = frames.send(Captured::Ended(StopReason::Sharer));
-            break;
+    let _ = posted.send(Ok(id));
+    loop {
+        tokio::select! {
+            signal = actions.next() => {
+                let Some(signal) = signal else { break };
+                if let Ok(args) = signal.args()
+                    && args.id == id
+                    && args.action_key == STOP_ACTION
+                {
+                    tracing::info!("the user stopped the share from its notification");
+                    let _ = frames.send(Captured::Ended(StopReason::Sharer));
+                    break;
+                }
+            }
+            signal = closed.next() => {
+                let Some(signal) = signal else { break };
+                let Ok(args) = signal.args() else { continue };
+                if args.id != id {
+                    continue;
+                }
+                // Taken from the slot first by this daemon's own stop: then
+                // the share has ended and there is nothing to show again.
+                if lock(&slot).is_none() {
+                    break;
+                }
+                match post_sharing_notification(&proxy, summary).await {
+                    Ok(again) => {
+                        tracing::info!("the sharing notification was closed; shown again");
+                        *lock(&slot) = Some(again);
+                        id = again;
+                    }
+                    Err(e) => {
+                        tracing::warn!(%e, "the sharing notification was closed and cannot be shown again; ending the share");
+                        let _ = frames.send(Captured::Ended(StopReason::Consent));
+                        break;
+                    }
+                }
+            }
         }
         if frames.is_closed() {
             break;
         }
     }
-    Ok(())
+}
+
+/// Shows the sharing notification once, within [`NOTIFY_TIMEOUT`].
+async fn post_sharing_notification(
+    proxy: &SharingNotificationsProxy<'_>,
+    summary: &str,
+) -> zbus::Result<u32> {
+    let mut hints: HashMap<&str, zbus::Variant<'_>> = HashMap::new();
+    // Marked as the daemon's own, so the notifications monitor never sends
+    // it to the person's other devices.
+    hints.insert("x-ligature-origin", zbus::Variant::from("local"));
+    hints.insert("resident", zbus::Variant::from(true));
+    tokio::time::timeout(
+        NOTIFY_TIMEOUT,
+        proxy.notify(
+            "Ligature",
+            0,
+            "video-display",
+            summary,
+            "Your screen is being shown on another of your devices; this notice stays while it is.",
+            &[STOP_ACTION, "Stop sharing"],
+            hints,
+            0,
+        ),
+    )
+    .await
+    .map_err(|_| zbus::Error::Failure("the notification server did not answer".to_owned()))?
 }
 
 async fn close_notification(id: u32) {

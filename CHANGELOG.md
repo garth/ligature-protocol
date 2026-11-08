@@ -52,8 +52,9 @@ release workflow publishes the section as the release notes with the installers.
   second by default, a keyframe comes at the start and on request rather than every second, a
   still screen sends almost nothing, a Linux capture that stalls restarts itself, and a viewer
   takes from a sharer only a picture no larger or faster than it asked for, every frame
-  bounded by that picture, dropping to the next keyframe when it falls behind (LP-149,
-  LP-150, LP-151, LP-176, LP-177, LP-186).
+  bounded by that picture, dropping to the next keyframe when it falls behind, and a Linux
+  share runs only while its notification shows, which comes back when closed and which no
+  other device can close (LP-149, LP-150, LP-151, LP-176, LP-177, LP-186, LP-187).
 - A share's picture format is agreed between the two devices: full colour detail (4:4:4),
   which keeps coloured text sharp, where both ends handle it, and 4:2:0 otherwise; `lpview
   --chroma` narrows the choice (ADR 0044, LP-162).

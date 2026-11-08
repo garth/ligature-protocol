@@ -414,3 +414,19 @@ keyframe, which the sharer is asked for at once, so the decoder never sees a fra
 reference it missed. `lpview` sizes its picture buffers through a checked multiplication and
 the app's aspect ratio falls back to square for an unusable size, both of which the daemon's
 check makes unreachable.
+
+## LP-187: a Linux share runs only while its notification shows
+
+Chapter 09 section 4.4 says a share never runs unseen, and on Linux the daemon's notification
+is the only indicator, since Hyprland shows none. The security audit of 2026-11-08 (finding
+5-D) found it best effort: a notification that could not be posted was logged and the share
+went on, only the Stop action was watched so a dismissal removed the indicator, and a peer
+could close it, since a `dismiss` naming this device as origin closed whatever bus id it
+carried. Now the notification is posted before the capture starts and awaited (five seconds
+at most), and a share whose notification cannot be posted is refused for `consent`; the
+`NotificationClosed` signal is watched, and a notification closed while the share runs is
+posted again, the share ending for `consent` if that fails; and the notifications sync acts on
+a peer's `dismiss` of this device's own notification only when this device sent that
+notification to that peer, which it now remembers per peer (the last 1024 ids), so the sharing
+notification, which never goes to a peer, is out of reach. The Mac's indicator is the system's
+and the phone's its cast icon and foreground notification, so neither changes.

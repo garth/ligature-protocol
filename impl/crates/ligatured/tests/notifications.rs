@@ -155,6 +155,13 @@ async fn a_notification_reaches_every_displaying_device_and_dismissals_fan_out()
     );
     assert_eq!(mac_sync.counters().dismissed_out, 0);
 
+    // A dismiss of a notification the phone never sent to Linux is ignored
+    // there (LP-187): another device cannot close something of the phone's
+    // by naming an id.
+    linux_n.user_dismisses_copy(phone.binding().public(), "never-sent");
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(phone_n.dismissed_own(), vec!["42".to_owned()]);
+
     // The Mac emits nothing: a post there goes nowhere.
     mac_n.post(posted.clone());
     tokio::time::sleep(Duration::from_millis(200)).await;

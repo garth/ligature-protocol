@@ -70,7 +70,9 @@ than when the next one begins. A 4:4:4 share comes only from `libx264`, since VA
 4:2:0 alone ([ADR 0044](../adr/0044-screen-formats-are-negotiated.md)); the reference
 viewers ask for 60 frames a second and a sharer agrees to at most 60, and `lpview` decodes
 with ffmpeg's software decoder, asking for 4:4:4 first. Hyprland shows no indicator of a
-screen cast, so the daemon posts a notification with a Stop action for the share's life.
+screen cast, so the daemon posts a notification with a Stop action for the share's life, and
+the share depends on it: one whose notification cannot be posted is refused, one whose
+notification is closed shows it again, and a peer cannot close it (chapter 09 section 4.4).
 `pipewiresrc` can stop delivering
 while the portal logs "Out of buffers"; the daemon starts a capture that has gone quiet
 again on the same portal session. Where the portal is missing, `wlr-screencopy` copies an

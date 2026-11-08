@@ -10,7 +10,7 @@
 //! never forwarded, and a copy is never emitted again, so nothing cycles.
 //! Nothing here is stored: the icon caches and id maps live for the session.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use lp_core::capability::{
@@ -30,6 +30,9 @@ use crate::notifications::{Event, Icon, Notification, Notifications};
 /// How often the backend's directions are re-read.
 const ADVERTISE_POLL: std::time::Duration = std::time::Duration::from_secs(1);
 
+/// How many of this device's own notification ids are remembered per peer.
+const SENT_IDS_KEPT: usize = 1024;
+
 /// The notification synchroniser for one daemon.
 pub struct NotificationSync {
     daemon: Arc<Daemon>,
@@ -37,6 +40,12 @@ pub struct NotificationSync {
     senders: Mutex<HashMap<PublicKey, mpsc::Sender<NotificationMessage>>>,
     /// Icon hashes already sent to each peer this session.
     icons_sent: Mutex<HashMap<PublicKey, HashSet<String>>>,
+    /// The ids of this device's own notifications sent to each peer this
+    /// session, newest last and at most [`SENT_IDS_KEPT`]: a peer's dismissal
+    /// of one of this device's notifications counts only for these, so a
+    /// peer cannot close a notification it was never sent, the sharing
+    /// notification among them (LP-187).
+    posts_sent: Mutex<HashMap<PublicKey, VecDeque<String>>>,
     /// Icons received from each peer this session, by hash.
     icons_received: Mutex<HashMap<(PublicKey, String), Arc<Icon>>>,
     /// What is advertised right now; held across the registry update so two
@@ -75,6 +84,7 @@ impl NotificationSync {
             backend,
             senders: Mutex::new(HashMap::new()),
             icons_sent: Mutex::new(HashMap::new()),
+            posts_sent: Mutex::new(HashMap::new()),
             icons_received: Mutex::new(HashMap::new()),
             offered: tokio::sync::Mutex::new(None),
             counters: Mutex::new(Counters::default()),
@@ -181,6 +191,7 @@ impl NotificationSync {
     pub fn detach(&self, peer: &PublicKey) {
         self.lock_senders().remove(peer);
         self.lock(&self.icons_sent).remove(peer);
+        self.lock(&self.posts_sent).remove(peer);
         self.lock(&self.icons_received)
             .retain(|(p, _), _| p != peer);
     }
@@ -228,6 +239,14 @@ impl NotificationSync {
             });
             if tx.send(post).await.is_ok() {
                 self.lock(&self.counters).posted += 1;
+                let mut sent = self.lock(&self.posts_sent);
+                let ids = sent.entry(peer).or_default();
+                if !ids.contains(&notification.id) {
+                    ids.push_back(notification.id.clone());
+                    while ids.len() > SENT_IDS_KEPT {
+                        ids.pop_front();
+                    }
+                }
                 tracing::debug!(%peer, id = %notification.id, "notification sent");
             }
         }
@@ -326,6 +345,14 @@ impl NotificationSync {
             }
             NotificationMessage::Dismiss(dismiss) => {
                 if dismiss.origin == *self.daemon.binding().public() {
+                    let sent = self
+                        .lock(&self.posts_sent)
+                        .get(peer)
+                        .is_some_and(|ids| ids.contains(&dismiss.id));
+                    if !sent {
+                        tracing::info!(%peer, "dismiss of a notification this device never sent it; ignoring");
+                        return Ok("ignored");
+                    }
                     self.backend.dismiss_own(&dismiss.id)?;
                 } else {
                     self.backend.dismiss_copy(&dismiss.origin, &dismiss.id)?;

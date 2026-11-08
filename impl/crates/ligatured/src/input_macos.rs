@@ -300,7 +300,7 @@ fn capturer(
                 .modifiers
                 .changed(code, flags)
                 .into_iter()
-                .map(|(code, pressed)| KeyMeaning::modifier(code, pressed, flags))
+                .filter_map(|(code, pressed)| KeyMeaning::modifier(code, pressed, flags))
                 .collect(),
         };
         drop(guard);

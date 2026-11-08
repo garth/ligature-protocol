@@ -10,6 +10,10 @@ release workflow publishes the section as the release notes with the installers.
 
 ### Added
 
+- Driving another device from a Mac, the right Option key types the characters it makes on
+  the Mac, accents included (right Option+E, then E, for é), as AltGr does on a PC; the left
+  Option key stays Alt (ADR 0046, LP-175).
+
 - A Mac driven by the phone's touchpad carries the pointer on across its edge to the next
   desktop, as Linux does, and no device leads on to the device driving it (LP-174).
 

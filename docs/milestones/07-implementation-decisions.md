@@ -304,7 +304,10 @@ the held flags unchanged for a shortcut, and attaches the character to a key eve
 **AltGr is not a shortcut modifier.** Synergy counts AltGr among the modifiers that make a key
 a command; here it chooses a level as Shift does, since a Linux controller's AltGr reaches a
 Mac as a held right Option, and a character typed under it as a command would be typed with
-Option and be another character. The ADR records the departure.
+Option and be another character. The ADR records the departure. ADR 0046 (LP-175) later made a
+Mac's right Option its AltGr on the controller: alone it chooses the character with Shift and
+Caps Lock, dead keys included, its own key is not sent and `mods` carries no Alt, told from
+left Option by the flags' device bits (`0x20` left, `0x40` right).
 
 **The viewer and the phone.** `lpview` takes the meaning from winit's logical key: a named key
 by its keysym's ID, a character by its text (on a Mac with Option held, the key without

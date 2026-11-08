@@ -49,9 +49,11 @@ uses: `@` on a British Mac is `@` on a Linux machine set to US. Shortcuts keep t
 so Control and C is Control and C there. Modifiers keep their meaning wherever the other
 layout puts them.
 
-- On a Mac, **Command is Super** and **Option is Alt**. A character you would type with
-  Option on the Mac is not sent as that character: the other device sees Alt with the key,
-  since Option is its Alt key.
+- On a Mac, **Command is Super** and the **left Option is Alt**, so left Option with a
+  letter is an Alt shortcut on the other device. The **right Option types**, as AltGr does on
+  a PC: right Option with a key sends the character it makes on the Mac, and its accents
+  (right Option+E, then E, for é) are combined on the Mac and sent as the letter. Use left
+  Option for an Alt shortcut, such as Alt+arrow.
 - **Caps Lock** turns the other device's Caps Lock on and off.
 - An accent key (a dead key) is combined on your own device first. The other device receives
   the finished character, such as `é`.

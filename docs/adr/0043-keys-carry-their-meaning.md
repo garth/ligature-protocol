@@ -1,6 +1,8 @@
 # 0043. Keys carry what they mean as well as where they are, after Synergy
 
-**Status:** Accepted (by the owner's direction, 2026-10-25)
+**Status:** Accepted (by the owner's direction, 2026-10-25); in decision 2, every Option being
+Alt and ignored in choosing a character is superseded by
+[ADR 0046](0046-right-option-types-characters.md) for a Mac's right Option
 **Date:** 2026-10-25
 
 ## Context

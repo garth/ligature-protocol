@@ -234,7 +234,9 @@ the physical key as an evdev code; on a press `id`, what the key means on the co
 (Synergy's key ID: a character's Unicode value, or a named key's value in U+E000 to U+EFFF, the X11
 keysym less 0x1000); and `mods`, the controller's modifier mask. The controller computes the
 character with Shift and Caps Lock and without Control, Alt or Super, composes dead keys itself, and
-counts a Mac's Command as Super and its Option as Alt. The driven device finds its own key for
+counts a Mac's Command as Super, its left Option as Alt, and its right Option alone as the
+level key that chooses a character, as AltGr
+([ADR 0046](../adr/0046-right-option-types-characters.md)). The driven device finds its own key for
 `id`: a modifier presses its own key for that modifier and Caps Lock or Num Lock toggles its lock;
 with a command modifier held it presses the key that produces `id` with the user's modifiers; and
 otherwise it presses the key and level that produce `id`, setting Shift or AltGr for that press,

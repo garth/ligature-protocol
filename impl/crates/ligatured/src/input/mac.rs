@@ -211,6 +211,23 @@ pub mod flags {
     pub const DEVICE: u64 = 0x0000_207F;
 }
 
+/// The device bit of the left Option key in an event's flags.
+pub const LEFT_OPTION: u64 = 0x0020;
+/// The device bit of the right Option key.
+pub const RIGHT_OPTION: u64 = 0x0040;
+
+/// Whether the Option held is the right one alone, the Mac's AltGr (ADR 0046):
+/// it chooses characters and is never Alt. Flags without the device bits (an
+/// event some other program made) count as left Option, as before.
+fn right_option_only(f: u64) -> bool {
+    f & flags::ALTERNATE != 0 && f & RIGHT_OPTION != 0 && f & LEFT_OPTION == 0
+}
+
+/// Whether the flags hold Alt: an Option key other than right Option alone.
+fn alt_held(f: u64) -> bool {
+    f & flags::ALTERNATE != 0 && !right_option_only(f)
+}
+
 /// A modifier key: its macOS code, evdev code, the generic flag and the
 /// device bit for its side (zero where there is none).
 struct Modifier {
@@ -498,20 +515,25 @@ pub fn mask_of_flags(f: u64) -> u32 {
     [
         (flags::SHIFT, mask::SHIFT),
         (flags::CONTROL, mask::CONTROL),
-        (flags::ALTERNATE, mask::ALT),
         (flags::COMMAND, mask::SUPER),
         (flags::ALPHA_SHIFT, mask::CAPS_LOCK),
     ]
     .into_iter()
     .filter(|(flag, _)| f & flag != 0)
-    .fold(0, |a, (_, bit)| a | bit)
+    .fold(if alt_held(f) { mask::ALT } else { 0 }, |a, (_, bit)| {
+        a | bit
+    })
 }
 
 /// The Carbon modifiers that choose the character a key sends: Shift and
-/// Caps Lock, never Control, Option or Command (ADR 0043 decision 2).
+/// Caps Lock (ADR 0043 decision 2), and right Option alone, the Mac's AltGr
+/// (ADR 0046); never Control, Command or left Option.
 #[must_use]
 pub fn character_modifiers(f: u64) -> u32 {
     let mut out = 0;
+    if right_option_only(f) && f & (flags::CONTROL | flags::COMMAND) == 0 {
+        out |= CARBON_OPTION;
+    }
     if f & flags::SHIFT != 0 {
         out |= CARBON_SHIFT;
     }
@@ -584,7 +606,7 @@ impl KeyMeaning {
                 mods,
             });
         }
-        let shortcut = f & (flags::CONTROL | flags::ALTERNATE | flags::COMMAND) != 0;
+        let shortcut = f & (flags::CONTROL | flags::COMMAND) != 0 || alt_held(f);
         let id = match (keyid::named_for_evdev(evdev), layout) {
             (Some(named), _) => Some(named),
             (None, None) => None,
@@ -615,17 +637,23 @@ impl KeyMeaning {
     }
 
     /// The key event for a modifier's press or release, by evdev code, with
-    /// the flags after it.
+    /// the flags after it; `None` for right Option, the Mac's AltGr, whose
+    /// characters carry it (ADR 0046).
     #[must_use]
-    pub fn modifier(evdev: u16, pressed: bool, f: u64) -> lp_core::input::InputEvent {
-        lp_core::input::InputEvent::Key {
+    pub fn modifier(evdev: u16, pressed: bool, f: u64) -> Option<lp_core::input::InputEvent> {
+        // Right Option is the Mac's AltGr (ADR 0046): the characters it
+        // chooses carry it, so its own key is not sent.
+        if evdev == lp_core::input::KEY_RIGHTALT {
+            return None;
+        }
+        Some(lp_core::input::InputEvent::Key {
             code: evdev,
             pressed,
             id: pressed
                 .then(|| lp_core::input::keyid::named_for_evdev(evdev))
                 .flatten(),
             mods: Some(mask_of_flags(f)),
-        }
+        })
     }
 
     /// Forgets a dead key in progress, when a capture starts or ends.
@@ -845,13 +873,79 @@ mod tests {
         assert_eq!(id(meaning.key(30, true, 0, None)), Some((None, 0)));
         // A modifier is its named key; Option is Alt and Command Super.
         assert_eq!(
-            id(Some(KeyMeaning::modifier(56, true, flags::ALTERNATE))),
+            id(KeyMeaning::modifier(56, true, flags::ALTERNATE)),
             Some((Some(keyid::ALT_L), mask::ALT))
         );
         assert_eq!(
-            id(Some(KeyMeaning::modifier(125, true, flags::COMMAND))),
+            id(KeyMeaning::modifier(125, true, flags::COMMAND)),
             Some((Some(keyid::SUPER_L), mask::SUPER))
         );
+    }
+
+    #[test]
+    fn right_option_types_its_character_and_left_option_is_alt() {
+        use lp_core::input::InputEvent;
+        use lp_core::input::keyid::mask;
+        // ADR 0046: right Option chooses the character, dead keys included,
+        // and is not Alt; left Option stays Alt and makes a shortcut.
+        let right = flags::ALTERNATE | RIGHT_OPTION;
+        let left = flags::ALTERNATE | LEFT_OPTION;
+        let option_level = |m: u32, dead: Option<&mut u32>| {
+            if m & CARBON_OPTION == 0 {
+                return "e".to_owned();
+            }
+            match dead {
+                Some(d) if *d == 0 => {
+                    *d = 1;
+                    String::new()
+                }
+                Some(d) => {
+                    *d = 0;
+                    "é".to_owned()
+                }
+                None => "e".to_owned(),
+            }
+        };
+        let plain_e = |m: u32, dead: Option<&mut u32>| match dead {
+            Some(d) if *d != 0 => {
+                *d = 0;
+                "é".to_owned()
+            }
+            _ if m & CARBON_OPTION != 0 => "´".to_owned(),
+            _ => "e".to_owned(),
+        };
+        let id = |e: Option<InputEvent>| match e {
+            Some(InputEvent::Key { id, mods, .. }) => Some((id, mods.unwrap_or(0))),
+            _ => None,
+        };
+        let mut meaning = KeyMeaning::default();
+        // Right Option+E starts the dead key and sends nothing ...
+        assert_eq!(meaning.key(18, true, right, Some(&option_level)), None);
+        assert_eq!(meaning.key(18, false, right, Some(&option_level)), None);
+        // ... and E after it, Option let go, sends é without Alt.
+        assert_eq!(
+            id(meaning.key(18, true, 0, Some(&plain_e))),
+            Some((Some(u32::from('é')), 0))
+        );
+        // Left Option+E is the shortcut Alt+E.
+        let mut meaning = KeyMeaning::default();
+        assert_eq!(
+            id(meaning.key(18, true, left, Some(&option_level))),
+            Some((Some(u32::from('e')), mask::ALT))
+        );
+        // Right Option with Command is a shortcut too, without Alt.
+        assert_eq!(
+            id(meaning.key(18, true, right | flags::COMMAND, Some(&option_level))),
+            Some((Some(u32::from('e')), mask::SUPER))
+        );
+        // Right Option's own key is not sent; left Option's is Alt.
+        assert_eq!(KeyMeaning::modifier(100, true, right), None);
+        assert_eq!(
+            id(KeyMeaning::modifier(56, true, left)),
+            Some((Some(lp_core::input::keyid::ALT_L), mask::ALT))
+        );
+        assert_eq!(mask_of_flags(right), 0);
+        assert_eq!(mask_of_flags(left), mask::ALT);
     }
 
     #[test]

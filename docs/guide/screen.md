@@ -68,7 +68,9 @@ lighter one.
   notification "Sharing *display* with *device*" stays up, and its **Stop sharing** button
   ends the share. That notification is the only sign on Linux that the screen is shared,
   since the compositor shows none, so a share does not start when it cannot be shown, and
-  closing it brings it back; **Stop sharing** is the way to end the share.
+  dismissing it brings it back a few times before it stays dismissed; **Stop sharing** is the
+  way to end the share. A notification daemon that hides popups after a while keeps it in
+  its list.
 - **The Mac** asks once for permission to record the screen, and refuses that first share;
   once you allow it, the daemon restarts by itself and the next share works
   ([Install](install.md#macos) has the steps). While a share runs, macOS shows its own

@@ -1028,11 +1028,21 @@ const STOP_ACTION: &str = "stop";
 
 /// How long the notification server has to show the notification.
 const NOTIFY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+/// `NotificationClosed`'s reason for a popup the server hid after its timeout.
+const CLOSED_EXPIRED: u32 = 1;
+/// How many times within [`REPOST_WINDOW`] a dismissed sharing notification
+/// is shown again before it is left closed.
+const REPOST_CAP: usize = 3;
+/// The window of [`REPOST_CAP`].
+const REPOST_WINDOW: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// Posts the sharing notification, reports the result on `posted`, and then
-/// watches it for the share's life: its Stop action ends the share, and its
-/// closing, by anyone but this daemon's own stop, shows it again, the share
-/// ending for `consent` when it cannot be (LP-187).
+/// watches it for the share's life: its Stop action ends the share, and a
+/// dismissal, or a close by another client, shows it again (at most
+/// [`REPOST_CAP`] times in [`REPOST_WINDOW`]), the share ending for `consent`
+/// when it cannot be (LP-187). A server that hides the popup after a timeout,
+/// whatever the request, reports an expiry: the notification stays in its
+/// list, and showing it again would nag, so it is left as it is.
 async fn sharing_notification(
     summary: &str,
     slot: Arc<Mutex<Option<u32>>>,
@@ -1058,6 +1068,7 @@ async fn sharing_notification(
     };
     *lock(&slot) = Some(id);
     let _ = posted.send(Ok(id));
+    let mut reposts: std::collections::VecDeque<Instant> = std::collections::VecDeque::new();
     loop {
         tokio::select! {
             signal = actions.next() => {
@@ -1082,9 +1093,19 @@ async fn sharing_notification(
                 if lock(&slot).is_none() {
                     break;
                 }
+                if args.reason == CLOSED_EXPIRED {
+                    tracing::debug!("the notification server hid the sharing notification after its timeout; it stays in its list");
+                    continue;
+                }
+                reposts.retain(|shown| shown.elapsed() < REPOST_WINDOW);
+                if reposts.len() >= REPOST_CAP {
+                    tracing::info!(reason = args.reason, "the sharing notification was closed again; left closed while the share goes on");
+                    continue;
+                }
                 match post_sharing_notification(&proxy, summary).await {
                     Ok(again) => {
-                        tracing::info!("the sharing notification was closed; shown again");
+                        tracing::info!(reason = args.reason, "the sharing notification was closed; shown again");
+                        reposts.push_back(Instant::now());
                         *lock(&slot) = Some(again);
                         id = again;
                     }

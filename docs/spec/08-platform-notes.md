@@ -72,7 +72,9 @@ viewers ask for 60 frames a second and a sharer agrees to at most 60, and `lpvie
 with ffmpeg's software decoder, asking for 4:4:4 first. Hyprland shows no indicator of a
 screen cast, so the daemon posts a notification with a Stop action for the share's life, and
 the share depends on it: one whose notification cannot be posted is refused, one whose
-notification is closed shows it again, and a peer cannot close it (chapter 09 section 4.4).
+notification the user dismisses shows it again (a few times a minute at most), and a peer
+cannot close it (chapter 09 section 4.4); a server that hides popups after a timeout, as
+Omarchy's does whatever the request, keeps it in its list, where its Stop action still works.
 `pipewiresrc` can stop delivering
 while the portal logs "Out of buffers"; the daemon starts a capture that has gone quiet
 again on the same portal session. Where the portal is missing, `wlr-screencopy` copies an

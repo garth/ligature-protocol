@@ -424,8 +424,12 @@ went on, only the Stop action was watched so a dismissal removed the indicator, 
 could close it, since a `dismiss` naming this device as origin closed whatever bus id it
 carried. Now the notification is posted before the capture starts and awaited (five seconds
 at most), and a share whose notification cannot be posted is refused for `consent`; the
-`NotificationClosed` signal is watched, and a notification closed while the share runs is
-posted again, the share ending for `consent` if that fails; and the notifications sync acts on
+`NotificationClosed` signal is watched, and a notification the user dismisses, or another
+client closes, while the share runs is posted again, at most three times a minute, the share
+ending for `consent` if that fails; a close the server reports as an expiry (reason 1) is left
+alone, since Omarchy's notification daemon hides every popup after about eight seconds
+whatever the `resident` hint and expiry asked for, keeps the notification in its list with its
+Stop action, and a re-post every eight seconds nagged the owner; and the notifications sync acts on
 a peer's `dismiss` of this device's own notification only when this device sent that
 notification to that peer, which it now remembers per peer (the last 1024 ids), so the sharing
 notification, which never goes to a peer, is out of reach. The Mac's indicator is the system's

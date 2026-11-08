@@ -169,9 +169,10 @@ The reference implementation is Rust and is also the production implementation
   (`Value`, `Incoming` with promises and a `Fetch`, the fingerprint echo rule, the Wayland
   helper's own data-control source, NSPasteboard data providers, the Android content
   provider and Save action); its run with the real devices is recorded on LP-95.
-  `06-phone-and-media.md` (the phone's SMS and calls, media control), `07-shared-input.md`
-  (one keyboard and mouse across the desktops, the phone as a touchpad) and
-  `08-remote-desktop.md` (a screen viewed, then controlled) are drafts.
+  `07-shared-input.md` and `08-remote-desktop.md` are done, their implementation decisions
+  beside them. `06-phone-and-media.md` (the phone's SMS and calls, media control) and
+  `09-cast-and-sound.md` (a screen or a window cast to another device, every share with its
+  sound, epic LP-193) are drafts.
 - Sponsors are listed in two places that stay identical: the README's "Sponsors" section
   and the landing page `docs/index.md`, grouped by tier (Gold, Silver, Bronze; a tier is
   written only once it has a sponsor), each with a logo under `docs/assets/sponsors/` (a

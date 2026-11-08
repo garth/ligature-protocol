@@ -283,6 +283,7 @@ side, at [ligatureprotocol.org](https://ligatureprotocol.org/).
 - [Milestone 6 plan: the phone's SMS and calls, and media control](docs/milestones/06-phone-and-media.md)
 - [Milestone 7 plan: one keyboard and mouse across the desktops](docs/milestones/07-shared-input.md)
 - [Milestone 8 plan: a screen viewed, then controlled, from another device](docs/milestones/08-remote-desktop.md)
+- [Milestone 9 plan: a screen or a window cast to another device, with its sound](docs/milestones/09-cast-and-sound.md)
 - [Architecture decisions](docs/adr/)
 - [Glossary](docs/glossary.md)
 - [Prior art](docs/prior-art.md)

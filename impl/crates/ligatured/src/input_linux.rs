@@ -761,6 +761,21 @@ fn locale() -> String {
         .unwrap_or_else(|| "C".to_owned())
 }
 
+/// The name every section of a text keymap carries, so the helper knows the
+/// keymap again when the compositor sends it back (LP-178).
+const TEXT_KEYMAP_NAME: &str = "ligature-text";
+
+/// Whether a keymap is one of the helper's own text keymaps. The compositor
+/// sends every client the active keyboard's keymap, the helper's text
+/// keyboard's included; taken for the seat's, it leaves the main keyboard
+/// without Backspace or Enter. `xkbcommon` keeps section names when the
+/// compositor re-serialises a keymap, so the name survives the round trip.
+#[must_use]
+pub fn is_text_keymap(keymap: &[u8]) -> bool {
+    let needle = format!("xkb_keycodes \"{TEXT_KEYMAP_NAME}\"");
+    keymap.windows(needle.len()).any(|w| w == needle.as_bytes())
+}
+
 /// The keymap text that types `text`: one key per distinct character, the
 /// characters named as Unicode keysyms, which `xkbcommon` reads without any
 /// system data. Returns the keymap and the evdev code of each character.
@@ -781,11 +796,12 @@ pub fn text_keymap(text: &str) -> (String, HashMap<char, u32>) {
     }
     let keymap = format!(
         "xkb_keymap {{\n\
-         xkb_keycodes \"(unnamed)\" {{\nminimum = 8;\nmaximum = 255;\n{keycodes}}};\n\
-         xkb_types \"(unnamed)\" {{\ntype \"ONE_LEVEL\" {{ modifiers = none; level_name[Level1] = \"Any\"; }};\n}};\n\
-         xkb_compatibility \"(unnamed)\" {{ }};\n\
-         xkb_symbols \"(unnamed)\" {{\n{symbols}}};\n\
-         }};\n"
+         xkb_keycodes \"{name}\" {{\nminimum = 8;\nmaximum = 255;\n{keycodes}}};\n\
+         xkb_types \"{name}\" {{\ntype \"ONE_LEVEL\" {{ modifiers = none; level_name[Level1] = \"Any\"; }};\n}};\n\
+         xkb_compatibility \"{name}\" {{ }};\n\
+         xkb_symbols \"{name}\" {{\n{symbols}}};\n\
+         }};\n",
+        name = TEXT_KEYMAP_NAME
     );
     (keymap, codes)
 }
@@ -834,8 +850,8 @@ mod helper {
     use wayland_protocols_wlr::virtual_pointer::v1::client::zwlr_virtual_pointer_v1::ZwlrVirtualPointerV1;
 
     use super::{
-        HelperMessage, KeyFinder, ModState, US_KEYMAP, WHEEL_STEP, keysym_of, mod_bits,
-        modifier_roles, read_frame, text_keymap, types, write_frame,
+        HelperMessage, KeyFinder, ModState, US_KEYMAP, WHEEL_STEP, is_text_keymap, keysym_of,
+        mod_bits, modifier_roles, read_frame, text_keymap, types, write_frame,
     };
 
     /// The extent absolute motion is expressed against: fractions times this.
@@ -1180,7 +1196,9 @@ mod helper {
                 let fd: OwnedFd = fd;
                 let mut file = File::from(fd);
                 let mut bytes = vec![0u8; size as usize];
-                if file.read_exact(&mut bytes).is_ok() {
+                // The helper's own text keyboard's keymap comes back too, as
+                // the active keyboard's; it is never the seat's (LP-178).
+                if file.read_exact(&mut bytes).is_ok() && !is_text_keymap(&bytes) {
                     state.seat_keymap = Some(bytes);
                 }
             }
@@ -2131,5 +2149,19 @@ mod tests {
         assert!(keymap.contains("key <K2> { [ U00E9 ] };"));
         assert!(keymap.starts_with("xkb_keymap {"));
         assert!(keymap.contains("xkb_symbols"));
+    }
+
+    #[test]
+    fn a_text_keymap_echoed_back_is_not_taken_for_the_seat_s() {
+        let (keymap, _) = text_keymap("ab");
+        assert!(is_text_keymap(keymap.as_bytes()));
+        // As the compositor sends it back: re-serialised by xkbcommon, which
+        // keeps the section names, and NUL-terminated.
+        let echoed = "xkb_keymap {\nxkb_keycodes \"ligature-text\" {\n\tminimum = 8;\n};\n};\n\0";
+        assert!(is_text_keymap(echoed.as_bytes()));
+        assert!(!is_text_keymap(US_KEYMAP.as_bytes()));
+        assert!(!is_text_keymap(
+            b"xkb_keymap {\nxkb_keycodes \"evdev+aliases(qwerty)\" {\n};\n};\n"
+        ));
     }
 }

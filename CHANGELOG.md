@@ -10,6 +10,10 @@ release workflow publishes the section as the release notes with the installers.
 
 ### Added
 
+- Backspace and Enter work on a Linux desktop after text is typed into it from the phone or
+  through another desktop; before, the desktop took the keymap of its own typing for the
+  seat's and lost every named key after the first text (LP-178).
+
 - Screens are shared at 60 frames a second by default, rather than 30, which halves every
   per-frame wait between a change and its picture; `lpview --rate` and `lpctl screen start
   --rate` still choose another (LP-177).

@@ -127,7 +127,12 @@ running keyboard is not what a `wtype`-style sequence needs; instead a `text` ev
 a new virtual keyboard whose keymap names each distinct character as a Unicode keysym
 (`U00E9`), presses and releases each, and destroys the keyboard. `xkbcommon` reads that
 keymap without any system data, and the compositor sends the keyboard's keymap to the
-focused client, which is how the character arrives.
+focused client, which is how the character arrives. The compositor sends that keymap to
+every client, the helper's own `wl_keyboard` included, which is where the helper learns the
+seat's keymap; taken for the seat's, it left the main keyboard without Backspace or Enter
+after any text (LP-178). Every section of a text keymap is named `ligature-text`, a name
+`xkbcommon` keeps when the compositor re-serialises the keymap, and the helper ignores a
+keymap carrying it.
 
 **Measured in a nested Hyprland.** The ignored test `input_nested` drives a daemon's
 injector into a nested compositor on its own socket (launcher: a Python script that binds

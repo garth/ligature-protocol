@@ -177,16 +177,17 @@ The reference implementation is Rust and is also the production implementation
   written only once it has a sponsor), each with a logo under `docs/assets/sponsors/` (a
   light-background and a dark-background file, shown by scheme on both pages) and a link.
   Adding a sponsor edits both and adds the logo files.
-- `site/`: the documentation site for users, MkDocs with the Material theme: the landing
-  page (`docs/index.md`), the user guide and the specification, and nothing else (the ADRs,
-  the milestone plans and the audits are for the repository; `mkdocs.yml` excludes them and
-  `hooks.py` rewrites links to them, and to anything outside `docs/`, to GitHub;
-  `requirements.txt` pinned). `.github/workflows/pages.yml`
-  builds it with `mkdocs build --strict` and deploys it to GitHub Pages on every push to
-  `main`, at `https://garth.github.io/ligature-protocol/`; CI builds it the same way so a
-  broken link fails the build. A new chapter, ADR, plan or guide page needs a line in the
-  navigation. Build locally with `pip install -r site/requirements.txt` in a virtual
-  environment and `mkdocs build --strict -f site/mkdocs.yml`.
+- `site/`: the documentation site for users, built with mdBook: the landing page
+  (`docs/index.md`), the user guide and the specification, as `docs/SUMMARY.md` lists them,
+  and nothing else (the ADRs, the milestone plans and the audits are for the repository; the
+  `lp-book` preprocessor rewrites links to them, and to anything outside `docs/`, to
+  GitHub). `site/book.toml` configures it, `site/mermaid.js` renders the diagrams and
+  `site/build.sh` builds it into `build/site` and checks every link and anchor with lychee,
+  fetching both tools pinned by version and checksum. `.github/workflows/pages.yml` runs the
+  script and deploys the result to GitHub Pages on every push to `main`, at
+  `https://garth.github.io/ligature-protocol/`; CI runs it the same way so a broken link
+  fails the build. A new chapter or guide page needs a line in `docs/SUMMARY.md`. Build
+  locally with `site/build.sh` (cargo on `PATH`, through `mise exec rust@stable --` here).
 - `schemas/*.schema.json`: JSON Schema 2020-12 drafts (person, device, capability, grant,
   group, role, revocation, envelope, message, pairing, capability.clipboard,
   capability.notifications, capability.files; `control` is implementation-only).
@@ -206,8 +207,9 @@ The reference implementation is Rust and is also the production implementation
   UniFFI 0.32 proc macros, `publish = false`; allows `unsafe_code` for the exported C ABI;
   its `uniffi-bindgen` binary, feature `bindgen`, generates the Kotlin), `lp-macos` (the
   macOS pasteboard behind a safe API, `publish = false`, empty on other platforms; the other
-  crate allowing `unsafe_code`, for the Objective-C data provider class).
-  `integrations/wireguard-integration` is a non-core placeholder.
+  crate allowing `unsafe_code`, for the Objective-C data provider class), `lp-book` (the
+  documentation site's mdBook preprocessor, `publish = false`; not protocol code, depends on
+  no other crate). `integrations/wireguard-integration` is a non-core placeholder.
   Dependency direction: `lp-crypto` depends only on `lp-core`; `lp-identity` and
   `lp-transport` depend on `lp-core` and `lp-crypto`; binaries depend on the layer crates;
   integrations depend on `lp-core` and never the other way round; `lp-vectors` is only ever

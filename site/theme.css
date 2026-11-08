@@ -1,0 +1,13 @@
+/* Additions to mdBook's theme for the Ligature Protocol site (LP-181). */
+
+/* A rendered Mermaid diagram sits centred, as the page's figures do. */
+pre.mermaid {
+    background: none;
+    text-align: center;
+}
+
+/* The sponsor logos keep their aspect on a narrow screen. */
+.content img[width] {
+    max-width: 100%;
+    height: auto;
+}

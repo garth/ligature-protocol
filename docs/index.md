@@ -1,58 +1,35 @@
----
-hide:
-  - navigation
-  - toc
----
-
 # Ligature Protocol
 
 **Your devices, working as one.** What you copy, the notifications you get and the files
 you share move between the devices you own, directly, over your own network: no account, no
 server, no company in between. An open protocol, with apps for Linux, macOS and Android.
 
-[Install the apps](guide/install.md){ .md-button .md-button--primary }
-[Read the user guide](guide/index.md){ .md-button }
-[Releases](https://github.com/garth/ligature-protocol/releases){ .md-button }
+**[Install the apps](guide/install.md)** · [Read the user guide](guide/index.md) ·
+[Releases](https://github.com/garth/ligature-protocol/releases)
 
-<div class="grid cards" markdown>
+## What it does
 
-- :material-content-copy: **One clipboard**
+### One clipboard
 
-    ---
+Copy on the laptop, paste on the phone. Text, formatted text, images and files; large
+content is fetched only when you paste it. [The clipboard](guide/clipboard.md)
 
-    Copy on the laptop, paste on the phone. Text, formatted text, images and files; large
-    content is fetched only when you paste it.
+### Notifications everywhere
 
-    [The clipboard](guide/clipboard.md)
+A message that pops up on the phone shows on the desktop with the app's icon, and
+dismissing it anywhere clears it everywhere the platform allows.
+[Notifications](guide/notifications.md)
 
-- :material-bell-ring: **Notifications everywhere**
+### Files between devices
 
-    ---
+Share from the phone or send from the command line; files land in the other device's
+download folder, with progress and a cancel at either end. [Files](guide/files.md)
 
-    A message that pops up on the phone shows on the desktop with the app's icon, and
-    dismissing it anywhere clears it everywhere the platform allows.
+### Yours alone
 
-    [Notifications](guide/notifications.md)
-
-- :material-file-send: **Files between devices**
-
-    ---
-
-    Share from the phone or send from the command line; files land in the other device's
-    download folder, with progress and a cancel at either end.
-
-    [Files](guide/files.md)
-
-- :material-key-chain: **Yours alone**
-
-    ---
-
-    You are a key your first device creates. Devices join by an in-person ceremony, every
-    session is end-to-end encrypted, and nothing lives outside your devices.
-
-    [First steps](guide/first-steps.md)
-
-</div>
+You are a key your first device creates. Devices join by an in-person ceremony, every
+session is end-to-end encrypted, and nothing lives outside your devices.
+[First steps](guide/first-steps.md)
 
 ## How it works
 
@@ -88,8 +65,10 @@ the [discussions](https://github.com/garth/ligature-protocol/discussions).
 
 ### Gold
 
-[![NordStack](assets/sponsors/nordstack.svg#only-light){ width="300" }](https://nordstack.co.uk)
-[![NordStack](assets/sponsors/nordstack-dark.svg#only-dark){ width="300" }](https://nordstack.co.uk)
+<a href="https://nordstack.co.uk"><picture>
+<source media="(prefers-color-scheme: dark)" srcset="assets/sponsors/nordstack-dark.svg">
+<img alt="NordStack" src="assets/sponsors/nordstack.svg" width="300">
+</picture></a>
 
 [NordStack Ltd](https://nordstack.co.uk), an independent UK software firm.
 

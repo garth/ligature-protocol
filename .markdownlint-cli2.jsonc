@@ -16,6 +16,8 @@
   "ignores": [
     "impl/target/**",
     "build/**",
+    // mdBook's navigation: each part title is a top-level heading by its format.
+    "docs/SUMMARY.md",
     "LICENSE",
     "LICENSE-SPEC",
     "CODE_OF_CONDUCT.md"

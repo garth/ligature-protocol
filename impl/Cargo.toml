@@ -11,6 +11,8 @@ members = [
     "crates/ligature-android",
     "crates/lp-macos",
     "crates/lp-vectors",
+    # The documentation site's mdBook preprocessor (LP-181); not protocol code.
+    "crates/lp-book",
     # Non-core integrations. The protocol never depends on these.
     "integrations/wireguard-integration",
 ]

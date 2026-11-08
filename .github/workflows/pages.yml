@@ -1,4 +1,4 @@
-# Builds the documentation site from docs/ with MkDocs (site/mkdocs.yml) and
+# Builds the documentation site from docs/ with mdBook (site/build.sh, LP-181) and
 # publishes it to GitHub Pages on every push to main (LP-137). Pages must be set
 # to deploy from GitHub Actions in the repository settings.
 name: Site
@@ -23,13 +23,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
         with:
-          python-version: "3.13"
-          cache: pip
-          cache-dependency-path: site/requirements.txt
-      - run: pip install -r site/requirements.txt
-      - run: mkdocs build --strict -f site/mkdocs.yml
+          workspaces: impl
+      - name: mdBook build and link check
+        run: site/build.sh
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:

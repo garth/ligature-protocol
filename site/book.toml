@@ -1,0 +1,34 @@
+# The documentation site (LP-137, built with mdBook since LP-181): the landing page,
+# the user guide and the specification from docs/, as docs/SUMMARY.md lists them, and
+# nothing else. The decisions, the milestone plans and the security audits stay on
+# GitHub, and the lp-book preprocessor sends a link to them there. Build it, with the
+# link check, with site/build.sh; .github/workflows/pages.yml publishes it to GitHub
+# Pages on every push to main.
+[book]
+title = "Ligature Protocol"
+description = "Your devices, working as one: the clipboard, notifications and files move between the devices you own, directly, with no account and no server."
+language = "en"
+src = "../docs"
+
+[build]
+build-dir = "../build/site"
+# A page listed in SUMMARY.md that does not exist is an error, not a file made for it.
+create-missing = false
+
+# Links that leave the site (the ADRs, the plans, the audits, the schemas, the licences,
+# the implementation) are rewritten to GitHub before rendering, so that every other
+# broken link is an error for the link check.
+[preprocessor.lp-book]
+command = "cargo run --quiet --manifest-path ../impl/Cargo.toml -p lp-book --"
+
+[output.html]
+site-url = "/ligature-protocol/"
+git-repository-url = "https://github.com/garth/ligature-protocol"
+edit-url-template = "https://github.com/garth/ligature-protocol/edit/main/docs/{path}"
+default-theme = "light"
+preferred-dark-theme = "navy"
+additional-css = ["theme.css"]
+additional-js = ["mermaid.js"]
+
+[output.html.search]
+limit-results = 20

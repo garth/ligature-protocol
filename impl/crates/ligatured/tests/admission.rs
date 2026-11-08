@@ -58,17 +58,21 @@ async fn a_stranger_gets_no_gossip_and_is_dropped_when_the_ceremony_ends() {
     let (s, _s_events) = Manager::start(s_ep);
 
     // Outside a ceremony: the gossip it opens in its first flight never gets
-    // an answer, and the connection is dropped.
+    // an answer, and the connection is dropped. The drop can come before the
+    // stream is even open (it did on macOS CI, LP-179), which is the same
+    // outcome: nothing is answered.
     let conn = s.connect(a_addr).await.unwrap();
-    let mut gossip = open_on(&conn, StreamHeader::GOSSIP).await.unwrap();
-    gossip.send(&GossipHave::new(vec![])).await.unwrap();
-    let answer = tokio::time::timeout(Duration::from_secs(5), gossip.recv::<GossipHave>())
-        .await
-        .unwrap();
-    assert!(
-        !matches!(answer, Ok(Some(_))),
-        "a stranger must not receive have: {answer:?}"
-    );
+    if let Ok(mut gossip) = open_on(&conn, StreamHeader::GOSSIP).await
+        && gossip.send(&GossipHave::new(vec![])).await.is_ok()
+    {
+        let answer = tokio::time::timeout(Duration::from_secs(5), gossip.recv::<GossipHave>())
+            .await
+            .unwrap();
+        assert!(
+            !matches!(answer, Ok(Some(_))),
+            "a stranger must not receive have: {answer:?}"
+        );
+    }
     until("the stranger is dropped", || {
         a.manager().peer(s_key.public()).is_none()
     })

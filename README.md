@@ -159,9 +159,9 @@ another has offered. This is the scope of
 [milestone 4](docs/milestones/04-files.md) and
 [milestone 5](docs/milestones/05-rich-clipboard.md).
 
-On `main`, not yet in a release and awaiting their runs with the real devices:
-[milestone 7](docs/milestones/07-shared-input.md) and
-[milestone 8](docs/milestones/08-remote-desktop.md). The Linux machine and the Mac share one
+On `main`, not yet in a release: [milestone 7](docs/milestones/07-shared-input.md), run with
+the real devices, and [milestone 8](docs/milestones/08-remote-desktop.md), awaiting its run.
+The Linux machine and the Mac share one
 keyboard and mouse: the pointer crosses from one to the other at a mapped edge, with keys
 typing what they mean on the controlling keyboard, and the phone drives either desktop as a
 touchpad with a keyboard field ([user guide](docs/guide/input.md)). Any of the three devices
@@ -249,8 +249,8 @@ follow them.
    the phone from a desktop, and any device's player driven from the others
    ([plan](docs/milestones/06-phone-and-media.md)).
 7. **One keyboard and mouse across the desktops, the phone as a touchpad.** Implemented on
-   `main`, awaiting its run with the real devices: the first device-scoped capability
-   ([plan](docs/milestones/07-shared-input.md)).
+   `main` and run with the real devices, not yet released: the first device-scoped
+   capability ([plan](docs/milestones/07-shared-input.md)).
 8. **A screen viewed, then controlled, from another device.** Implemented on `main`,
    awaiting its run with the real devices ([plan](docs/milestones/08-remote-desktop.md)).
 

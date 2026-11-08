@@ -1,7 +1,14 @@
 # Milestone 7: one keyboard and mouse across a person's desktops, and the phone as a touchpad
 
-**Status:** Accepted by the owner on 2026-10-24; implemented as LP-141 to LP-145, LP-160 and
-LP-161 under the epic LP-112, and the run with the real devices and the close are LP-146.
+**Status:** Done. Accepted by the owner on 2026-10-24; the tasks LP-141 to LP-146, LP-160 and
+LP-161 under the epic LP-112 are done, and the exit criteria were run on the Linux machine,
+the Mac and the Pixel on 2026-11-08 (LP-146, recorded on LP-112), with the phone also driven
+from both desktops (LP-167) and copies on it sent by themselves (LP-166). The run found and
+fixed: a Mac's right Option typing its characters (ADR 0046, LP-175), an Alt or Super key on
+each side as a second release chord for a keyboard with one Control key (LP-171), Mac
+permissions taking effect without a restart and set from `lpctl permissions` (LP-169), the
+pointer going on from a Mac the phone drives and the input of a chain of drives relayed as
+it came (LP-174), and Backspace and Enter after text on Linux (LP-178).
 Raised on 2026-10-23
 from the feasibility assessment of the candidate capability families: shared input is
 feasible on both desktops today, it is the first device-scoped capability, so it pins the

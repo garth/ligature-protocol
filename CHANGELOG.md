@@ -27,7 +27,9 @@ release workflow publishes the section as the release notes with the installers.
   Option key stays Alt (ADR 0046, LP-175).
 
 - A Mac driven by the phone's touchpad carries the pointer on across its edge to the next
-  desktop, as Linux does, and no device leads on to the device driving it (LP-174).
+  desktop, as Linux does, and no device leads on to the device driving it, even when its own
+  edge fires the moment the entering pointer lands on it, which once made two desktops drive
+  each other and lose both keyboards (LP-174).
 
 - Watching a desktop on the phone turns the screen to landscape for a wide desktop, and a
   pinch zooms the picture and pans it, with taps landing where they touch (LP-173).

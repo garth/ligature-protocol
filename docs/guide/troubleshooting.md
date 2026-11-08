@@ -79,10 +79,13 @@ The daemon logs each connection and each refusal with the peer's key at `info`;
   on a Mac): the keyboard and mouse come back to this device.
 - A desktop gives its keyboard and mouse back on its own when the pointer reaches an edge
   but the other device cannot be driven, for example because it is asleep or out of reach.
-- If nothing responds, restart the daemon from another way in, such as a terminal on
-  another device: the compositor ends the capture when the daemon's session goes.
-  `systemctl --user restart ligatured` on Linux, or
-  `launchctl kickstart -k gui/$(id -u)/org.ligatureprotocol.ligatured` on a Mac.
+- If nothing responds, restart the daemon from another way in: the compositor ends the
+  capture when the daemon's session goes. On Linux, switch to a text console with
+  Ctrl+Alt+F3 (the console still gets the keyboard), log in, run
+  `systemctl --user restart ligatured`, and switch back with Ctrl+Alt+F1 (or F2, whichever
+  the desktop was on). From a terminal on another device, the same command on Linux, or
+  `launchctl kickstart -k gui/$(id -u)/org.ligatureprotocol.ligatured` on a Mac. There is no
+  need to reset the machine.
 
 ## The phone cannot be driven or watched
 

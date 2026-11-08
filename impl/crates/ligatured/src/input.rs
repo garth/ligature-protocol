@@ -419,6 +419,11 @@ impl InputSync {
         lock(&self.drive).is_some()
     }
 
+    /// Whether this device is driving `peer` right now.
+    fn drives(&self, peer: &PublicKey) -> bool {
+        lock(&self.drive).as_ref().is_some_and(|d| d.peer == *peer)
+    }
+
     /// The device driving this one right now, if any.
     #[must_use]
     pub fn driven_by(&self) -> Option<PublicKey> {
@@ -446,6 +451,16 @@ impl InputSync {
     pub async fn drive(self: &Arc<Self>, peer: PublicKey, enter: Enter) -> Result<Ready, Error> {
         if self.is_driving() {
             return Err(Error::Io("already driving a device".to_owned()));
+        }
+        // Never drive the device driving this one: each would relay what
+        // the other sent, and nothing would be injected anywhere (LP-174).
+        if self.driven_by() == Some(peer) {
+            return Err(Error::Refused(format!(
+                "{} is driving this device",
+                self.daemon
+                    .device_display_name(&peer)
+                    .unwrap_or_else(|| peer.fingerprint())
+            )));
         }
         let params = self.peer_params(&peer)?;
         let name = || {
@@ -497,6 +512,17 @@ impl InputSync {
             in_flight: HashMap::new(),
             ended: false,
         });
+        // Checked again now the drive is recorded: an enter from the same
+        // device may have been accepted while `ready` was awaited. Each
+        // side records its state and then looks at the other's, so
+        // whichever is second backs off (LP-174).
+        if self.driven_by() == Some(peer) {
+            *lock(&self.drive) = None;
+            stream.reset(lp_core::frame::REFUSED_CODE);
+            return Err(Error::Refused(format!(
+                "{peer} started driving this device meanwhile"
+            )));
+        }
         lock(&self.samples).clear();
         let _ = self.changes.send(Change::Driving(peer));
         tracing::info!(%peer, width = ready.width, height = ready.height, "driving");
@@ -896,8 +922,10 @@ impl InputSync {
                         "this device takes no absolute entry".to_owned(),
                     ));
                 }
-                if lock(&self.driven).is_some() {
-                    return Err(Error::Io("already driven".to_owned()));
+                if self.drives(peer) {
+                    return Err(Error::Io(
+                        "entered by the device this one is driving".to_owned(),
+                    ));
                 }
                 let region = lock(&self.regions)
                     .get(peer)
@@ -910,23 +938,53 @@ impl InputSync {
                     start
                 };
                 let (width, height) = inject.screen();
-                inject.begin(start)?;
-                *lock(&self.driven) = Some(Driven {
-                    peer: *peer,
-                    entry: enter.edge,
-                    x: start.0,
-                    y: start.1,
-                    width,
-                    height,
-                    held: Vec::new(),
-                });
+                {
+                    let mut driven = lock(&self.driven);
+                    if driven.is_some() {
+                        return Err(Error::Io("already driven".to_owned()));
+                    }
+                    // Recorded before the entry is injected. The entry puts
+                    // the pointer at this screen's edge, and the compositor's
+                    // barrier there fires on it at once, on another task:
+                    // that hit must find this device driven, or the edge
+                    // leads back to the driver and each drives the other,
+                    // which locked both desktops' keyboards out (LP-174).
+                    *driven = Some(Driven {
+                        peer: *peer,
+                        entry: enter.edge,
+                        x: start.0,
+                        y: start.1,
+                        width,
+                        height,
+                        held: Vec::new(),
+                    });
+                }
+                if let Err(e) = inject.begin(start) {
+                    *lock(&self.driven) = None;
+                    return Err(e);
+                }
+                // Recorded, then the other side's state looked at (as
+                // `drive` does the other way round): a drive of this device
+                // set meanwhile means whichever was second backs off.
+                if self.drives(peer) {
+                    *lock(&self.driven) = None;
+                    return Err(Error::Io(
+                        "entered by the device this one is driving".to_owned(),
+                    ));
+                }
                 let _ = self.changes.send(Change::DrivenBy(*peer));
                 crate::grants::record_implicit_for(&self.daemon, peer, INPUT_TYPE);
                 tracing::info!(%peer, "driven");
                 Ok(vec![InputMessage::Ready(Ready { width, height })])
             }
             InputMessage::Events(batch) => {
-                // Relayed to the device this one drives, if any.
+                // Relayed to the device this one drives, if any; never to
+                // the device that sent them, which would be a loop.
+                if self.drives(peer) {
+                    return Err(Error::Io(
+                        "events from the device this one is driving".to_owned(),
+                    ));
+                }
                 let onward = self.is_driving();
                 let mut out = Vec::new();
                 let mut left: Option<Leave> = None;
@@ -1214,11 +1272,17 @@ impl Capture for FakeCapture {
     }
 }
 
+/// What a test's fake injector runs when a drive begins.
+type BeginHook = Box<dyn Fn((f64, f64)) + Send + Sync>;
+
 /// An in-memory injector for tests and `LIGATURE_FAKE_INPUT=1`: records
 /// where drives began, every event injected and every end.
 pub struct FakeInject {
     params: Mutex<InputParams>,
     screen: (u32, u32),
+    /// Run by `begin` with the start, as a compositor whose barrier fires
+    /// on the entering pointer would.
+    on_begin: Mutex<Option<BeginHook>>,
     begun: Mutex<Vec<(f64, f64)>>,
     injected: Mutex<Vec<InputEvent>>,
     ends: Mutex<usize>,
@@ -1236,10 +1300,17 @@ impl FakeInject {
                 text: true,
             }),
             screen: (width, height),
+            on_begin: Mutex::new(None),
             begun: Mutex::new(Vec::new()),
             injected: Mutex::new(Vec::new()),
             ends: Mutex::new(0),
         })
+    }
+
+    /// Makes `begin` run `f` with the start, before it returns: how a
+    /// compositor reports the entering pointer at the edge it was put on.
+    pub fn on_begin(&self, f: impl Fn((f64, f64)) + Send + Sync + 'static) {
+        *lock(&self.on_begin) = Some(Box::new(f));
     }
 
     /// Changes what the injector takes, as a platform permission would.
@@ -1282,6 +1353,9 @@ impl Inject for FakeInject {
 
     fn begin(&self, start: (f64, f64)) -> Result<(), Error> {
         lock(&self.begun).push(start);
+        if let Some(f) = lock(&self.on_begin).as_ref() {
+            f(start);
+        }
         Ok(())
     }
 

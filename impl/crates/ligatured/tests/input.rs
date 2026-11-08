@@ -557,6 +557,70 @@ async fn a_driven_device_never_leads_on_to_the_device_driving_it() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_barrier_firing_on_the_entering_pointer_never_drives_the_driver_back() {
+    // The usual two-desktop layout: a's right edge leads to b, b's left edge
+    // back to a. The entry puts b's pointer on b's left edge and b's
+    // compositor fires the barrier there at once, before b has answered
+    // ready (Hyprland does; on 2026-11-08 the hit found b not yet driven, b
+    // drove a back, each relayed to the other and both keyboards were lost,
+    // LP-174). The hit must find b driven and give the input back.
+    let (a, b, _c, _c_dir) = three().await;
+    let (a_key, b_key) = (*a.daemon.binding().public(), *b.daemon.binding().public());
+    a.sync.set_edge(Edge::Right, b_key).unwrap();
+    b.sync.set_edge(Edge::Left, a_key).unwrap();
+    let barrier = b.capture.clone();
+    b.inject.on_begin(move |start| {
+        // Reported from another thread, as the helper's reader thread does,
+        // and handled while this entry is still completing.
+        let barrier = barrier.clone();
+        std::thread::spawn(move || barrier.hit_edge(Edge::Left, start.1))
+            .join()
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    });
+    a.capture.hit_edge(Edge::Right, 0.5);
+    until("b is driven", || b.sync.driven_by() == Some(a_key)).await;
+    until("b gave the barrier's capture back", || {
+        b.capture.releases() == vec![Some((Edge::Left, 0.5))]
+    })
+    .await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert!(
+        !b.sync.is_driving(),
+        "b must never drive the device driving it"
+    );
+    assert_eq!(b.capture.taken(), None);
+    assert!(a.sync.is_driving());
+    assert_eq!(
+        a.sync.driven_by(),
+        None,
+        "a must never be driven by the device it drives"
+    );
+    assert_eq!(a.capture.taken(), Some(Edge::Right));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_drive_of_the_device_driving_this_one_is_refused() {
+    let (a, b, _c, _c_dir) = three().await;
+    a.sync
+        .drive(*b.daemon.binding().public(), Enter::absolute(0.5, 0.5))
+        .await
+        .unwrap();
+    until("b is driven", || b.sync.driven_by().is_some()).await;
+    let refused = b
+        .sync
+        .drive(*a.daemon.binding().public(), Enter::absolute(0.5, 0.5))
+        .await;
+    assert!(
+        matches!(refused, Err(lp_core::Error::Refused(_))),
+        "{refused:?}"
+    );
+    assert!(!b.sync.is_driving());
+    assert_eq!(a.sync.driven_by(), None);
+    assert!(a.sync.is_driving());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_edge_hit_that_cannot_drive_gives_the_input_back() {
     // On Linux the compositor has already captured the keyboard and mouse
     // when it reports the edge hit: a drive that does not start must hand

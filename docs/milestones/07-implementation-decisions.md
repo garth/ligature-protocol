@@ -365,3 +365,16 @@ itself driving relays what its controller sends, as it came, with its capture's 
 its own screen, is dropped. When the pointer comes back across the far device's edge, that
 device's leave ends the onward drive and the middle device injects again. The Mac's tap still
 passes posted text on as text.
+
+**A driven device records that it is driven before it injects the entry.** The entry puts the
+pointer on the screen's edge, and the compositor's barrier there fires on it at once (Hyprland's
+InputCapture reports a hit for the virtual pointer as for the real one), on another task than
+the one answering the enter. On 2026-11-08 the hit was handled first: every guard saw an
+undriven device, the right edge led back to the Mac, Linux drove the Mac while the Mac drove
+Linux, each relayed what the other sent, nothing was injected anywhere, and both keyboards were
+lost until a hard reset. Now `driven` is set before `begin`, `drive` refuses the device driving
+this one and backs off if it became the driver while `ready` was awaited, an enter from the
+device this one drives is refused, and events from it are never relayed back: each side records
+its own state and then reads the other's, so whichever is second gives way, and the input comes
+back to whoever holds the keyboard. The test makes the fake injector's `begin` hit the capture's
+edge, as the compositor did.

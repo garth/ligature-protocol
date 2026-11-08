@@ -431,10 +431,21 @@ impl MacInject {
 
     /// Moves the tracked pointer to `to` (kept on a display) and posts the
     /// move, as a drag while a button is down.
-    fn move_to(&self, s: &mut InjectState, to: (f64, f64)) -> Result<(), Error> {
+    /// Moves the pointer to `to`, kept on a display. A relative move posts the
+    /// movement it was asked for as the event's delta, as a mouse at a screen's
+    /// edge still reports its motion: a capture running on this Mac (the
+    /// phone's touchpad driving it on across an edge) forwards that delta, and
+    /// a clamped one would leave the next device's pointer stuck at its edge
+    /// (LP-174).
+    fn move_to(
+        &self,
+        s: &mut InjectState,
+        to: (f64, f64),
+        asked: Option<(f64, f64)>,
+    ) -> Result<(), Error> {
         let poster = self.poster()?;
         let to = clamp_to_zones(&s.zones, to);
-        let delta = (to.0 - s.pos.0, to.1 - s.pos.1);
+        let delta = asked.unwrap_or((to.0 - s.pos.0, to.1 - s.pos.1));
         s.pos = to;
         s.clicks.moved(to);
         let kind = match s.buttons.first().and_then(|b| mac_button(*b)) {
@@ -539,7 +550,7 @@ impl Inject for MacInject {
         s.lines.clear();
         s.pixels.clear();
         quartz::refresh_keyboard_layout();
-        self.move_to(&mut s, to)
+        self.move_to(&mut s, to, None)
     }
 
     fn inject(&self, event: &InputEvent) -> Result<(), Error> {
@@ -549,11 +560,11 @@ impl Inject for MacInject {
         match event {
             InputEvent::Motion { dx, dy } => {
                 let to = (s.pos.0 + dx, s.pos.1 + dy);
-                self.move_to(s, to)?;
+                self.move_to(s, to, Some((*dx, *dy)))?;
             }
             InputEvent::Position { x, y } => {
                 let to = point_at(&s.zones, (*x, *y));
-                self.move_to(s, to)?;
+                self.move_to(s, to, None)?;
             }
             InputEvent::Button { code, pressed } => {
                 let Some(button) = mac_button(*code) else {

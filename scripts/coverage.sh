@@ -24,8 +24,27 @@ if [ "${1:-}" != "--report" ]; then
     cargo llvm-cov --workspace --no-report
 fi
 cargo llvm-cov report --html
-echo "== the whole workspace (floor ${FLOOR_ALL}%)"
-cargo llvm-cov report --summary-only --fail-under-lines "$FLOOR_ALL" | tail -1
-echo "== the logic, without the platform glue (floor ${FLOOR_LOGIC}%)"
-cargo llvm-cov report --summary-only --ignore-filename-regex "$GLUE" \
-    --fail-under-lines "$FLOOR_LOGIC" | tail -1
+
+# Prints the report's total and notes a floor that was missed. The report's
+# status is taken before its output is cut down: piped straight into `tail`,
+# its failure would be lost and the script would pass below a floor.
+missed=""
+floor() {
+    name=$1
+    lines=$2
+    shift 2
+    echo "== $name (floor ${lines}%)"
+    if summary=$(cargo llvm-cov report --summary-only --fail-under-lines "$lines" "$@"); then
+        echo "$summary" | tail -1
+    else
+        echo "$summary" | tail -1
+        missed="$missed $name;"
+    fi
+}
+
+floor "the whole workspace" "$FLOOR_ALL"
+floor "the logic, without the platform glue" "$FLOOR_LOGIC" --ignore-filename-regex "$GLUE"
+if [ -n "$missed" ]; then
+    echo "coverage is below its floor for:$missed" >&2
+    exit 1
+fi

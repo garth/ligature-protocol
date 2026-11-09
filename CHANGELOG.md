@@ -50,6 +50,8 @@ release workflow publishes the section as the release notes with the installers.
   device's webcam. It watches another device's camera on the watch screen. Android starts a
   camera only for an app in front, so a request that comes while the app is in the
   background is a notification to tap unless Ligature is on under Accessibility (LP-209).
+- The guide has a page on cameras, and the platform notes say what each platform does with
+  one and why a Mac and a phone do not present one (LP-210).
 
 ## [0.2.0-alpha] - 2026-11-08
 

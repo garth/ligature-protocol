@@ -152,6 +152,23 @@ While the share runs, Android's cast indicator shows and the app's notification 
 sharing**; stopping the cast from the quick settings ends it too. `ScreenWake` lights the
 screen for a drive or a share (`TURN_SCREEN_ON` on Android 14 and later).
 
+## Cameras
+
+The **Cameras** card (milestone 10) appears when a device of yours shares a camera, shows a
+cast or presents one. **Watch** opens a device's camera on the watch screen, without touch.
+The phone shares its own cameras only after **Allow the camera** on that card, where Android
+asks for the camera and the microphone; until then the node is told it shares none. Then a
+device can start one itself, and the card casts one: **Use as** a device's webcam where
+that device presents, **Show on** it where it shows casts.
+
+`CameraShareService` points Camera2 at the H.264 encoder's input surface and reads the
+microphone into the Opus encoder. Android starts a foreground service of the camera type
+only for an app the user can see, so a request goes through `CameraStartActivity`, opened
+at once while the app is in front or `DriveService` is on and otherwise from a notification
+to tap. The picture is the sensor's, which lies along the phone's long side, so the phone is
+turned on its side to be a webcam. Android has no camera an app can offer to other apps, so
+the phone never presents one.
+
 ## Where things are
 
 | | |

@@ -25,7 +25,7 @@ feature they have today.
 | --- | --- | --- |
 | `ligatured` | Linux, macOS | The daemon: runs as a user service, holds your keys and talks to your other devices |
 | `lpctl` | Linux, macOS | The command line that drives the daemon: pairing, status, sending files, diagnostics |
-| `lpview` | Linux, macOS | A window that shows another of your devices' screens and drives it |
+| `lpview` | Linux, macOS | A window that shows another of your devices' screens and drives it, or shows one of its cameras |
 | Ligature for Android | Android | The daemon inside an app: pairing, sending, a touchpad and a screen viewer for your desktops, and a phone your desktops can drive and watch |
 
 ## How the guide is organised
@@ -33,8 +33,9 @@ feature they have today.
 1. [Install](install.md) the apps on each device.
 2. [First steps](first-steps.md): create your keys on one device and pair the others.
 3. The features: the [clipboard](clipboard.md), [notifications](notifications.md),
-   [files](files.md), one [keyboard and mouse](input.md) across your desktops, and
-   [screens](screen.md) watched and driven from another device.
+   [files](files.md), one [keyboard and mouse](input.md) across your desktops,
+   [screens](screen.md) watched and driven from another device, and [cameras](cameras.md)
+   watched from another device or used there as a webcam.
 4. [Your devices](devices.md): seeing them, naming them, revoking one, starting over.
 5. [Upgrading and uninstalling](upgrade-uninstall.md).
 6. [Troubleshooting](troubleshooting.md) when devices do not find each other or something

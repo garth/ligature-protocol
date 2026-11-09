@@ -89,6 +89,32 @@ which a machine without `libopus` or a default output simply does not offer. A c
 to the machine opens in `lpview`, which the daemon starts in the session from beside its own
 executable, and `lpview` plays a share's sound through ffmpeg onto the default output.
 
+A camera is a PipeWire node of the class `Video/Source`, which is the only place a laptop
+camera behind libcamera appears. The daemon lists them from `pw-dump` and reads one with
+GStreamer's `pipewiresrc`, directly and not through the Camera portal, which exists for
+sandboxed programs and has no picker to stand for consent; where PipeWire lists none, a
+plain V4L2 device is read by ffmpeg. PipeWire's session manager links a stream whose target
+is missing to the default device, so a reader sets `node.dont-fallback` and
+`node.dont-reconnect`: a share reads the camera it names or nothing, and ends when that
+camera goes. The microphone is the default source, read by `pw-record` with the same two
+properties, since a recorder on the PulseAudio interface is moved to another source when its
+own goes. Nothing on Linux asks before an unsandboxed program opens a camera, so the
+notification that stands for a shared screen stands for a shared camera, and a share that
+cannot show it does not start.
+
+A received camera is presented as a PipeWire node of that class with the role `Camera`,
+offered by GStreamer's `pipewiresink` from pictures ffmpeg decodes: that is what the Camera
+portal counts as a camera and what a program that finds cameras through PipeWire lists. A
+program that reads V4L2 alone needs the out-of-tree `v4l2loopback` module, to whose first
+device the daemon also writes when it is loaded. The camera's sound is a `pw-loopback` pair,
+an output the daemon plays into and a source at its other end, which programs list among the
+microphones. A source that GStreamer offers reads badly through the PulseAudio interface,
+which browsers record through (a fifth of the samples arrived here), and one made with
+`pw-cat` stops taking samples while nobody listens. A player on the PulseAudio interface
+whose output is missing is put on the default output, so the daemon starts it only once its
+output exists and ends it when the output goes. Neither node is given a priority, so
+neither becomes the session's default.
+
 Open question: the minimum set of compositors and portals to support (Hyprland is the first
 target), and how the system service drives audio and display without a session of its own.
 
@@ -165,6 +191,17 @@ why; each such limit is recorded as the platform's choice and not worked around:
   and later, which is when Apple added it to the capture; on an older macOS a share is silent,
   since Apple gives a program no other way to what the machine plays. A cast offered to the
   Mac opens in `lpview`, started by the agent, which plays sound through AudioToolbox.
+- **Cameras**: AVFoundation lists the capture devices, and a capture session delivers a
+  camera's frames and the default microphone's samples, each in the device's own size or
+  format. The Camera and the Microphone are asked for once each, in a dialog macOS shows on
+  first use, and each needs a usage description in the bundle's `Info.plist`, without which
+  macOS ends a process that opens the device. An answer applies to the running process,
+  unlike Screen Recording's, and macOS shows its own indicators while either is in use. A
+  Mac shares a camera and shows one sent to it, but does not present one to its programs: a
+  camera for other programs is a Core Media I/O extension, which macOS loads only from an
+  application signed with a Developer ID and notarised by Apple. That is Apple's choice
+  about what the owner of a Mac may add to it, not a limit of the protocol: a Linux machine
+  presents the same camera on its owner's say alone.
 - **Keys**: the Keychain stores the local store's keys; the Secure Enclave holds only
   P-256 keys, so an Ed25519 key is software-held and may be wrapped by one
   ([ADR 0027](../adr/0027-ed25519.md)).
@@ -286,6 +323,16 @@ protocol of its own. LineageOS is the first target (no Google services, sideload
   to the phone opens the watch screen while the app is in front or the accessibility service
   is on, and is otherwise a notification, since Android keeps a background app from opening
   itself.
+- **Cameras.** Camera2 opens a camera for an app that holds the camera permission, which the
+  app asks for from its Cameras card and nowhere else, with the microphone's; until it is
+  held the phone offers no camera. Android starts a foreground service of the camera type
+  only for an app the user can see, so a request from another device starts the camera
+  through a transparent activity, which the app may open from the background only while
+  its accessibility service is on, and is otherwise a notification to tap. The camera's
+  pictures go into `MediaCodec`'s encoder as the sensor gives them, which is along the
+  phone's long side, and Android shows its green indicator while the camera or the
+  microphone is on. Android has no camera an app can offer to other apps, so a phone never
+  presents one, which is the platform's choice as it is on the Mac.
 - **SMS, telephony.** SMS and telephony need their own permissions and, for SMS, store
   policy approval; neither is offered yet.
 - **Keys.** The Android Keystore holds no Ed25519 keys on most devices (section 4a); the

@@ -32,7 +32,12 @@ and on request), both run with the real devices before the release. On `main` si
 `screen` family started by the sharer as a cast, with `offer` and a `receives` param; windows
 beside displays, listed by a Mac and picked in the portal on Linux; Opus sound on the share's
 stream as `audio` messages, captured through PipeWire, ScreenCaptureKit and Android's
-playback capture and played by `lpview` through ffmpeg and by the app). Nothing beyond them.
+playback capture and played by `lpview` through ffmpeg and by the app) and milestone 10 (the
+`camera` family, the screen family under its own names with `cameras` and a `presents` param:
+PipeWire's cameras on Linux, AVFoundation's on the Mac and Camera2's on the phone, each with
+the microphone; a received camera shown in `lpview` or the app, and presented on Linux as a
+PipeWire camera node and a `pw-loopback` microphone; the Mac's and the phone's parts are
+type-checked and built, not run). Nothing beyond them.
 The project's domain is `ligatureprotocol.org`, so the `org.ligatureprotocol` type names
 and the schema `$id`s are official.
 
@@ -131,7 +136,8 @@ The reference implementation is Rust and is also the production implementation
   live in `docs/adr/superseded/`.
 - `docs/glossary.md`, `docs/prior-art.md`.
 - `docs/guide/`: the user guide, one page per topic (install, first steps, clipboard,
-  notifications, files, devices, upgrade and uninstall, troubleshooting), written for people
+  notifications, files, input, screens, cameras, devices, upgrade and uninstall,
+  troubleshooting), written for people
   who run the apps; it names what each platform cannot do rather than working around it,
   and every command in it is checked against the built binaries.
 - `docs/security-audit/`: dated reports from the `security-audit` skill, the latest linked
@@ -145,8 +151,12 @@ The reference implementation is Rust and is also the production implementation
   tasks LP-198 to LP-203; the run is LP-203), with `09-implementation-decisions.md` for its
   non-protocol choices (sound as `Captured::Audio`, Ogg Opus through ffmpeg in
   `screen::sound` and `screen::ogg`, pending offers with `accept` and `decline`, `lpview
-  --receive` started by the daemon, the phone's recording permission for its sound); 10 (a
-  camera, epic LP-194) is drafted.
+  --receive` started by the daemon, the phone's recording permission for its sound); 10 is
+  implemented and awaits its run (epic LP-194, tasks LP-205 to LP-210; the run is LP-210),
+  with `10-implementation-decisions.md` (one `ScreenSync` for both families with a `Family`,
+  the wire conversion in `lp-core::camera`, a `Presenter` beside the viewer, `camera_linux`
+  with readers that forbid PipeWire's fallback to another device, `camera_macos` over
+  `lp_macos::camera`, `HostCamera` and the app's `CameraShareService`).
   macOS share the clipboard) and `01-implementation-decisions.md` records its non-protocol
   choices (store is
   SQLite via rusqlite bundled; keys in a separate 0600 file; state under `data/` in the
@@ -181,9 +191,9 @@ The reference implementation is Rust and is also the production implementation
   provider and Save action); its run with the real devices is recorded on LP-95.
   `07-shared-input.md` and `08-remote-desktop.md` are done, their implementation decisions
   beside them, and `09-cast-and-sound.md` (a screen or a window cast to another device, every
-  share with its sound) is accepted and implemented. `06-phone-and-media.md` (the phone's SMS
-  and calls, media control) and `10-camera.md` (a camera watched from another device or
-  presented to a desktop's programs as a webcam, epic LP-194) are drafts.
+  share with its sound) and `10-camera.md` (a camera watched from another device or
+  presented to a desktop's programs as a webcam) are accepted and implemented.
+  `06-phone-and-media.md` (the phone's SMS and calls, media control) is a draft.
 - Sponsors are listed in two places that stay identical: the README's "Sponsors" section
   and the landing page `docs/index.md`, grouped by tier (Gold, Silver, Bronze; a tier is
   written only once it has a sponsor), each with a logo under `docs/assets/sponsors/` (a
@@ -205,7 +215,8 @@ The reference implementation is Rust and is also the production implementation
   locally with `site/build.sh` (cargo on `PATH`, through `mise exec rust@stable --` here).
 - `schemas/*.schema.json`: JSON Schema 2020-12 drafts (person, device, capability, grant,
   group, role, revocation, envelope, message, pairing, capability.clipboard,
-  capability.notifications, capability.files; `control` is implementation-only).
+  capability.notifications, capability.files, capability.input, capability.screen,
+  capability.camera; `control` is implementation-only).
   Spec chapters link to these by relative path.
 - `impl/`: Rust cargo workspace, edition 2024. Crates: `lp-core` (shared types, capability
   model), `lp-identity` (master key, ceremony, roles, trust store; no publication, ADR

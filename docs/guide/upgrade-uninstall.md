@@ -26,20 +26,22 @@ about you or your devices, and setting `LIGATURE_NO_UPDATE_CHECK=1` switches it 
 result is kept in `update-check.json` in the data directory.
 
 **macOS permissions after an upgrade**: the app is signed ad hoc, so to macOS every new
-version is a new app. Accessibility, Input Monitoring and Screen Recording are asked for
-again, and a switch left on in System Settings for the previous version no longer applies,
-even though it still shows as on. Clear the old entries, which also restarts the daemon,
-then allow each one when macOS asks:
+version is a new app. Accessibility, Input Monitoring, Screen Recording and, once you have
+shared a camera, the Camera and the Microphone are asked for again, and a switch left on in
+System Settings for the previous version no longer applies, even though it still shows as
+on. Clear the old entries, which also restarts the daemon, then allow each one when macOS
+asks:
 
 ```sh
 lpctl permissions reset
 ```
 
 It runs `tccutil reset` for Accessibility, its `PostEvent` half, `ListenEvent` (Input
-Monitoring) and `ScreenCapture` on `org.ligatureprotocol.ligatured`, then restarts the
-agent. macOS asks for Accessibility and Input Monitoring at once and for Screen Recording at
-the first share; the daemon restarts by itself as each is allowed, and `lpctl permissions`
-shows which it holds.
+Monitoring), `ScreenCapture`, `Camera` and `Microphone` on `org.ligatureprotocol.ligatured`,
+then restarts the agent. macOS asks for Accessibility and Input Monitoring at once, for
+Screen Recording at the first share of the screen, and for the Camera and the Microphone at
+the first share of a camera. The daemon restarts by itself as each of the first three is
+allowed, the other two apply at once, and `lpctl permissions` shows which it holds.
 
 **Android**: install the new APK over the old one. The release APK is signed with the
 project's key, so the update keeps the app's identity and data. The version code grows with

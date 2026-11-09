@@ -12,6 +12,7 @@
 - [Files](guide/files.md)
 - [Keyboard and mouse](guide/input.md)
 - [Screens](guide/screen.md)
+- [Cameras](guide/cameras.md)
 - [Your devices](guide/devices.md)
 - [Upgrading and uninstalling](guide/upgrade-uninstall.md)
 - [Troubleshooting](guide/troubleshooting.md)

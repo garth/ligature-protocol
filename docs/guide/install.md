@@ -59,6 +59,10 @@ Ubuntu) to share through the ScreenCast portal. Without the plugin a compositor 
 `wlr-screencopy`, Hyprland among them, is captured directly instead; without ffmpeg the
 machine offers neither, which `lpctl screen status` shows.
 
+Sharing a camera, and presenting another device's as a webcam, use the same two and
+PipeWire's own tools, which come with PipeWire (`pw-dump`, `pw-record` and `pw-loopback`),
+and `pactl` ([Cameras](cameras.md#what-each-platform-needs)).
+
 Sharing the keyboard and mouse needs, to be driven, a compositor with the virtual pointer and
 virtual keyboard protocols (Hyprland and Sway have them; GNOME and KDE Plasma give
 applications no virtual pointer, so they cannot be driven), and to drive others a desktop
@@ -105,6 +109,10 @@ The daemon runs as a per-user launchd agent that starts at login.
     While the screen is shared the menu bar shows macOS's own sharing indicator, and
     stopping the share there ends it.
 
+    Sharing the Mac's camera needs ffmpeg too. The first time another device watches it,
+    macOS asks whether Ligature may use the camera, and then the microphone; the share
+    waits for your answer, and no restart follows ([Cameras](cameras.md)).
+
 4. Allow notifications once. When the daemon first starts, macOS asks whether Ligature may
     send notifications; click **Allow**, and your other devices' notifications show from
     then on.
@@ -118,12 +126,13 @@ The daemon runs as a per-user launchd agent that starts at login.
     Screen Recording, the daemon restarts by itself once you allow either, so they take
     effect without your restarting anything.
 
-    `lpctl permissions` lists the three permissions with which the daemon holds, and `lpctl
-    permissions open accessibility` (or `input-monitoring`, `screen-recording`) opens the
-    page where each is turned on, asking macOS first so that Ligature is listed there.
-    macOS lets nothing but you turn one on. Changing Input Monitoring later turns
-    Accessibility off as well, so turn it back on afterwards. macOS ties the three to the
-    app's ad hoc signature, so after an upgrade, or a build of your own, allow them again
+    `lpctl permissions` lists the permissions with which the daemon holds, the camera's and
+    the microphone's among them, and `lpctl permissions open accessibility` (or
+    `input-monitoring`, `screen-recording`, `camera`, `microphone`) opens the page where
+    each is turned on, asking macOS first so that Ligature is listed there. macOS lets
+    nothing but you turn one on. Changing Input Monitoring later turns Accessibility off as
+    well, so turn it back on afterwards. macOS ties them all to the app's ad hoc signature,
+    so after an upgrade, or a build of your own, allow them again
     ([Upgrading](upgrade-uninstall.md#upgrading)).
 
 6. Check it:

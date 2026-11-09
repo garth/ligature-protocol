@@ -114,9 +114,10 @@ watching side; `lpctl screen cast --no-audio` sends none.
   way to what the Mac plays, so an older Mac shares the picture alone.
 - **The phone** shares its sound only once you allow recording: under **Cast this screen**,
   tap **Share the phone's sound too**. Android puts what the phone plays behind the same
-  permission as the microphone; Ligature uses it for that alone and never opens the
-  microphone. Android leaves calls out of every share, and any app that asks not to be
-  captured, so some sound never leaves the phone whatever you allow.
+  permission as the microphone. A share of the screen never opens the microphone; only a
+  camera you share carries it ([Cameras](cameras.md)). Android leaves calls out of every
+  share, and any app that asks not to be captured, so some sound never leaves the phone
+  whatever you allow.
 - Watching a device that is in the same room plays its sound twice, once from each. Mute
   one of them.
 
@@ -232,7 +233,8 @@ writes its Opus packets to that file, for checking that sound arrives.
   window is never driven, and the phone shares what Android's dialog gives it.
 - A locked phone shares its lock screen but not its PIN, pattern or password screen, which
   is entered unseen from a viewer.
-- Sound comes only with a picture. Music from the phone on a desktop's speakers alone, or a
-  microphone, is not something the protocol carries yet.
+- Sound comes only with a picture. Music from the phone on a desktop's speakers alone is not
+  something the protocol carries yet; a microphone goes with a camera
+  ([Cameras](cameras.md)).
 - A cast goes to your own devices. A television or another person's device needs the
   household groups the protocol specifies and the apps do not have yet.

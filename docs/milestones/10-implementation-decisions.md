@@ -256,3 +256,42 @@ for the size and rate choices, the card's actions and the wording. Nothing of th
 has run on a phone: the permission dialogs, Camera2, the encoder's picture, the
 microphone, the start from the background and the indicator are for the owner's run on the
 Pixel.
+
+## LP-210: the run so far
+
+**Two built daemons on the Linux machine, 2026-11-09.** `ligatured` and `lpctl` of this
+build ran as processes, paired with `lpctl pair`, each kept to a test camera (a white ball
+on black, 640 by 480 at 30 a second) and a test microphone (a 440 Hz tone) by
+`LIGATURE_CAMERA_ONLY` and `LIGATURE_MICROPHONE`, so the machine's own camera and
+microphone were neither listed nor opened.
+
+- `lpctl camera list` on one showed the other's test camera alone, and `lpctl camera
+  status` showed both sharing, viewing, receiving and presenting.
+- `lpctl camera present` made "Ligature camera (cam-a)" and "Ligature microphone (cam-a)":
+  45 pictures were read back from the camera node and four seconds of a 439 Hz tone from the
+  microphone, by readers that take no other device. Both sides' status counted the same 175
+  frames and 289 packets of sound, none dropped.
+- `lpctl camera stop` on the presenting side ended it and both nodes went. On the first
+  run it answered "no share to stop", which was a fault in the daemon and is fixed (LP-206).
+- `lpctl camera cast --present` was presented on the other daemon with nobody asked, and
+  30 pictures were read back. On the first run it was agreed at 60 a second for a camera
+  that gives 30, which is fixed too (LP-206). The caster's `lpctl camera stop` ended it.
+- `lpctl camera start` wrote 60 frames of H.264 at 640 by 480 that `ffprobe` reads, and 97
+  packets of sound.
+
+Before and after, the session's default camera, microphone and output were the same and
+its own devices were suspended.
+
+**What that run does not show.** A real camera: this machine's is listed by the daemon at
+1920 by 1080 and was never started. A program using the presented camera: the Camera portal
+reports a camera present and the nodes read back, and no browser or call has been tried.
+`lpview --camera`, whose options were checked and whose window was not opened. The Mac and
+the phone, which have run nothing of milestone 10. The latency, which needs a real camera
+and a clock in front of it.
+
+**Still to run with someone at the devices**, by the plan's exit criteria: the phone's back
+camera and microphone as the camera and microphone of a call in a browser on the Linux
+machine, with the glass-to-glass latency; the Mac's camera presented on the Linux machine
+and the Linux machine's camera shown on the Mac and the phone; a camera cast from the phone
+and from the Mac; each share ended from each side, by the platform's indicator and by a
+dropped connection; and the permissions on the Mac and the phone asked for and refused.

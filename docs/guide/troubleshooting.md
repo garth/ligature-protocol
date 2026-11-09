@@ -110,6 +110,21 @@ The daemon logs each connection and each refusal with the peer's key at `info`;
 - The daemon's log says why a share was refused: `journalctl --user -u ligatured` on Linux,
   `~/Library/Logs/ligature/ligatured.log` on the Mac.
 
+## A camera cannot be watched or used
+
+- `lpctl camera status` on the device with the camera says whether it shares, and `lpctl
+  camera list` there shows the cameras it found. Linux lists the cameras PipeWire has
+  (`wpctl status` shows them under Video); a camera PipeWire does not list is not offered.
+- On the Mac, the Camera must be allowed (`lpctl permissions open camera`). On the phone,
+  tap **Allow the camera** on the **Cameras** card; until then it shares none.
+- A phone whose app is in the background shows a notification to tap before its camera
+  starts, unless Ligature is on under Accessibility. That is Android's rule for cameras.
+- `lpctl camera status` on a Linux machine says `presents: true` when it can offer a
+  camera to its programs. A program that does not list **Ligature camera** reads cameras
+  through V4L2 alone and needs `v4l2loopback` ([Cameras](cameras.md)).
+- A Mac and the phone never say `presents`: neither system lets Ligature offer a camera
+  to other programs.
+
 ## The phone cannot be driven or watched
 
 - The **Remote control** card on the app's screen says whether your devices can control the

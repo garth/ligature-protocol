@@ -1,6 +1,7 @@
 # Milestone 10: a camera on one of the person's devices used from another, as a picture and as a webcam
 
-**Status:** Draft, for acceptance by the owner. Raised as the epic LP-194 on 2026-11-08 at the
+**Status:** Accepted by the owner on 2026-11-09; the tasks are LP-205 to LP-210 under the epic
+LP-194. Raised as the epic LP-194 on 2026-11-08 at the
 owner's request, with milestone 9: send a camera's feed the way a screen is sent, and let a
 device use another device's camera for a conference call. The capture, encoding, transport,
 viewers and sound of milestones 8 and 9 carry it; the new work is a camera as a source on each
@@ -44,8 +45,10 @@ What this milestone pins:
    `frame`, `audio`, `keyframe` and `stop`, with the same fields, chunking, pacing, clock and
    negotiation (ADR 0044), and the schema refers to the screen schema's definitions for the
    shared shapes rather than copying them. The params are `shares` (this device captures a
-   camera), `views` (it shows one), `presents` (it presents a received camera to its
-   platform's programs as a camera device, and the sound as a microphone where it can),
+   camera), `views` (it shows one), `receives` (it takes a camera offered to it, as a screen's
+   cast is taken), `presents` (it presents a received camera to its platform's programs as a
+   camera device, and the sound as a microphone where it can; an `offer` carries `present`
+   when the caster asks for that rather than a picture in a window),
    `encodes`, `decodes`, `audioEncodes`, `audioDecodes`, `maxWidth`, `maxHeight` and
    `maxFrameRate`. A camera is its own family rather than a kind of screen source because it
    is a different device under chapter 10, a different consent on every platform, is never

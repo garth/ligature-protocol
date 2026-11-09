@@ -9,8 +9,12 @@ use std::time::{Duration, Instant};
 use ligature_android::{
     Config, DownloadTarget, DriveAction, DriveScreen, Event, Host, HostClipValue,
     LocalNotification, LogLevel, Node, NotificationCopy, OutgoingFile, PublishedDownload,
-    TransferInfo,
+    ScreenOffer, TransferInfo,
 };
+
+/// A share request as the host hears it: the viewer, the width, height and
+/// rate asked, and the channels of sound.
+type ShareRequest = (String, u32, u32, u32, u8);
 
 #[derive(Default)]
 struct FakeHost {
@@ -28,8 +32,13 @@ struct FakeHost {
     aborted: Mutex<Vec<u64>>,
     /// Frames of a watched share: whether each was a keyframe, and its size.
     screen_frames: Mutex<Vec<(bool, usize)>>,
-    /// Share requests: the viewer and the size and rate asked.
-    share_requests: Mutex<Vec<(String, u32, u32, u32)>>,
+    /// Packets of a watched share's sound: each one's number and size.
+    screen_audio: Mutex<Vec<(u64, usize)>>,
+    /// Casts offered to this phone.
+    offers: Mutex<Vec<ScreenOffer>>,
+    /// Share requests: the viewer, the size and rate asked, and the channels
+    /// of sound.
+    share_requests: Mutex<Vec<ShareRequest>>,
     share_keyframes: Mutex<u32>,
     share_stops: Mutex<u32>,
     /// What a drive of this phone asked of it.
@@ -155,11 +164,29 @@ impl Host for FakeHost {
         self.screen_frames.lock().unwrap().push((key, bytes.len()));
     }
 
-    fn screen_share_requested(&self, viewer: String, width: u32, height: u32, frame_rate: u32) {
-        self.share_requests
-            .lock()
-            .unwrap()
-            .push((viewer, width, height, frame_rate));
+    fn screen_audio(&self, _peer: String, seq: u64, _at: u64, bytes: Vec<u8>) {
+        self.screen_audio.lock().unwrap().push((seq, bytes.len()));
+    }
+
+    fn screen_share_requested(
+        &self,
+        viewer: String,
+        width: u32,
+        height: u32,
+        frame_rate: u32,
+        audio_channels: u8,
+    ) {
+        self.share_requests.lock().unwrap().push((
+            viewer,
+            width,
+            height,
+            frame_rate,
+            audio_channels,
+        ));
+    }
+
+    fn screen_offered(&self, offer: ScreenOffer) {
+        self.offers.lock().unwrap().push(offer);
     }
 
     fn screen_share_stop(&self) {
@@ -877,10 +904,12 @@ fn a_desktop_drives_the_phone_once_its_service_is_on() {
 /// capture is the host's, answered by the test as the app would.
 #[test]
 fn the_phone_watches_a_desktop_and_shares_its_own_screen() {
-    use ligatured::screen::{EncodedFrame, FakeCapture, ShareControl, Viewed};
+    use ligatured::screen::{
+        AudioPacket, CastSource, EncodedFrame, FakeCapture, ShareControl, Viewed,
+    };
     use lp_core::facts::Role;
     use lp_core::paths::Locations;
-    use lp_core::screen::{Display, SCREEN_TYPE, ScreenParams, Start, StopReason};
+    use lp_core::screen::{AudioFormat, Display, SCREEN_TYPE, ScreenParams, Start, StopReason};
     use lp_core::wire::Timestamp;
     use lp_identity::cross_signing::PersonKeys;
     use lp_identity::facts;
@@ -889,8 +918,8 @@ fn the_phone_watches_a_desktop_and_shares_its_own_screen() {
     let phone_dir = tempfile::tempdir().unwrap();
     let phone_host = Arc::new(FakeHost::with_downloads());
     let phone = Node::start(config(&phone_dir, "phone"), phone_host.clone()).unwrap();
-    // The app has an encoder and a 1080x2400 screen.
-    phone.set_screen_share(true, 1080, 2400, 2.625);
+    // The app has an encoder, a 1080x2400 screen and an Opus encoder.
+    phone.set_screen_share(true, 1080, 2400, 2.625, true);
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
@@ -916,6 +945,7 @@ fn the_phone_watches_a_desktop_and_shares_its_own_screen() {
             Some(capture.clone()),
             Some(ScreenParams {
                 views: true,
+                audio_decodes: vec![AudioFormat::OPUS_STEREO],
                 ..ScreenParams::default()
             }),
         );
@@ -971,20 +1001,21 @@ fn the_phone_watches_a_desktop_and_shares_its_own_screen() {
     let desktop_key = desktop.binding().public().to_string();
     assert_eq!(targets[0].key, desktop_key);
     let watch = phone
-        .screen_watch(desktop_key.clone(), 1280, 720, 30)
+        .screen_watch(desktop_key.clone(), 1280, 720, 30, false)
         .unwrap();
     assert_eq!(
         (
             watch.display.as_str(),
             watch.width,
             watch.height,
-            watch.frame_rate
+            watch.frame_rate,
+            watch.audio_channels
         ),
-        ("DP-1", 1280, 720, 30)
+        ("DP-1", 1280, 720, 30, 0)
     );
     assert!(
         phone
-            .screen_watch(desktop_key.clone(), 1280, 720, 30)
+            .screen_watch(desktop_key.clone(), 1280, 720, 30, false)
             .is_err(),
         "one at a time"
     );
@@ -1057,10 +1088,11 @@ fn the_phone_watches_a_desktop_and_shares_its_own_screen() {
     until("the app was asked", || {
         phone_host.share_requests.lock().unwrap().len() == 1
     });
-    let (viewer, w, h, rate) = phone_host.share_requests.lock().unwrap()[0].clone();
+    let (viewer, w, h, rate, channels) = phone_host.share_requests.lock().unwrap()[0].clone();
     assert_eq!(viewer, desktop.binding().public().fingerprint());
-    // A 1080x2400 screen fitted within the desktop viewer's 1920x1080.
-    assert_eq!((w, h, rate), (486, 1080, 30));
+    // A 1080x2400 screen fitted within the desktop viewer's 1920x1080, and
+    // no sound, since the viewer asked for none.
+    assert_eq!((w, h, rate, channels), (486, 1080, 30, 0));
     phone.screen_share_started(true);
     let mut watching = runtime.block_on(watch).unwrap().unwrap();
     assert_eq!(watching.started.display.as_deref(), Some("screen"));
@@ -1111,6 +1143,178 @@ fn the_phone_watches_a_desktop_and_shares_its_own_screen() {
     // Android's dialog does not outlive the viewer who asked.
     until("the app was told the request is over", || {
         *phone_host.share_stops.lock().unwrap() == 2
+    });
+
+    // Milestone 9 (LP-202). The desktop has sound to give: the phone asks
+    // for it with the picture and the packets reach the host.
+    capture.set_audio_encodes(vec![AudioFormat::OPUS_STEREO]);
+    {
+        let sync = desktop_sync.clone();
+        runtime.block_on(async move { sync.advertise().await });
+    }
+    until("the phone sees the desktop's sound", || {
+        phone.daemon().registry().peers().iter().any(|p| {
+            p.capabilities.iter().any(|d| {
+                ScreenParams::from_descriptor(d).is_some_and(|p| !p.audio_encodes.is_empty())
+            })
+        })
+    });
+    let watch = phone
+        .screen_watch(desktop_key.clone(), 1280, 720, 30, true)
+        .unwrap();
+    assert_eq!(watch.audio_channels, 2);
+    until("the desktop's capture runs again", || {
+        capture.running() == vec!["DP-1".to_owned()]
+    });
+    assert!(capture.emit_audio(
+        "DP-1",
+        AudioPacket {
+            at: 5,
+            bytes: vec![7; 40],
+        },
+    ));
+    until("a packet of sound reached the host", || {
+        *phone_host.screen_audio.lock().unwrap() == vec![(0, 40)]
+    });
+    phone.screen_watch_stop();
+    let ended = |n: usize| {
+        phone_host
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| matches!(e, Event::ScreenEnded { .. }))
+            .count()
+            == n
+    };
+    until("the second watch ended", || ended(2));
+
+    // The desktop casts to the phone: the app is told of the offer and takes
+    // it, and the share runs as a watch does.
+    assert!(
+        phone.screen_cast_targets().is_empty(),
+        "the desktop does not receive yet"
+    );
+    let cast = {
+        let sync = desktop_sync.clone();
+        runtime.spawn(async move { sync.cast(&phone_key, CastSource::default(), true).await })
+    };
+    until("the app was told of the offer", || {
+        phone_host.offers.lock().unwrap().len() == 1
+    });
+    let offer = phone_host.offers.lock().unwrap()[0].clone();
+    assert_eq!(offer.peer, desktop_key);
+    // No device record names the desktop in this test, so its fingerprint
+    // stands in, as everywhere a name is shown.
+    assert_eq!(offer.peer_name, desktop.binding().public().fingerprint());
+    assert_eq!(
+        (
+            offer.kind.as_str(),
+            offer.name.as_str(),
+            offer.width,
+            offer.height,
+            offer.audio
+        ),
+        ("display", "DP-1", 2560, 1440, true)
+    );
+    let watch = phone
+        .screen_offer_accept(desktop_key.clone(), true)
+        .unwrap();
+    assert_eq!((watch.display.as_str(), watch.audio_channels), ("DP-1", 2));
+    let casting = runtime.block_on(cast).unwrap().unwrap();
+    assert_eq!(casting.started.audio, Some(AudioFormat::OPUS_STEREO));
+    phone.screen_watch_stop();
+    assert_eq!(runtime.block_on(casting.ended).unwrap(), StopReason::Viewer);
+    until("the received cast ended", || ended(3));
+    // And one the app declines.
+    let cast = {
+        let sync = desktop_sync.clone();
+        runtime.spawn(async move { sync.cast(&phone_key, CastSource::default(), false).await })
+    };
+    until("the app was told of the second offer", || {
+        phone_host.offers.lock().unwrap().len() == 2
+    });
+    assert!(!phone_host.offers.lock().unwrap()[1].audio);
+    phone.screen_offer_decline(desktop_key.clone()).unwrap();
+    let err = runtime.block_on(cast).unwrap().unwrap_err();
+    assert!(err.to_string().contains("declined"), "{err}");
+    assert!(phone.screen_offer_decline(desktop_key.clone()).is_err());
+
+    // The phone casts to the desktop, once something there shows casts: the
+    // app is asked for the projection with sound, and frames and packets
+    // flow to whoever took the offer.
+    let (taken_tx, taken) = std::sync::mpsc::channel();
+    {
+        let (sync, handle) = (desktop_sync.clone(), runtime.handle().clone());
+        desktop_sync.set_on_offer(Arc::new(move |peer, _offer| {
+            let (sync, taken_tx) = (sync.clone(), taken_tx.clone());
+            handle.spawn(async move {
+                let _ = taken_tx.send(sync.accept(&peer, true).await);
+            });
+        }));
+        let sync = desktop_sync.clone();
+        runtime.block_on(async move { sync.advertise().await });
+    }
+    until("the phone sees the desktop receive", || {
+        phone.screen_cast_targets().len() == 1
+    });
+    assert_eq!(phone.screen_cast_targets()[0].key, desktop_key);
+    phone.screen_cast(desktop_key.clone(), true).unwrap();
+    until("the app was asked for the projection", || {
+        phone_host.share_requests.lock().unwrap().len() == 3
+    });
+    assert_eq!(
+        phone_host.share_requests.lock().unwrap()[2].4,
+        2,
+        "with two channels of sound"
+    );
+    phone.screen_share_started(true);
+    let mut received = taken
+        .recv_timeout(Duration::from_secs(10))
+        .expect("the desktop took the cast")
+        .unwrap();
+    assert_eq!(received.started.display.as_deref(), Some("screen"));
+    assert_eq!(received.started.audio, Some(AudioFormat::OPUS_STEREO));
+    until("the app was told the cast runs", || {
+        phone_host
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|e| matches!(e, Event::ScreenCastStarted { peer } if *peer == desktop_key))
+    });
+    phone.screen_share_audio(vec![4; 30]);
+    phone.screen_share_frame(true, vec![3; 100]);
+    let (mut frames, mut packets) = (0, 0);
+    runtime.block_on(async {
+        while frames == 0 || packets == 0 {
+            match received.frames.recv().await.unwrap() {
+                Viewed::Frame { bytes, .. } => {
+                    assert_eq!(bytes.len(), 100);
+                    frames += 1;
+                }
+                Viewed::Audio { bytes, .. } => {
+                    assert_eq!(bytes.len(), 30);
+                    packets += 1;
+                }
+                Viewed::Stopped(r) => panic!("stopped: {r}"),
+            }
+        }
+    });
+    // The user stops the cast on the phone.
+    phone.screen_cast_stop();
+    let reason = runtime.block_on(async {
+        loop {
+            if let Viewed::Stopped(r) = received.frames.recv().await.unwrap() {
+                return r;
+            }
+        }
+    });
+    assert_eq!(reason, StopReason::Sharer);
+    until("the app was told the cast ended", || {
+        phone_host.events.lock().unwrap().iter().any(|e| {
+            matches!(e, Event::ScreenCastEnded { peer, reason } if *peer == desktop_key && reason == "sharer")
+        })
     });
 
     phone.stop();

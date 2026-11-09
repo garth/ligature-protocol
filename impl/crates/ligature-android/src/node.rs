@@ -287,15 +287,39 @@ impl Node {
                 .attach_clipboard_with(clipboard, clipboard_config);
             node.daemon.attach_notifications(notifications);
             // The phone shares its screen through the app's media projection
-            // and watches a desktop's in the app (milestone 8).
-            node.daemon.attach_screen(
+            // and watches a desktop's in the app (milestone 8), with sound
+            // and casts both ways (milestone 9): every Android decodes Opus.
+            let screen = node.daemon.attach_screen(
                 Some(node.screen.clone()),
                 Some(lp_core::screen::ScreenParams {
                     views: true,
                     max_frame_rate: ligatured::screen::VIEW_RATE,
+                    audio_decodes: vec![
+                        lp_core::screen::AudioFormat::OPUS_STEREO,
+                        lp_core::screen::AudioFormat::OPUS_MONO,
+                    ],
                     ..lp_core::screen::ScreenParams::default()
                 }),
             );
+            // A cast offered to the phone goes to the app, which shows it or
+            // tells the user; the phone always receives.
+            {
+                let host = node.host.clone();
+                let daemon = node.daemon.clone();
+                screen.set_on_offer(Arc::new(move |peer, offer| {
+                    host.screen_offered(crate::ScreenOffer {
+                        peer: peer.to_string(),
+                        peer_name: daemon
+                            .device_display_name(&peer)
+                            .unwrap_or_else(|| peer.fingerprint()),
+                        kind: offer.source.kind.to_string(),
+                        name: offer.source.name.clone().unwrap_or(offer.source.id),
+                        width: offer.source.width,
+                        height: offer.source.height,
+                        audio: !offer.audio.is_empty(),
+                    });
+                }));
+            }
             // The phone drives a desktop as a touchpad (milestone 7), and is
             // driven while the user has its accessibility service on (LP-167).
             let input = node.daemon.attach_input(
@@ -483,41 +507,15 @@ impl Node {
     /// connected devices whose descriptor says they share.
     #[must_use]
     pub fn screen_targets(&self) -> Vec<crate::ScreenTarget> {
-        use lp_core::screen::ScreenParams;
-        let mut targets: Vec<crate::ScreenTarget> = self
-            .daemon
-            .registry()
-            .peers()
-            .into_iter()
-            .filter(|caps| {
-                matches!(
-                    self.daemon.recognise(&caps.peer),
-                    Ok(lp_identity::trust::Recognition::MyBinding { .. })
-                )
-            })
-            .filter(|caps| {
-                caps.capabilities
-                    .iter()
-                    .find_map(ScreenParams::from_descriptor)
-                    .is_some_and(|p| p.shares)
-            })
-            .map(|caps| crate::ScreenTarget {
-                key: caps.peer.to_string(),
-                name: self
-                    .daemon
-                    .device_display_name(&caps.peer)
-                    .unwrap_or_else(|| caps.peer.fingerprint()),
-            })
-            .collect();
-        targets.sort_by(|a, b| a.name.cmp(&b.name).then(a.key.cmp(&b.key)));
-        targets
+        self.screen_peers(|p| p.shares)
     }
 
     /// Watches `peer`'s primary display, no larger than `max_width` by
-    /// `max_height` and no faster than `frame_rate`. Frames go to
-    /// [`crate::Host::screen_frame`] and the end to
-    /// [`Event::ScreenEnded`]. Blocks until the sharer answers, which may
-    /// wait on its consent.
+    /// `max_height` and no faster than `frame_rate`, with its sound when
+    /// `audio` and the sharer has some. Frames go to
+    /// [`crate::Host::screen_frame`], packets to [`crate::Host::screen_audio`]
+    /// and the end to [`Event::ScreenEnded`]. Blocks until the sharer
+    /// answers, which may wait on its consent.
     ///
     /// # Errors
     ///
@@ -530,15 +528,10 @@ impl Node {
         max_width: u32,
         max_height: u32,
         frame_rate: u32,
+        audio: bool,
     ) -> Result<crate::ScreenWatch, LpError> {
         let peer = PublicKey::parse(peer.trim())?;
-        if lock_watch(&self.watching).is_some() {
-            return Err(LpError::Internal("already watching a screen".to_owned()));
-        }
-        let sync = self
-            .daemon
-            .screen_sync()
-            .ok_or_else(|| LpError::Internal("screen is not attached".to_owned()))?;
+        let sync = self.screen_sync_free()?;
         let start = lp_core::screen::Start {
             display: None,
             window: None,
@@ -547,47 +540,111 @@ impl Node {
             width: max_width,
             height: max_height,
             frame_rate,
-            audio: Vec::new(),
+            audio: if audio {
+                vec![
+                    lp_core::screen::AudioFormat::OPUS_STEREO,
+                    lp_core::screen::AudioFormat::OPUS_MONO,
+                ]
+            } else {
+                Vec::new()
+            },
         };
         let watching = self.with_runtime(|rt| rt.block_on(sync.watch(&peer, start)))??;
-        let ligatured::screen::Watching {
-            started,
-            mut frames,
-            control,
-        } = watching;
-        *lock_watch(&self.watching) = Some((peer, control));
+        self.watch_started(peer, watching)
+    }
+
+    /// Takes the cast `peer` offered this phone ([`crate::Host::screen_offered`]),
+    /// with its sound when `audio` and the offer has some; the share then
+    /// runs as a watch does.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LpError::Mismatch`] when no offer from `peer` waits or the
+    /// caster refused, and [`LpError::Internal`] when a watch already runs.
+    pub fn screen_offer_accept(
+        &self,
+        peer: String,
+        audio: bool,
+    ) -> Result<crate::ScreenWatch, LpError> {
+        let peer = PublicKey::parse(peer.trim())?;
+        let sync = self.screen_sync_free()?;
+        let watching = self.with_runtime(|rt| rt.block_on(sync.accept(&peer, audio)))??;
+        self.watch_started(peer, watching)
+    }
+
+    /// Leaves the cast `peer` offered this phone.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LpError::Mismatch`] when no offer from `peer` waits.
+    pub fn screen_offer_decline(&self, peer: String) -> Result<(), LpError> {
+        let peer = PublicKey::parse(peer.trim())?;
+        let sync = self
+            .daemon
+            .screen_sync()
+            .ok_or_else(|| LpError::Internal("screen is not attached".to_owned()))?;
+        Ok(sync.decline(&peer)?)
+    }
+
+    /// The devices this phone can cast its screen to: this person's
+    /// connected devices whose descriptor says they receive.
+    #[must_use]
+    pub fn screen_cast_targets(&self) -> Vec<crate::ScreenTarget> {
+        self.screen_peers(|p| p.views && p.receives)
+    }
+
+    /// Casts this phone's screen to `peer`, with its sound unless `audio` is
+    /// false: the app is asked for the projection at once
+    /// ([`crate::Host::screen_share_requested`]), the offer goes out, and
+    /// [`Event::ScreenCastStarted`] or [`Event::ScreenCastEnded`] say what
+    /// came of it. Returns at once.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LpError::BadRequest`] for a malformed key and
+    /// [`LpError::Internal`] when the screen is not attached.
+    pub fn screen_cast(&self, peer: String, audio: bool) -> Result<(), LpError> {
+        let peer = PublicKey::parse(peer.trim())?;
+        let sync = self
+            .daemon
+            .screen_sync()
+            .ok_or_else(|| LpError::Internal("screen is not attached".to_owned()))?;
         let host = self.host.clone();
-        let peer_s = peer.to_string();
-        let watching = self.watching_slot();
         self.with_runtime(|rt| {
             rt.spawn(async move {
-                while let Some(viewed) = frames.recv().await {
-                    match viewed {
-                        ligatured::screen::Viewed::Frame { key, bytes, .. } => {
-                            host.screen_frame(peer_s.clone(), key, bytes);
-                        }
-                        // The phone asks for no sound until LP-202 plays it.
-                        ligatured::screen::Viewed::Audio { .. } => {}
-                        ligatured::screen::Viewed::Stopped(reason) => {
-                            if let Some(slot) = watching.upgrade() {
-                                lock_watch(&slot).take();
-                            }
-                            host.on_event(Event::ScreenEnded {
-                                peer: peer_s.clone(),
-                                reason: reason.to_string(),
-                            });
-                            return;
-                        }
+                let peer_s = peer.to_string();
+                match sync
+                    .cast(&peer, ligatured::screen::CastSource::default(), audio)
+                    .await
+                {
+                    Ok(casting) => {
+                        host.on_event(Event::ScreenCastStarted {
+                            peer: peer_s.clone(),
+                        });
+                        let reason = casting
+                            .ended
+                            .await
+                            .unwrap_or(lp_core::screen::StopReason::Error);
+                        host.on_event(Event::ScreenCastEnded {
+                            peer: peer_s,
+                            reason: reason.to_string(),
+                        });
                     }
+                    Err(e) => host.on_event(Event::ScreenCastEnded {
+                        peer: peer_s,
+                        reason: e.to_string(),
+                    }),
                 }
             });
-        })?;
-        Ok(crate::ScreenWatch {
-            display: started.source_id().to_owned(),
-            width: started.width,
-            height: started.height,
-            frame_rate: started.frame_rate,
         })
+    }
+
+    /// Ends every share this phone runs, cast or watched by another device:
+    /// the user's Stop.
+    pub fn screen_cast_stop(&self) {
+        if let Some(sync) = self.daemon.screen_sync() {
+            sync.stop_sharing();
+        }
     }
 
     /// Asks the sharer of the watched screen for a keyframe: the decoder
@@ -606,10 +663,25 @@ impl Node {
     }
 
     /// Whether the app can share the screen (it has an H.264 encoder), the
-    /// screen's size in pixels, and its pixels per logical point (Android's
-    /// density, ADR 0045).
-    pub fn set_screen_share(&self, available: bool, width: u32, height: u32, scale: f64) {
-        self.screen.set_available(available, width, height, scale);
+    /// screen's size in pixels, its pixels per logical point (Android's
+    /// density, ADR 0045), and whether it can send the phone's sound (it has
+    /// an Opus encoder).
+    pub fn set_screen_share(
+        &self,
+        available: bool,
+        width: u32,
+        height: u32,
+        scale: f64,
+        audio: bool,
+    ) {
+        self.screen
+            .set_available(available, width, height, scale, audio);
+    }
+
+    /// One packet of this phone's sound from the app's Opus encoder: 20 ms
+    /// at 48 kHz.
+    pub fn screen_share_audio(&self, bytes: Vec<u8>) {
+        self.screen.audio(bytes);
     }
 
     /// Whether the app's accessibility service is on, so another device may
@@ -1211,4 +1283,102 @@ fn finish(pairing: &Pairing, host: &SharedHost, result: Result<(), String>) {
         error: result.err(),
     });
     host.on_event(Event::StatusChanged);
+}
+
+/// Helpers of the screen calls, not exported.
+impl Node {
+    /// This person's connected devices whose screen params pass `wanted`,
+    /// sorted by name.
+    fn screen_peers(
+        &self,
+        wanted: impl Fn(&lp_core::screen::ScreenParams) -> bool,
+    ) -> Vec<crate::ScreenTarget> {
+        use lp_core::screen::ScreenParams;
+        let mut targets: Vec<crate::ScreenTarget> = self
+            .daemon
+            .registry()
+            .peers()
+            .into_iter()
+            .filter(|caps| {
+                matches!(
+                    self.daemon.recognise(&caps.peer),
+                    Ok(lp_identity::trust::Recognition::MyBinding { .. })
+                )
+            })
+            .filter(|caps| {
+                caps.capabilities
+                    .iter()
+                    .find_map(ScreenParams::from_descriptor)
+                    .is_some_and(|p| wanted(&p))
+            })
+            .map(|caps| crate::ScreenTarget {
+                key: caps.peer.to_string(),
+                name: self
+                    .daemon
+                    .device_display_name(&caps.peer)
+                    .unwrap_or_else(|| caps.peer.fingerprint()),
+            })
+            .collect();
+        targets.sort_by(|a, b| a.name.cmp(&b.name).then(a.key.cmp(&b.key)));
+        targets
+    }
+
+    /// The screen sync, when no watch runs yet.
+    fn screen_sync_free(&self) -> Result<Arc<ligatured::screen::ScreenSync>, LpError> {
+        if lock_watch(&self.watching).is_some() {
+            return Err(LpError::Internal("already watching a screen".to_owned()));
+        }
+        self.daemon
+            .screen_sync()
+            .ok_or_else(|| LpError::Internal("screen is not attached".to_owned()))
+    }
+
+    /// Records a share this phone now watches and forwards its frames and
+    /// sound to the host until it ends.
+    fn watch_started(
+        &self,
+        peer: PublicKey,
+        watching: ligatured::screen::Watching,
+    ) -> Result<crate::ScreenWatch, LpError> {
+        let ligatured::screen::Watching {
+            started,
+            mut frames,
+            control,
+        } = watching;
+        *lock_watch(&self.watching) = Some((peer, control));
+        let host = self.host.clone();
+        let peer_s = peer.to_string();
+        let watching = self.watching_slot();
+        self.with_runtime(|rt| {
+            rt.spawn(async move {
+                while let Some(viewed) = frames.recv().await {
+                    match viewed {
+                        ligatured::screen::Viewed::Frame { key, bytes, .. } => {
+                            host.screen_frame(peer_s.clone(), key, bytes);
+                        }
+                        ligatured::screen::Viewed::Audio { seq, at, bytes } => {
+                            host.screen_audio(peer_s.clone(), seq, at, bytes);
+                        }
+                        ligatured::screen::Viewed::Stopped(reason) => {
+                            if let Some(slot) = watching.upgrade() {
+                                lock_watch(&slot).take();
+                            }
+                            host.on_event(Event::ScreenEnded {
+                                peer: peer_s.clone(),
+                                reason: reason.to_string(),
+                            });
+                            return;
+                        }
+                    }
+                }
+            });
+        })?;
+        Ok(crate::ScreenWatch {
+            display: started.source_id().to_owned(),
+            width: started.width,
+            height: started.height,
+            frame_rate: started.frame_rate,
+            audio_channels: started.audio.map_or(0, |a| a.channels),
+        })
+    }
 }

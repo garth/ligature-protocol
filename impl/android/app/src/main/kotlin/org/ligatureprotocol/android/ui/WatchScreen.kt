@@ -73,10 +73,16 @@ fun WatchScreen(
     width: Int,
     height: Int,
     canDrive: Boolean,
+    cast: Boolean,
+    hasSound: Boolean,
+    muted: Boolean,
+    onMute: (Boolean) -> Unit,
     onTouch: (x: Double, y: Double, events: List<TouchEvent>) -> Unit,
     onType: (List<TouchEvent>) -> Unit,
     onStop: () -> Unit,
 ) {
+    // A cast is the other device's doing; a watch is this phone's.
+    val heading = if (cast) "$deviceName is casting" else "Watching $deviceName"
     BackHandler(onBack = onStop)
     val activity = LocalContext.current as? Activity
     DisposableEffect(width > height) {
@@ -97,8 +103,9 @@ fun WatchScreen(
                     Modifier.width(220.dp).fillMaxHeight().verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text("Watching $deviceName", style = MaterialTheme.typography.titleMedium)
+                    Text(heading, style = MaterialTheme.typography.titleMedium)
                     TextButton(onClick = onStop) { Text("Done") }
+                    if (hasSound) MuteButton(muted, onMute)
                     Controls(deviceName, canDrive, onType)
                 }
             }
@@ -109,14 +116,23 @@ fun WatchScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Watching $deviceName", style = MaterialTheme.typography.titleMedium)
-                    TextButton(onClick = onStop) { Text("Done") }
+                    Text(heading, style = MaterialTheme.typography.titleMedium)
+                    Row {
+                        if (hasSound) MuteButton(muted, onMute)
+                        TextButton(onClick = onStop) { Text("Done") }
+                    }
                 }
                 Picture(width, height, canDrive, onTouch, Modifier.fillMaxWidth().weight(1f))
                 Controls(deviceName, canDrive, onType)
             }
         }
     }
+}
+
+/** Silences the share's sound on this phone, or lets it play again. */
+@Composable
+private fun MuteButton(muted: Boolean, onMute: (Boolean) -> Unit) {
+    TextButton(onClick = { onMute(!muted) }) { Text(if (muted) "Unmute" else "Mute") }
 }
 
 /** The keyboard field and keys, or why there are none. */

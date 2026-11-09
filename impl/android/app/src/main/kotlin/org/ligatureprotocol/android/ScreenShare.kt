@@ -1,5 +1,7 @@
 package org.ligatureprotocol.android
 
+import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AppOpsManager
 import android.app.Notification
@@ -10,9 +12,14 @@ import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioPlaybackCaptureConfiguration
+import android.media.AudioRecord
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaCodecList
@@ -42,8 +49,24 @@ object ScreenShare {
     /** How long a request stays answerable: the node gives up after 60 s. */
     private const val REQUEST_LIFETIME_MS = 55_000L
 
-    /** What the viewer asked for, until the user answers. */
-    data class Request(val viewer: String, val width: Int, val height: Int, val frameRate: Int, val at: Long)
+    /**
+     * What the viewer asked for, until the user answers: the picture, the
+     * channels of the phone's sound (0 for none), and whether this phone
+     * started it as a cast.
+     */
+    data class Request(
+        val viewer: String,
+        val width: Int,
+        val height: Int,
+        val frameRate: Int,
+        val audioChannels: Int,
+        val cast: Boolean,
+        val at: Long,
+    )
+
+    /** Set while the user's own Cast waits for its projection, so the share says so. */
+    @Volatile
+    var casting: Boolean = false
 
     @Volatile
     var pending: Request? = null
@@ -72,6 +95,21 @@ object ScreenShare {
         info.isEncoder && info.supportedTypes.any { it.equals(MediaFormat.MIMETYPE_VIDEO_AVC, ignoreCase = true) }
     }
 
+    /** Whether this phone has an Opus encoder, which sharing its sound needs. */
+    fun hasOpusEncoder(): Boolean = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.any { info ->
+        info.isEncoder && info.supportedTypes.any { it.equals(MediaFormat.MIMETYPE_AUDIO_OPUS, ignoreCase = true) }
+    }
+
+    /**
+     * Whether the user let the app record: Android puts capturing what the
+     * phone plays behind the same permission as the microphone.
+     */
+    fun soundAllowed(context: Context): Boolean =
+        context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+
+    /** Whether a share from this phone can carry its sound. */
+    fun canShareSound(context: Context): Boolean = hasOpusEncoder() && soundAllowed(context)
+
     fun createChannel(context: Context) {
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(CHANNEL_ID, "Screen sharing", NotificationManager.IMPORTANCE_HIGH).apply {
@@ -81,8 +119,9 @@ object ScreenShare {
     }
 
     /** A viewer asked: open the dialog if the app is in front, else notify. */
-    fun request(context: Context, viewer: String, width: Int, height: Int, frameRate: Int) {
-        pending = Request(viewer, width, height, frameRate, System.currentTimeMillis())
+    fun request(context: Context, viewer: String, width: Int, height: Int, frameRate: Int, audioChannels: Int) {
+        pending = Request(viewer, width, height, frameRate, audioChannels, casting, System.currentTimeMillis())
+        casting = false
         createChannel(context)
         val open = Intent(context, ScreenConsentActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -218,6 +257,7 @@ class ScreenShareService : Service() {
     private var codec: MediaCodec? = null
     private var display: VirtualDisplay? = null
     private var drain: Thread? = null
+    private var sound: PlaybackSound? = null
     @Volatile private var ended = false
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -231,8 +271,10 @@ class ScreenShareService : Service() {
         val width = intent?.getIntExtra(EXTRA_WIDTH, 0) ?: 0
         val height = intent?.getIntExtra(EXTRA_HEIGHT, 0) ?: 0
         val rate = intent?.getIntExtra(EXTRA_RATE, 30) ?: 30
+        val audioChannels = intent?.getIntExtra(EXTRA_AUDIO, 0) ?: 0
+        val cast = intent?.getBooleanExtra(EXTRA_CAST, false) ?: false
         ScreenShare.createChannel(this)
-        startForeground(NOTIFICATION, notification(viewer), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+        startForeground(NOTIFICATION, notification(viewer, cast), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
         if (data == null || width <= 0 || height <= 0) {
             NodeHolder.screenShareAnswered(false)
             stopSelf()
@@ -240,6 +282,17 @@ class ScreenShareService : Service() {
         }
         try {
             begin(resultCode, data, width, height, rate)
+            // The phone's sound, when the share agreed to it and the user
+            // allowed recording: a share that cannot have it goes on silent.
+            if (audioChannels > 0 && ScreenShare.canShareSound(this)) {
+                sound = projection?.let { p ->
+                    runCatching { PlaybackSound(p, audioChannels).also { it.start() } }
+                        .onFailure { Log.w("ligature", "the phone's sound is not captured; sharing silent", it) }
+                        .getOrNull()
+                }
+            } else if (audioChannels > 0) {
+                ScreenShare.log("sound was asked for but recording is not allowed; sharing silent")
+            }
             ScreenWake.hold(this, WAKE_SHARE)
             NodeHolder.screenShareAnswered(true)
         } catch (e: Exception) {
@@ -359,6 +412,8 @@ class ScreenShareService : Service() {
 
     private fun release() {
         ended = true
+        runCatching { sound?.stop() }
+        sound = null
         runCatching { display?.release() }
         runCatching { codec?.stop() }
         runCatching { codec?.release() }
@@ -369,7 +424,7 @@ class ScreenShareService : Service() {
         projection = null
     }
 
-    private fun notification(viewer: String): Notification {
+    private fun notification(viewer: String, cast: Boolean): Notification {
         val stop = PendingIntent.getBroadcast(
             this,
             0,
@@ -378,7 +433,7 @@ class ScreenShareService : Service() {
         )
         return Notification.Builder(this, ScreenShare.CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_tile)
-            .setContentTitle("Sharing your screen with $viewer")
+            .setContentTitle(if (cast) "Casting your screen to $viewer" else "Sharing your screen with $viewer")
             .setOngoing(true)
             .addAction(Notification.Action.Builder(null, "Stop sharing", stop).build())
             .build()
@@ -393,6 +448,8 @@ class ScreenShareService : Service() {
         private const val EXTRA_WIDTH = "width"
         private const val EXTRA_HEIGHT = "height"
         private const val EXTRA_RATE = "rate"
+        private const val EXTRA_AUDIO = "audioChannels"
+        private const val EXTRA_CAST = "cast"
 
         @Volatile
         var current: ScreenShareService? = null
@@ -406,6 +463,8 @@ class ScreenShareService : Service() {
                 .putExtra(EXTRA_WIDTH, request.width)
                 .putExtra(EXTRA_HEIGHT, request.height)
                 .putExtra(EXTRA_RATE, request.frameRate)
+                .putExtra(EXTRA_AUDIO, request.audioChannels)
+                .putExtra(EXTRA_CAST, request.cast)
             ContextCompat.startForegroundService(context, intent)
         }
 
@@ -437,5 +496,124 @@ class ScreenShareService : Service() {
             }
             return false
         }
+    }
+}
+
+/**
+ * What the phone plays, for a share (milestone 9): Android's playback
+ * capture under the media projection, 48 kHz 16-bit samples read 20 ms at a
+ * time into `MediaCodec`'s Opus encoder, each packet handed to the node. Apps
+ * that opt out of capture, and calls, are silent in it: Android decides.
+ */
+class PlaybackSound(private val projection: MediaProjection, private val channels: Int) {
+    private var record: AudioRecord? = null
+    private var codec: MediaCodec? = null
+    private var thread: Thread? = null
+
+    @Volatile
+    private var stopped = false
+
+    // The caller checks RECORD_AUDIO (ScreenShare.canShareSound).
+    @SuppressLint("MissingPermission")
+    fun start() {
+        val config = AudioPlaybackCaptureConfiguration.Builder(projection)
+            .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+            .addMatchingUsage(AudioAttributes.USAGE_GAME)
+            .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
+            .build()
+        val mask = if (channels == 1) AudioFormat.CHANNEL_IN_MONO else AudioFormat.CHANNEL_IN_STEREO
+        val r = AudioRecord.Builder()
+            .setAudioFormat(
+                AudioFormat.Builder()
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setSampleRate(SAMPLE_RATE)
+                    .setChannelMask(mask)
+                    .build(),
+            )
+            .setBufferSizeInBytes(pcmBytesPerPacket(channels) * 4)
+            .setAudioPlaybackCaptureConfig(config)
+            .build()
+        val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_OPUS, SAMPLE_RATE, channels).apply {
+            setInteger(MediaFormat.KEY_BIT_RATE, opusBitRate(channels))
+            setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, pcmBytesPerPacket(channels))
+        }
+        val c = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_OPUS)
+        try {
+            c.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            c.start()
+            r.startRecording()
+        } catch (e: Exception) {
+            runCatching { c.release() }
+            runCatching { r.release() }
+            throw e
+        }
+        record = r
+        codec = c
+        thread = Thread({ run(r, c) }, "ligature-screen-sound").apply { start() }
+        ScreenShare.log("sharing the phone's sound, $channels channels")
+    }
+
+    private fun run(r: AudioRecord, c: MediaCodec) {
+        val pcm = ByteArray(pcmBytesPerPacket(channels))
+        val info = MediaCodec.BufferInfo()
+        var packets = 0L
+        while (!stopped) {
+            // Twenty milliseconds of samples, whole: a packet's worth.
+            var have = 0
+            while (have < pcm.size && !stopped) {
+                val n = r.read(pcm, have, pcm.size - have)
+                if (n <= 0) return
+                have += n
+            }
+            if (stopped) return
+            val input = runCatching { c.dequeueInputBuffer(20_000) }.getOrDefault(-1)
+            if (input >= 0) {
+                val buffer = c.getInputBuffer(input) ?: return
+                buffer.clear()
+                buffer.put(pcm)
+                c.queueInputBuffer(input, 0, pcm.size, packets * PACKET_US, 0)
+                packets++
+            }
+            while (true) {
+                val index = try {
+                    c.dequeueOutputBuffer(info, 0)
+                } catch (e: IllegalStateException) {
+                    return
+                }
+                if (index < 0) break
+                val out = c.getOutputBuffer(index)
+                if (out != null && info.size > 0 && info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0) {
+                    out.position(info.offset)
+                    out.limit(info.offset + info.size)
+                    NodeHolder.screenShareAudio(ByteArray(info.size).also { out.get(it) })
+                }
+                runCatching { c.releaseOutputBuffer(index, false) }
+            }
+        }
+    }
+
+    fun stop() {
+        stopped = true
+        runCatching { record?.stop() }
+        runCatching { thread?.join(500) }
+        runCatching { record?.release() }
+        runCatching { codec?.stop() }
+        runCatching { codec?.release() }
+        record = null
+        codec = null
+        thread = null
+    }
+
+    companion object {
+        const val SAMPLE_RATE = 48_000
+
+        /** A packet's duration in microseconds: 20 ms, as the protocol's Opus is. */
+        const val PACKET_US = 20_000L
+
+        /** The 16-bit samples of one 20 ms packet, in bytes. */
+        fun pcmBytesPerPacket(channels: Int): Int = SAMPLE_RATE / 50 * channels.coerceIn(1, 2) * 2
+
+        /** 64 kbit/s a channel, as the desktops encode it. */
+        fun opusBitRate(channels: Int): Int = 64_000 * channels.coerceIn(1, 2)
     }
 }

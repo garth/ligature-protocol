@@ -7,15 +7,19 @@
 //! taps to reach the dialog; the app answers with [`HostScreen::started`],
 //! then delivers encoded access units with [`HostScreen::frame`] and the end
 //! with [`HostScreen::ended`]. A viewer's keyframe request and the stop go
-//! back through the host.
+//! back through the host. The phone's sound (milestone 9, LP-202) comes the
+//! same way, as Opus packets from the app's encoder, when the share agreed
+//! to it.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use lp_core::screen::{Display, Format, RefuseReason, ScreenParams, StopReason};
+use lp_core::screen::{AudioFormat, Display, Format, RefuseReason, ScreenParams, StopReason};
 use tokio::sync::mpsc;
 
-use ligatured::screen::{Capture, Captured, EncodedFrame, Settings, Share, ShareControl};
+use ligatured::screen::{
+    AudioPacket, Capture, Captured, EncodedFrame, Settings, Share, ShareControl,
+};
 
 use crate::SharedHost;
 
@@ -26,6 +30,8 @@ const CONSENT_TIMEOUT: Duration = Duration::from_secs(60);
 #[derive(Default)]
 struct State {
     available: bool,
+    /// The app has an Opus encoder and may capture what plays.
+    audio: bool,
     width: u32,
     height: u32,
     scale: f64,
@@ -60,14 +66,24 @@ impl HostScreen {
         })
     }
 
-    /// Whether the app has an H.264 encoder, the screen's size, and its
-    /// pixels per logical point.
-    pub fn set_available(&self, available: bool, width: u32, height: u32, scale: f64) {
+    /// Whether the app has an H.264 encoder, the screen's size, its pixels
+    /// per logical point, and whether it has an Opus encoder for the phone's
+    /// sound.
+    pub fn set_available(&self, available: bool, width: u32, height: u32, scale: f64, audio: bool) {
         let mut s = lock(&self.state);
         s.available = available;
+        s.audio = audio;
         s.width = width;
         s.height = height;
         s.scale = scale;
+    }
+
+    /// One packet of the phone's sound from the app's encoder: 20 ms of
+    /// Opus, stamped by the sync on arrival.
+    pub fn audio(&self, bytes: Vec<u8>) {
+        if let Some(tx) = lock(&self.state).frames.as_ref() {
+            let _ = tx.send(Captured::Audio(AudioPacket { at: 0, bytes }));
+        }
     }
 
     /// The user answered the projection dialog.
@@ -106,6 +122,11 @@ impl Capture for HostScreen {
             views: false,
             // MediaCodec's encoders give 4:2:0 (ADR 0044).
             encodes: vec![Format::H264],
+            audio_encodes: if s.audio {
+                vec![AudioFormat::OPUS_STEREO, AudioFormat::OPUS_MONO]
+            } else {
+                Vec::new()
+            },
             ..ScreenParams::default()
         }
     }
@@ -139,6 +160,7 @@ impl Capture for HostScreen {
             settings.width,
             settings.height,
             settings.frame_rate,
+            settings.audio.map_or(0, |a| a.channels),
         );
         let ok = rx.recv_timeout(CONSENT_TIMEOUT).unwrap_or(false);
         lock(&self.state).starting = None;

@@ -26,7 +26,10 @@ release workflow publishes the section as the release notes with the installers.
   `--window` and no id picks the window in the portal's picker, and a window that changes
   shape is letterboxed (LP-200). On a Mac the windows ScreenCaptureKit lists are shared by
   id and the system's sound comes with the picture on macOS 13 and later; `lpview` plays
-  through AudioToolbox (LP-201).
+  through AudioToolbox (LP-201). On the phone a Cast card sends its screen to a device that
+  shows casts, a cast offered to the phone opens the watch screen or a notification, a
+  watched share plays its sound with a Mute, and the phone's own sound goes with its screen
+  once the recording permission Android puts it behind is allowed (LP-202).
 
 ## [0.2.0-alpha] - 2026-11-08
 

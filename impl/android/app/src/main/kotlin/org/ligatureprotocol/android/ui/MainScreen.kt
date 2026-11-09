@@ -64,6 +64,9 @@ fun MainScreen(
     onToggleApp: (String, Boolean) -> Unit,
     onTouchpad: (InputTarget) -> Unit,
     onWatch: (ScreenTarget) -> Unit,
+    onCast: (ScreenTarget) -> Unit,
+    onStopCast: () -> Unit,
+    onAllowSound: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -101,6 +104,9 @@ fun MainScreen(
             NotificationsCard(state.notificationAccess, state.apps, onNotificationSettings, onToggleApp)
             if (state.inputTargets.isNotEmpty()) TouchpadCard(state.inputTargets, onTouchpad)
             if (state.screenTargets.isNotEmpty()) WatchCard(state.screenTargets, onWatch)
+            if (state.castTargets.isNotEmpty() || state.casting != null) {
+                CastCard(state.castTargets, state.casting, state.soundAllowed, onCast, onStopCast, onAllowSound)
+            }
             if (state.pairing == null) IntroduceCard(onStartIntroduce)
             DevicesCard(state.devices, onRevoke)
         }
@@ -406,6 +412,51 @@ private fun groupDevices(devices: List<Device>): List<DeviceRow> {
         }
     }
     return rows
+}
+
+/**
+ * Casting this phone's screen (milestone 9): a button a device that shows
+ * casts, Stop while one runs, and the one permission the phone's sound
+ * needs, asked for here and nowhere else.
+ */
+@Composable
+private fun CastCard(
+    targets: List<ScreenTarget>,
+    casting: ScreenTarget?,
+    soundAllowed: Boolean,
+    onCast: (ScreenTarget) -> Unit,
+    onStopCast: () -> Unit,
+    onAllowSound: () -> Unit,
+) {
+    Card {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Cast this screen", style = MaterialTheme.typography.titleMedium)
+            if (casting != null) {
+                Text("Casting to ${casting.name}. Android asks what to share, then it shows there.")
+                Button(onClick = onStopCast, modifier = Modifier.fillMaxWidth()) { Text("Stop casting") }
+            } else {
+                Text("Show this phone's screen on one of your devices, without anyone there asking for it.")
+                targets.forEach { target ->
+                    OutlinedButton(onClick = { onCast(target) }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Cast to ${target.name}")
+                    }
+                }
+            }
+            if (soundAllowed) {
+                Text(
+                    "The phone's sound goes with the picture, from apps that allow it; Android never shares calls.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            } else {
+                Text(
+                    "The picture goes without sound: Android puts sharing what the phone plays behind " +
+                        "its recording permission. Ligature uses it for that alone, never the microphone.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                TextButton(onClick = onAllowSound) { Text("Share the phone's sound too") }
+            }
+        }
+    }
 }
 
 @Composable

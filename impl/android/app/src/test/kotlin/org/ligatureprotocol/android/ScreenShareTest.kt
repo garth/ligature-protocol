@@ -39,4 +39,15 @@ class ScreenShareTest {
         assertFalse(ScreenShareService.startsWithSps(idr))
         assertFalse(ScreenShareService.startsWithSps(byteArrayOf(0, 0, 1)))
     }
+
+    /** Milestone 9: the phone's sound goes 20 ms at a time into the Opus encoder. */
+    @Test
+    fun aPacketIsTwentyMillisecondsOfSixteenBitSamples() {
+        assertEquals(3_840, PlaybackSound.pcmBytesPerPacket(2))
+        assertEquals(1_920, PlaybackSound.pcmBytesPerPacket(1))
+        assertEquals(3_840, PlaybackSound.pcmBytesPerPacket(6))
+        assertEquals(128_000, PlaybackSound.opusBitRate(2))
+        assertEquals(64_000, PlaybackSound.opusBitRate(1))
+        assertEquals(20_000L, PlaybackSound.PACKET_US)
+    }
 }

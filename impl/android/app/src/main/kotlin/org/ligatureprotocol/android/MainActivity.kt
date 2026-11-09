@@ -31,6 +31,12 @@ class MainActivity : ComponentActivity() {
     private val askNotifications =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
+    /** Asked for from the Cast card only: sharing the phone's sound is opt-in. */
+    private val askSound =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            if (NodeHolder.isRunning) NodeHolder.updateScreenShare()
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // The system bars follow the theme, light or dark; the screen pads
@@ -42,6 +48,7 @@ class MainActivity : ComponentActivity() {
             askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         NodeService.start(this)
+        acceptOfferedCast(intent)
         setContent {
             val dark = isSystemInDarkTheme()
             MaterialTheme(colorScheme = if (dark) darkColorScheme() else lightColorScheme()) {
@@ -54,6 +61,10 @@ class MainActivity : ComponentActivity() {
                             width = watching.watch.width.toInt(),
                             height = watching.watch.height.toInt(),
                             canDrive = watching.canDrive,
+                            cast = watching.cast,
+                            hasSound = watching.watch.audioChannels.toInt() > 0,
+                            muted = watching.muted,
+                            onMute = NodeHolder::setWatchMuted,
                             onTouch = NodeHolder::watchTouch,
                             onType = NodeHolder::watchType,
                             onStop = NodeHolder::stopWatch,
@@ -91,10 +102,25 @@ class MainActivity : ComponentActivity() {
                         onToggleApp = NodeHolder::setAppEnabled,
                         onTouchpad = NodeHolder::startTouchpad,
                         onWatch = NodeHolder::startWatch,
+                        onCast = NodeHolder::startCast,
+                        onStopCast = NodeHolder::stopCast,
+                        onAllowSound = { askSound.launch(Manifest.permission.RECORD_AUDIO) },
                     )
                 }
             }
         }
+    }
+
+    /** Opened from an offered cast's notification, or by the app itself for one. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        acceptOfferedCast(intent)
+    }
+
+    private fun acceptOfferedCast(intent: Intent?) {
+        val peer = intent?.getStringExtra(CastOffers.EXTRA_ACCEPT) ?: return
+        intent.removeExtra(CastOffers.EXTRA_ACCEPT)
+        NodeHolder.acceptOffer(peer)
     }
 
     override fun onResume() {

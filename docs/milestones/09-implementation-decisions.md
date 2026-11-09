@@ -143,3 +143,44 @@ itself in the bundle's `MacOS` directory as on Linux.
 stand-in C compiler passes for `lp-macos`, `ligatured`, `lpview` and `lpctl`; the sample
 extraction, the window filter's scaling and the AudioToolbox device are checked in the
 owner's run (LP-203), since nothing links or runs here.
+
+## LP-202: the phone casts, receives a cast, and has sound both ways
+
+**The node's calls.** The app starts a cast with `screen_cast(device, audio)`, which returns
+at once: the sync's cast asks the app for the projection through the same
+`screen_share_requested` a watch uses, now with the channels of sound wanted, and
+`ScreenCastStarted` and `ScreenCastEnded` say what came of it. A cast offered to the phone
+reaches the app as `screen_offered` with the caster's name, what is cast and whether sound
+comes; `screen_offer_accept` returns the same `ScreenWatch` a watch does, and
+`screen_offer_decline` leaves it. The phone always receives, since the app always has
+somewhere to show a picture. A watched or received share's packets reach the app through
+`screen_audio`, the phone's own through `screen_share_audio`, and `set_screen_share` says
+whether the app can send sound.
+
+**The phone's sound needs the recording permission.** Android's playback capture, the only
+way to what the phone plays, sits behind `RECORD_AUDIO` as the microphone does, so the
+permission is declared, asked for only from the Cast card ("Share the phone's sound too") and
+never at first run, and the descriptor's `audioEncodes` follows it and the presence of an
+Opus encoder: a phone that has not allowed it shares the picture alone, and the card says
+why. The capture takes media, game and unknown usages under the projection; apps that opt
+out, and calls, are silent in it, which is Android's rule. Twenty milliseconds of 16-bit
+samples at a time go into `MediaCodec`'s Opus encoder (64 kbit/s a channel), and each output
+buffer that is not codec configuration is a packet.
+
+**Playing a share's sound.** `WatchSound` configures `MediaCodec`'s Opus decoder with the
+identification header of RFC 7845 and the two delays it wants, and writes what it decodes to
+an `AudioTrack` in its low-latency mode with a 60 ms buffer; a packet that finds the decoder
+busy is lost rather than played late. The watch screen has Mute where a share has sound.
+
+**An offered cast opens where Android allows.** With the app in front the watch screen opens
+at once; with the accessibility service on, the app opens itself and wakes the screen, as it
+does for a share request; otherwise a notification names the caster and what is cast, a tap
+opens it and a swipe declines. An offer is good for 55 seconds on the phone, inside the
+node's minute. A received display may be driven as a watched one is, a window never.
+
+**Checked.** The two-node test runs the node end to end: sound with a watch, a desktop's cast
+offered, taken with sound and stopped, another declined, and the phone's own cast to a
+desktop that receives, with its frames and packets arriving and its end reported. The APK
+builds and the JVM tests cover the Opus header, the buffer sizes, the packet sizes and the
+choice between opening and notifying. The capture, the decoder and the notification paths on
+a real phone are for the run (LP-203), with the owner's go-ahead for the projection.

@@ -12,6 +12,10 @@
     <!-- Sharing the screen (milestone 8): the projection runs in a service
          of its own type, after the user consents each time. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <!-- The phone's sound with a share of its screen (milestone 9): Android
+         puts capturing what the phone plays behind the recording permission.
+         Asked for only from the Cast card; the microphone is never opened. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- A dark screen gives a viewer no picture and takes no touch. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -101,6 +105,11 @@
         <!-- The Stop sharing action on the share's notification. -->
         <receiver
             android:name=".ScreenShare$StopReceiver"
+            android:exported="false" />
+
+        <!-- An offered cast's notification swiped away: the cast is declined. -->
+        <receiver
+            android:name=".CastOffers$DeclineReceiver"
             android:exported="false" />
 
         <!-- The cancel action on a transfer's progress notification. -->

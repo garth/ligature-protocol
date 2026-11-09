@@ -80,6 +80,38 @@ pub enum Event {
         /// `viewer`, `sharer`, `consent` or `error`.
         reason: String,
     },
+    /// The cast this phone offered was taken and runs (milestone 9).
+    ScreenCastStarted {
+        /// The device that shows it.
+        peer: String,
+    },
+    /// The cast this phone offered ended, or was never taken (milestone 9).
+    ScreenCastEnded {
+        /// The device it was offered to.
+        peer: String,
+        /// `viewer`, `sharer`, `consent`, `error`, or why it was not taken.
+        reason: String,
+    },
+}
+
+/// A cast another device offers this phone (milestone 9): what it would
+/// show, until the app takes or declines it.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ScreenOffer {
+    /// The caster's binding key.
+    pub peer: String,
+    /// The caster's display name.
+    pub peer_name: String,
+    /// `display` or `window`.
+    pub kind: String,
+    /// What the caster calls it.
+    pub name: String,
+    /// The source's width in pixels.
+    pub width: u32,
+    /// The source's height in pixels.
+    pub height: u32,
+    /// Whether sound comes with it.
+    pub audio: bool,
 }
 
 /// A device whose screen this phone can watch (milestone 8).
@@ -94,7 +126,7 @@ pub struct ScreenTarget {
 /// A share this phone watches, as the sharer settled it.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct ScreenWatch {
-    /// The display shared.
+    /// The display or window shared.
     pub display: String,
     /// The picture's width.
     pub width: u32,
@@ -102,6 +134,9 @@ pub struct ScreenWatch {
     pub height: u32,
     /// The frame rate.
     pub frame_rate: u32,
+    /// The channels of sound that come with it (Opus, 48 kHz): 0 for a
+    /// silent share.
+    pub audio_channels: u8,
 }
 
 /// A device this phone can drive as a touchpad (milestone 7).
@@ -319,10 +354,26 @@ pub trait Host: Send + Sync {
     /// One whole encoded frame of the share this phone watches, for the
     /// decoder: H.264 Annex B, the parameter sets in every keyframe.
     fn screen_frame(&self, peer: String, key: bool, bytes: Vec<u8>);
+    /// One packet of the watched share's sound (milestone 9): 20 ms of Opus
+    /// at 48 kHz, numbered, with its capture time in microseconds on the
+    /// frames' clock.
+    fn screen_audio(&self, peer: String, seq: u64, at: u64, bytes: Vec<u8>);
     /// `viewer` asks to watch this phone's screen at most `width` by
-    /// `height` at `frame_rate`: ask the user (the media projection dialog),
-    /// then answer with [`node::Node::screen_share_started`].
-    fn screen_share_requested(&self, viewer: String, width: u32, height: u32, frame_rate: u32);
+    /// `height` at `frame_rate`, with `audio_channels` channels of the
+    /// phone's sound (0 for none): ask the user (the media projection
+    /// dialog), then answer with [`node::Node::screen_share_started`].
+    fn screen_share_requested(
+        &self,
+        viewer: String,
+        width: u32,
+        height: u32,
+        frame_rate: u32,
+        audio_channels: u8,
+    );
+    /// Another device offers this phone a cast (milestone 9): show it, or
+    /// tell the user, and answer with [`node::Node::screen_offer_accept`]
+    /// or [`node::Node::screen_offer_decline`] within a minute.
+    fn screen_offered(&self, offer: ScreenOffer);
     /// The share of this phone's screen, or the request for one, ends:
     /// stop the projection and withdraw anything still asking the user.
     fn screen_share_stop(&self);

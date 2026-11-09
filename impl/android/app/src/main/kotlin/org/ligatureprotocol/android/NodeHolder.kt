@@ -44,12 +44,17 @@ import org.ligatureprotocol.core.Status
 import java.io.File
 import java.util.concurrent.Executors
 
-/** A share this phone watches, and whether touch drives it yet. */
+/**
+ * A share this phone watches, whether touch drives it yet, whether the other
+ * device started it as a cast, and whether its sound is muted here.
+ */
 data class Watching(
     val target: ScreenTarget,
     val watch: ScreenWatch,
     val canDrive: Boolean,
     val driving: Boolean = false,
+    val cast: Boolean = false,
+    val muted: Boolean = false,
 )
 
 /** A ceremony as the screen shows it. */
@@ -87,6 +92,12 @@ data class UiState(
     val screenTargets: List<ScreenTarget> = emptyList(),
     /** The share this phone watches, while the watch screen is open. */
     val watching: Watching? = null,
+    /** The devices this phone can cast its screen to (milestone 9). */
+    val castTargets: List<ScreenTarget> = emptyList(),
+    /** The device this phone casts to, from the tap until the cast ends. */
+    val casting: ScreenTarget? = null,
+    /** Whether the user let the app record, so a share carries the phone's sound. */
+    val soundAllowed: Boolean = false,
 )
 
 /**
@@ -145,14 +156,7 @@ object NodeHolder : Host {
             cacheDir = appContext.cacheDir.absolutePath,
         )
         node = Node.start(config, this)
-        val metrics = appContext.resources.displayMetrics
-        node?.setScreenShare(
-            ScreenShare.hasEncoder(),
-            minOf(metrics.widthPixels, metrics.heightPixels).toUInt(),
-            maxOf(metrics.widthPixels, metrics.heightPixels).toUInt(),
-            // Pixels per dp: Android's own scale (ADR 0045).
-            metrics.density.toDouble(),
-        )
+        updateScreenShare()
         if (listenerConnected) node?.setNotificationsEmitting(true)
         node?.setDrivable(drivable, canType)
         _state.update {
@@ -190,6 +194,7 @@ object NodeHolder : Host {
         val last = runCatching { n.clipboardText() }.getOrNull()
         val targets = runCatching { n.inputTargets() }.getOrDefault(emptyList())
         val screens = runCatching { n.screenTargets() }.getOrDefault(emptyList())
+        val casts = runCatching { n.screenCastTargets() }.getOrDefault(emptyList())
         val driving = runCatching { n.inputDriving() }.getOrNull()
         _state.update {
             it.copy(
@@ -198,6 +203,7 @@ object NodeHolder : Host {
                 lastClipboard = last,
                 inputTargets = targets,
                 screenTargets = screens,
+                castTargets = casts,
                 touchpad = if (driving == null) null else it.touchpad ?: targets.firstOrNull { t -> t.key == driving },
             )
         }
@@ -218,10 +224,30 @@ object NodeHolder : Host {
         refresh()
     }
 
-    /** Opens the watch screen: the device's primary display, at most 1920 by 1080. */
+    /**
+     * What the node is told this phone can share: its screen where it has an
+     * H.264 encoder, and its sound where it has an Opus encoder and the user
+     * allowed recording. Called at start and when that permission changes.
+     */
+    fun updateScreenShare() {
+        val metrics = appContext.resources.displayMetrics
+        val sound = ScreenShare.canShareSound(appContext)
+        node?.setScreenShare(
+            ScreenShare.hasEncoder(),
+            minOf(metrics.widthPixels, metrics.heightPixels).toUInt(),
+            maxOf(metrics.widthPixels, metrics.heightPixels).toUInt(),
+            // Pixels per dp: Android's own scale (ADR 0045).
+            metrics.density.toDouble(),
+            sound,
+        )
+        _state.update { it.copy(soundAllowed = ScreenShare.soundAllowed(appContext)) }
+    }
+
+    /** Opens the watch screen: the device's primary display, at most 1920 by 1080, with its sound. */
     fun startWatch(target: ScreenTarget) = async {
         call { n ->
-            val watch = n.screenWatch(target.key, 1920u, 1080u, 60u)
+            val watch = n.screenWatch(target.key, 1920u, 1080u, 60u, true)
+            WatchSound.start(watch.audioChannels.toInt())
             val canDrive = runCatching { n.inputTargets() }.getOrDefault(emptyList()).any { it.key == target.key }
             _state.update { it.copy(watching = Watching(target, watch, canDrive)) }
         }
@@ -233,8 +259,56 @@ object NodeHolder : Host {
         if (_state.value.watching?.driving == true) n?.inputStop()
         n?.screenWatchStop()
         WatchDecoder.release()
+        WatchSound.release()
         _state.update { it.copy(watching = null) }
         refresh()
+    }
+
+    /** Mutes or unmutes the watched share's sound on this phone. */
+    fun setWatchMuted(muted: Boolean) {
+        WatchSound.muted = muted
+        _state.update { s -> s.copy(watching = s.watching?.copy(muted = muted)) }
+    }
+
+    /**
+     * Takes the cast [peer] offered this phone, if it still waits: the watch
+     * screen opens on it. A display may be driven as a watched one is; a
+     * window never.
+     */
+    fun acceptOffer(peer: String) = async {
+        val offer = CastOffers.take(appContext, peer) ?: return@async
+        if (_state.value.watching != null) {
+            runCatching { node?.screenOfferDecline(peer) }
+            return@async
+        }
+        call { n ->
+            val watch = n.screenOfferAccept(peer, true)
+            WatchSound.start(watch.audioChannels.toInt())
+            val canDrive = offer.kind == "display" &&
+                runCatching { n.inputTargets() }.getOrDefault(emptyList()).any { it.key == peer }
+            val target = ScreenTarget(key = peer, name = offer.peerName)
+            _state.update { it.copy(watching = Watching(target, watch, canDrive, cast = true)) }
+        }
+    }
+
+    /** Leaves the cast [peer] offered this phone. */
+    fun declineOffer(peer: String) = async {
+        runCatching { node?.screenOfferDecline(peer) }
+    }
+
+    /**
+     * Casts this phone's screen to [target], with its sound where that is
+     * allowed: Android's dialog opens at once, since the app is in front.
+     */
+    fun startCast(target: ScreenTarget) = async {
+        ScreenShare.casting = true
+        _state.update { it.copy(casting = target) }
+        call { n -> n.screenCast(target.key, true) }
+    }
+
+    /** The user stops the cast from the app. */
+    fun stopCast() = async {
+        node?.screenCastStop()
     }
 
     /**
@@ -264,6 +338,11 @@ object NodeHolder : Host {
     /** One encoded access unit of this phone's screen. */
     fun screenShareFrame(key: Boolean, bytes: ByteArray) {
         node?.screenShareFrame(key, bytes)
+    }
+
+    /** One Opus packet of this phone's sound. */
+    fun screenShareAudio(bytes: ByteArray) {
+        node?.screenShareAudio(bytes)
     }
 
     /** The share of this phone's screen ended here. */
@@ -791,8 +870,24 @@ object NodeHolder : Host {
 
     override fun screenFrame(peer: String, key: Boolean, bytes: ByteArray) = WatchDecoder.feed(key, bytes)
 
-    override fun screenShareRequested(viewer: String, width: UInt, height: UInt, frameRate: UInt) =
-        ScreenShare.request(appContext, viewer, width.toInt(), height.toInt(), frameRate.toInt())
+    override fun screenAudio(peer: String, seq: ULong, at: ULong, bytes: ByteArray) = WatchSound.feed(bytes)
+
+    override fun screenShareRequested(
+        viewer: String,
+        width: UInt,
+        height: UInt,
+        frameRate: UInt,
+        audioChannels: UByte,
+    ) = ScreenShare.request(
+        appContext,
+        viewer,
+        width.toInt(),
+        height.toInt(),
+        frameRate.toInt(),
+        audioChannels.toInt(),
+    )
+
+    override fun screenOffered(offer: org.ligatureprotocol.core.ScreenOffer) = CastOffers.offered(appContext, offer)
 
     override fun screenShareStop() = ScreenShare.stop(appContext)
 
@@ -826,7 +921,22 @@ object NodeHolder : Host {
             }
             is Event.ScreenEnded -> {
                 WatchDecoder.release()
+                WatchSound.release()
                 _state.update { it.copy(watching = null) }
+                refresh()
+            }
+            is Event.ScreenCastStarted -> refresh()
+            is Event.ScreenCastEnded -> {
+                ScreenShare.casting = false
+                // The receiver closing it, or the user stopping it here, is
+                // the cast's ordinary end; anything else is worth saying.
+                val ordinary = event.reason in setOf("viewer", "sharer", "consent")
+                _state.update {
+                    it.copy(
+                        casting = null,
+                        lastError = if (ordinary) it.lastError else "The cast did not run: ${event.reason}",
+                    )
+                }
                 refresh()
             }
         }

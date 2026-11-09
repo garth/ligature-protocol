@@ -21,6 +21,11 @@ GLUE='(_linux|_macos)\.rs$|/ligatured/src/(main|run|control|portal_gate)\.rs$|/l
 
 cd "$(dirname "$0")/../impl"
 if [ "${1:-}" != "--report" ]; then
+    # The workspace's own artifacts first: cargo-llvm-cov keeps the test
+    # binaries of earlier builds and counts them in the report, every line
+    # of theirs as uncovered, so a machine that has run this before reads
+    # lower than a fresh build does (LP-211).
+    cargo llvm-cov clean --workspace
     cargo llvm-cov --workspace --no-report
 fi
 cargo llvm-cov report --html

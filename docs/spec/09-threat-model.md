@@ -127,6 +127,12 @@ effect at the next session start and ends a live one. A phone asks its user for 
 unless the owner has granted the app screen capture without asking, which Android allows
 only from a computer over `adb`; then any device of the person's can watch the phone with
 nobody at it, and only the phone's own sharing indicator shows it.
+A share's sound adds what is heard to what is seen: a call on speaker, a voice message, the
+audio of a meeting. It travels as the picture does, on the same stream of the same session,
+is never stored, and is covered by the same indicator. A cast puts a picture and its sound on
+a device nobody asked from: it goes only to a device of the same person that says it
+receives, the receiver may decline it, and a receiver that is lost shows and plays whatever is
+cast to it until it is revoked, which is the same weight on revocation again.
 
 ### 4.5 No remote trust
 

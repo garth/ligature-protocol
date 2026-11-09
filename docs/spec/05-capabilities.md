@@ -275,16 +275,19 @@ person's devices as a signed fact, so one device configures the whole set.
 ## 3h. Screen
 
 `org.ligatureprotocol.capability.screen`
-([schema](../../schemas/capability.screen.schema.json)) lets one device's display be
-watched live on another of the person's devices, and, with input (section 3g), driven
-from it. It is device-scoped, offered as input is
+([schema](../../schemas/capability.screen.schema.json)) lets one device's display, or one
+of its windows, be watched live on another of the person's devices, with the device's sound
+when both sides take it, and a display, with input (section 3g), driven from the viewer. It
+is device-scoped, offered as input is
 ([ADR 0040](../adr/0040-binding-stands-in-for-principal.md)), and between one person's
 own devices the protocol asks nothing: the platform's own consent, where the platform has
 one, is the gate (chapter 08). The descriptor's `params` say `shares` (this device captures
-and encodes a display), `views` (it decodes and shows one), `encodes` and `decodes` (the
-picture formats it can encode as a sharer and decode as a viewer now, most preferred first),
-and as a viewer `maxWidth`, `maxHeight` and `maxFrameRate`, the largest and fastest picture
-it takes.
+and encodes a display or a window), `views` (it decodes and shows one), `receives` (it takes
+a share offered to it, a cast, and shows it without anyone at it asking), `encodes` and
+`decodes` (the picture formats it can encode as a sharer and decode as a viewer now, most
+preferred first), `audioEncodes` and `audioDecodes` (the same for sound; empty or absent
+where it has none to give or none to play), and as a viewer `maxWidth`, `maxHeight` and
+`maxFrameRate`, the largest and fastest picture it takes.
 
 A **format** names what a share's picture is sent as, never the encoder or decoder that
 makes or takes it ([ADR 0044](../adr/0044-screen-formats-are-negotiated.md)): a map of
@@ -294,22 +297,36 @@ decoder can start at any keyframe; `chroma` is `4:2:0`
 (colour at half the resolution each way, the default when absent) or `4:4:4` (colour at
 full resolution, which keeps coloured text sharp). A device that does not know one of a
 format's keys or values passes over that format, so a codec or a sampling is added by
-defining its name here, without a new message.
+defining its name here, without a new message. An **audio format** is the same for sound: a
+map of `codec` and `channels`, negotiated the same way. The codec `opus` is Opus (RFC 6716)
+at 48 kHz, one packet of 20 ms per message, and `channels` is 1 or 2 (2 when absent).
 
-A **screen share** is one stream with the capability type as its purpose, opened by the
-viewer.
-`displays` without a list asks the sharer what it has and is answered by `displays` with the
-list, each display an `id` stable for the session, a `name`, its `width` and `height` in
+A **screen share** is one stream with the capability type as its purpose, which either side
+may open. Opened by the viewer, it is a **watch**: `displays` without a list asks the sharer
+what it has and is answered by `displays` with the list, each display an `id` stable for the
+session, a `name`, its `width` and `height` in
 pixels, whether it is `primary`, and its `scale`, the pixels per logical point the platform
 draws it at (1 when absent), so a viewer can ask for and show the picture at the size it has
-on the sharer ([ADR 0045](../adr/0045-a-display-reports-its-scale.md)). `start` names a
-display (the primary one when it names none), the `formats` the viewer takes for this share
-in its order of preference (what it decodes, or fewer if its user narrowed them), and the
-largest `width` and `height` and fastest `frameRate` it wants; the sharer picks the first of
-the formats it can encode now and answers `started` with that `format` and what it settled
-on, which may be smaller or slower and never larger or faster, the picture scaled down
-keeping the display's aspect, or `refused` with a reason (`consent`, `no-encoder`,
-`no-display`, `busy`) and ends the stream. Then `frame` messages carry the encoded picture:
+on the sharer ([ADR 0045](../adr/0045-a-display-reports-its-scale.md)); and, where the
+sharer's platform lets it pick a window by id, `windows`, each an `id` stable while the
+window exists, its title as `name`, the `app` that owns it, its `width`, `height` and
+`scale`. `start` names a `display` (the primary one when it names neither) or a `window`,
+the `formats` the viewer takes for this share in its order of preference (what it decodes,
+or fewer if its user narrowed them), the largest `width` and `height` and fastest
+`frameRate` it wants, and the `audio` formats it takes, absent for a silent share; the
+sharer picks the first of the formats it can encode now, and of the audio formats when any
+were asked for, and answers `started` with that `format`, the `audio` format when sound was
+agreed, the `display` or `window` shared, and what it settled on, which may be smaller or
+slower and never larger or faster, the picture scaled down keeping the source's aspect, or
+`refused` with a reason (`consent`, `no-encoder`, `no-display`, `busy`) and ends the
+stream. Opened by the sharer, it is a **cast**: its first message is `offer`, naming the
+`source` it will share (a map with `kind` `display` or `window` and the fields of one, as
+the caster chose it, so the receiver never lists or names it), the `formats` it encodes,
+the `maxFrameRate` it will pace to and the `audio` formats it can send; the receiver answers
+`start` exactly as a viewer does, naming no display or window, or `refused` with `declined`
+(nobody at it took the offer within a minute, or the person closed it), `no-decoder` or
+`busy`, and from `started` on a cast and a watch are the same share. A device offers a cast
+only to one whose descriptor says `receives`. Then `frame` messages carry the encoded picture:
 each is one chunk of one frame with the frame's `seq`, its capture time `at` in microseconds
 since the share started, whether it is a `key` frame, whether this chunk is the `last`, and
 up to 256 KiB of `bytes`, a frame being the concatenation of its chunks in order, so no
@@ -319,21 +336,29 @@ may send fewer while the display is still; when the stream's flow control holds 
 drops frames rather than queues them, so the picture stays current rather than complete. It
 sends a keyframe at the start, whenever the viewer sends `keyframe` (after a loss or a late
 start), and after frames it dropped, and need send
-no other, since a keyframe codes again what did not change. `stop` from either side, with a
-reason (`viewer`, `sharer`, `consent`, `error`), ends the share and then the stream; a
-stream that ends without one is a stop too, and either way the sharer ends its capture at
-once.
+no other, since a keyframe codes again what did not change. When sound was agreed, `audio`
+messages travel on the same stream between the frame chunks, each one packet with its `seq`,
+its `at` (the capture time of its first sample on the clock `frame` uses) and its `bytes`;
+sound is never dropped for flow control, a frame is, and a viewer plays each packet as it
+comes and draws each frame as it comes, the shared clock letting it place one against the
+other where it must. A window that changes shape during a share is fitted into the agreed
+picture keeping its aspect, the spare area black, so neither end restarts. `stop` from
+either side, with a reason (`viewer`, `sharer`, `consent`, `error`), ends the share and
+then the stream; a stream that ends without one is a stop too, and either way the sharer
+ends its capture at once.
 
 Driving a shared display is the input family on its own stream: the viewer sends an
 absolute `enter` and `position` events as fractions of the shared display, computed from
 where the pointer is in its picture through the `started` size, and keys, buttons, scroll
 and `text` as section 3g has them; a multi-display sharer maps the fractions to the
-display it is sharing. Viewing and driving are two streams of two families on one session,
-and a viewer may watch without driving. One stream carries one share for its life; a
-second viewer is a second share. Nothing of a share is stored, and the sharing device
-shows that it shares, by the platform's indicator or a notification of its own, for the
-share's life (chapter 09 section 4.4). Open questions: audio with the picture, a window
-rather than a display, and a bit-rate ceiling in `start` (ADR 0044).
+display it is sharing, and a cast display is driven as a watched one is. A window has no
+stable place on the screen, so no input region is set for it and it is never driven. Viewing
+and driving are two streams of two families on one session, and a viewer may watch without
+driving. One stream carries one share for its life; a second viewer is a second share.
+Nothing of a share is stored, and the sharing device shows that it shares, by the platform's
+indicator or a notification of its own, for the share's life (chapter 09 section 4.4). Open
+questions: a bit-rate ceiling in `start` (ADR 0044), and whether a share's picture may change
+size mid-share with a new `started` and a keyframe, instead of the letterbox.
 
 ## 4. Requests and grants
 

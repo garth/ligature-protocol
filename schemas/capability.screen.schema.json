@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ligatureprotocol.org/schemas/capability.screen.schema.json",
   "title": "org.ligatureprotocol.capability.screen",
-  "description": "DRAFT. The screen capability (spec chapter 05 section 3h): device-scoped, one device's display watched live on another. The descriptor's params say whether the device shares (captures and encodes a display), views (decodes and shows one), the picture formats it encodes and decodes in preference order (ADR 0044), the largest picture and the highest frame rate a viewer takes. A share is one stream (purpose org.ligatureprotocol.capability.screen, ADR 0036) opened by the viewer: displays to list the sharer's displays, start answered by started or refused, then frame messages from the sharer, chunked so no message exceeds the bound of ADR 0036, keyframe from the viewer when it needs one, and stop from either side; the stream's end stops the share. Control of a shared display is the input capability on its own stream, with positions as fractions of the shared display.",
+  "description": "DRAFT. The screen capability (spec chapter 05 section 3h): device-scoped, one device's display or window watched live on another, with the device's sound when both sides take it. The descriptor's params say whether the device shares (captures and encodes a display or a window), views (decodes and shows one), receives (takes a share offered to it and shows it unasked), the picture and audio formats it encodes and decodes in preference order (ADR 0044), the largest picture and the highest frame rate a viewer takes. A share is one stream (purpose org.ligatureprotocol.capability.screen, ADR 0036) that either side may open. Opened by the viewer: displays to list the sharer's displays and windows, start answered by started or refused. Opened by the sharer, a cast: offer naming the source, answered by start from the receiver, or refused. Then frame messages from the sharer, chunked so no message exceeds the bound of ADR 0036, audio messages between them when sound was agreed, keyframe from the viewer when it needs one, and stop from either side; the stream's end stops the share. Control of a shared display is the input capability on its own stream, with positions as fractions of the shared display; a window is never driven.",
   "$defs": {
     "params": {
       "type": "object",
@@ -16,7 +16,12 @@
         "views": {
           "type": "boolean",
           "default": false,
-          "description": "Whether this device decodes and shows a shared display."
+          "description": "Whether this device decodes and shows a shared display or window."
+        },
+        "receives": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether this device takes a share offered to it (a cast) and shows it without anyone at it asking. A sharer never offers to a device without it."
         },
         "encodes": {
           "type": "array",
@@ -29,6 +34,18 @@
           "items": { "$ref": "#/$defs/format" },
           "default": [{ "codec": "h264", "chroma": "4:2:0" }],
           "description": "The picture formats this device can decode as a viewer now, most preferred first (ADR 0044)."
+        },
+        "audioEncodes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/audioFormat" },
+          "default": [],
+          "description": "The audio formats this device can encode as a sharer now, most preferred first; empty or absent when it shares no sound."
+        },
+        "audioDecodes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/audioFormat" },
+          "default": [],
+          "description": "The audio formats this device can decode and play as a viewer now, most preferred first; empty or absent when it plays none."
         },
         "maxWidth": {
           "type": "integer",
@@ -66,11 +83,109 @@
         }
       }
     },
+    "audioFormat": {
+      "type": "object",
+      "description": "What a share's sound is sent as, negotiated as the picture's format is (ADR 0044): a codec and its channel count, never the encoder or decoder. A device that does not know one of the keys or values passes over the whole format.",
+      "required": ["codec"],
+      "properties": {
+        "codec": {
+          "type": "string",
+          "description": "A codec the spec defines. opus: Opus (RFC 6716) at 48 kHz, one packet of 20 ms per audio message."
+        },
+        "channels": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2,
+          "default": 2,
+          "description": "1 for mono, 2 for stereo."
+        }
+      }
+    },
     "displayId": {
       "type": "string",
       "minLength": 1,
       "maxLength": 128,
       "description": "The sharer's name for one of its displays, stable for the session."
+    },
+    "windowId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "The sharer's name for one of its windows, stable while the window exists."
+    },
+    "window": {
+      "type": "object",
+      "description": "One window a sharer offers, where the platform lets it pick a window by id without a picker of its own.",
+      "required": ["id", "width", "height"],
+      "properties": {
+        "id": { "$ref": "#/$defs/windowId" },
+        "name": {
+          "type": "string",
+          "description": "The window's title, for a picker."
+        },
+        "app": {
+          "type": "string",
+          "description": "The application that owns it, as the platform names it."
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Its width in pixels when listed."
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Its height in pixels when listed."
+        },
+        "scale": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 1,
+          "description": "The pixels per logical point of the display it is on (ADR 0045); absent means 1."
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "description": "What a cast shares: a display or a window of the caster, with the fields of a display or a window and its kind. The caster chose it, so the receiver never lists or names it.",
+      "required": ["kind", "id", "width", "height"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["display", "window"],
+          "description": "display: a whole display, which the receiver may drive with input. window: one window, never driven."
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "The caster's name for it, stable for the share."
+        },
+        "name": {
+          "type": "string",
+          "description": "What the platform calls the display, or the window's title."
+        },
+        "app": {
+          "type": "string",
+          "description": "For a window, the application that owns it."
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Its width in pixels."
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Its height in pixels."
+        },
+        "scale": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 1,
+          "description": "Its pixels per logical point (ADR 0045); absent means 1."
+        }
+      }
     },
     "display": {
       "type": "object",
@@ -107,7 +222,7 @@
     },
     "displays": {
       "type": "object",
-      "description": "From the viewer, without a list: what displays does the sharer have. From the sharer: the list.",
+      "description": "From the viewer, without a list: what displays and windows does the sharer have. From the sharer: the lists.",
       "required": ["type"],
       "properties": {
         "type": {
@@ -117,18 +232,50 @@
           "type": "array",
           "items": { "$ref": "#/$defs/display" },
           "description": "The sharer's displays; present only in the answer."
+        },
+        "windows": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/window" },
+          "description": "The sharer's windows, where its platform lets it pick one by id; absent or empty where a picker of the platform's chooses, or where windows cannot be shared."
+        }
+      }
+    },
+    "offer": {
+      "type": "object",
+      "description": "From the sharer, as the first message of a stream it opened: a cast. Here is the source I will share, the formats I encode and the sound I can send; answer start, or refused. The receiver's start names no display or window, since the stream has its source.",
+      "required": ["type", "source", "formats", "maxFrameRate"],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.screen.offer"
+        },
+        "source": { "$ref": "#/$defs/source" },
+        "formats": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/format" },
+          "description": "The picture formats the caster can encode for this share, most preferred first."
+        },
+        "maxFrameRate": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The fastest the caster will pace this share, in frames per second."
+        },
+        "audio": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/audioFormat" },
+          "description": "The audio formats the caster can send with the picture, most preferred first; absent or empty when it has no sound to give."
         }
       }
     },
     "start": {
       "type": "object",
-      "description": "From the viewer: share this display (the primary one when no id is given) in the first of these formats the sharer can encode, no larger than this and no faster than this.",
+      "description": "From the viewer: share this display (the primary one when neither a display nor a window is named) or this window in the first of these formats the sharer can encode, no larger than this and no faster than this, with sound in the first of these audio formats when any are given. From a receiver answering an offer: the same, naming no display or window.",
       "required": ["type", "formats", "width", "height", "frameRate"],
       "properties": {
         "type": {
           "const": "org.ligatureprotocol.capability.screen.start"
         },
         "display": { "$ref": "#/$defs/displayId" },
+        "window": { "$ref": "#/$defs/windowId" },
         "formats": {
           "type": "array",
           "items": { "$ref": "#/$defs/format" },
@@ -148,19 +295,26 @@
           "type": "integer",
           "minimum": 1,
           "description": "The frame rate the viewer wants, in frames per second."
+        },
+        "audio": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/audioFormat" },
+          "description": "The audio formats the viewer takes for this share, most preferred first: what it decodes, or fewer if its user narrowed them; absent or empty for a silent share."
         }
       }
     },
     "started": {
       "type": "object",
-      "description": "From the sharer: the share runs with these settings, which may be smaller or slower than asked, never larger or faster. The picture keeps the display's aspect, so width and height together say how a position maps to it.",
-      "required": ["type", "display", "format", "width", "height", "frameRate"],
+      "description": "From the sharer: the share runs with these settings, which may be smaller or slower than asked, never larger or faster. Exactly one of display and window names the source. The picture keeps the source's aspect, so width and height together say how a position maps to a display; a window that changes shape is fitted into the picture, the spare area black.",
+      "required": ["type", "format", "width", "height", "frameRate"],
       "properties": {
         "type": {
           "const": "org.ligatureprotocol.capability.screen.started"
         },
         "display": { "$ref": "#/$defs/displayId" },
+        "window": { "$ref": "#/$defs/windowId" },
         "format": { "$ref": "#/$defs/format" },
+        "audio": { "$ref": "#/$defs/audioFormat" },
         "width": {
           "type": "integer",
           "minimum": 1,
@@ -180,7 +334,7 @@
     },
     "refused": {
       "type": "object",
-      "description": "From the sharer: the share does not start. The stream ends after it.",
+      "description": "From the side that was asked: the sharer answering a start, or the receiver answering an offer. The share does not start and the stream ends after it.",
       "required": ["type", "reason"],
       "properties": {
         "type": {
@@ -188,8 +342,8 @@
         },
         "reason": {
           "type": "string",
-          "enum": ["consent", "no-encoder", "no-display", "busy"],
-          "description": "consent: the platform's consent was not given, or not in time. no-encoder: no encoder for any of the formats offered. no-display: no display with that id. busy: a share of this display already runs."
+          "enum": ["consent", "no-encoder", "no-display", "busy", "declined", "no-decoder"],
+          "description": "consent: the platform's consent was not given, or not in time. no-encoder: no encoder for any of the formats offered. no-display: no display or window with that id. busy: a share of this source already runs, or the receiver already shows one. declined: nobody at the receiver took the offer within a minute, or the person closed it. no-decoder: the receiver decodes none of the formats offered."
         }
       }
     },
@@ -226,6 +380,31 @@
         }
       }
     },
+    "audio": {
+      "type": "object",
+      "description": "From the sharer: one packet of the share's sound, on the share's stream between frame chunks. Sound is never dropped for flow control; a frame is.",
+      "required": ["type", "seq", "at", "bytes"],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.screen.audio"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The packet's number, counting up from the start of the share."
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "When the packet's first sample was captured, in microseconds since the share started, on the clock frame uses, so a viewer can place sound against picture."
+        },
+        "bytes": {
+          "type": "string",
+          "contentEncoding": "base64url",
+          "description": "One packet in the agreed audio format (20 ms of Opus); a byte string in CBOR."
+        }
+      }
+    },
     "keyframe": {
       "type": "object",
       "description": "From the viewer: send a keyframe now, after a loss or a late start.",
@@ -254,10 +433,12 @@
   },
   "oneOf": [
     { "$ref": "#/$defs/displays" },
+    { "$ref": "#/$defs/offer" },
     { "$ref": "#/$defs/start" },
     { "$ref": "#/$defs/started" },
     { "$ref": "#/$defs/refused" },
     { "$ref": "#/$defs/frame" },
+    { "$ref": "#/$defs/audio" },
     { "$ref": "#/$defs/keyframe" },
     { "$ref": "#/$defs/stop" }
   ]

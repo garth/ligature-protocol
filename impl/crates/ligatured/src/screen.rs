@@ -532,6 +532,22 @@ impl ScreenSync {
         Ok(self.sources(peer).await?.displays.unwrap_or_default())
     }
 
+    /// This device's own displays and the windows it can share by id: what
+    /// a cast from here may name. Empty lists where it shares nothing.
+    #[must_use]
+    pub fn local_sources(&self) -> Displays {
+        match &self.capture {
+            Some(capture) => Displays {
+                displays: Some(capture.displays()),
+                windows: Some(capture.windows()),
+            },
+            None => Displays {
+                displays: Some(Vec::new()),
+                windows: Some(Vec::new()),
+            },
+        }
+    }
+
     /// Asks `peer` what displays and windows it has.
     ///
     /// # Errors

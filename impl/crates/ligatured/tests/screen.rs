@@ -1012,6 +1012,23 @@ async fn a_cast_runs_over_the_control_socket() {
     ));
     assert_eq!(next_seen(&mut seen).await, "frame 0 true");
 
+    // The caster's own displays and windows, whose ids a cast names: asked
+    // of its daemon with no device.
+    let mut own = Client::connect(&sharer_socket).await.unwrap();
+    let listed: ligatured::control::ScreenDisplays = own
+        .request(Request::new(types::SCREEN_DISPLAYS, 0))
+        .await
+        .unwrap();
+    assert_eq!(listed.displays, displays());
+    assert_eq!(listed.windows, windows());
+    // A device that shares nothing lists nothing of its own.
+    let mut own = Client::connect(&viewer_socket).await.unwrap();
+    let listed: ligatured::control::ScreenDisplays = own
+        .request(Request::new(types::SCREEN_DISPLAYS, 0))
+        .await
+        .unwrap();
+    assert!(listed.displays.is_empty() && listed.windows.is_empty());
+
     // Status on both sides.
     let mut status_client = Client::connect(&sharer_socket).await.unwrap();
     let status: ScreenStatus = status_client

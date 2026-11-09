@@ -50,6 +50,9 @@ streams a cast's frames and packets as `screen.start` does, `screen.decline` lea
 `screen.status` lists casts and received casts with their sound and the offers waiting.
 `lpctl screen start --audio-out FILE` writes the packets as records of a 4-byte length, an
 8-byte capture time and the packet, so a share's sound can be checked without a player.
+`screen.displays` without a key answers with this device's own displays and windows, which
+`lpctl screen displays` with no device prints, since a cast names its window by an id only
+the casting device knows.
 
 **The fake capture does windows and sound.** `FakeCapture::with_windows` lists windows it
 shares by id, `set_audio_encodes` says what sound it encodes, `emit_audio` delivers a packet,

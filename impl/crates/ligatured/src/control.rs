@@ -96,7 +96,8 @@ pub mod types {
     pub const INPUT_DRIVE: &str = "org.ligatureprotocol.control.input.drive";
     /// `input.send`: a batch of `events` to the device being driven.
     pub const INPUT_SEND: &str = "org.ligatureprotocol.control.input.send";
-    /// `screen.displays`: list a device's displays (`key`).
+    /// `screen.displays`: list a device's displays and windows (`key`), or
+    /// this device's own when no key is given.
     pub const SCREEN_DISPLAYS: &str = "org.ligatureprotocol.control.screen.displays";
     /// `screen.start`: watch a device's display or window (`key`, `display`
     /// or `window`, `width`, `height`, `frameRate`, `audio` for its sound);
@@ -1039,7 +1040,16 @@ async fn handle_screen(
                     },
                 )
             }),
-            None => return bad("screen.displays needs a key"),
+            None => {
+                let listed = screen.local_sources();
+                Response::ok(
+                    id,
+                    &ScreenDisplays {
+                        displays: listed.displays.unwrap_or_default(),
+                        windows: listed.windows.unwrap_or_default(),
+                    },
+                )
+            }
         },
         types::SCREEN_START => {
             let Some(peer) = request.key else {

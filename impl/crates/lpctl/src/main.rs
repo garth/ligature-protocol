@@ -144,10 +144,12 @@ enum PermissionsAction {
 /// `lpctl screen` actions.
 #[derive(Debug, Subcommand)]
 enum ScreenAction {
-    /// List a device's displays, and the windows it can share by id.
+    /// List a device's displays, and the windows it can share by id; with
+    /// no device, this device's own, whose ids `cast` takes.
     Displays {
         /// The device: its name, or a prefix of its key or fingerprint.
-        device: String,
+        /// This device when left out.
+        device: Option<String>,
     },
     /// Watch a device's display or window: the encoded H.264 stream is
     /// written to a file (play it with `ffplay -f h264 FILE`), progress to
@@ -561,8 +563,8 @@ fn screen_status_next_steps(active: bool, offered: bool) -> String {
             "casts this device's display or a window to a device, with its sound",
         ),
         (
-            "lpctl screen displays <DEVICE>",
-            "lists a device's displays and windows",
+            "lpctl screen displays [DEVICE]",
+            "lists a device's displays and windows, or this device's own",
         ),
     ];
     if offered {
@@ -578,6 +580,30 @@ fn screen_status_next_steps(active: bool, offered: bool) -> String {
         ));
     }
     next_steps(&steps)
+}
+
+/// After `lpctl screen displays` of this device: casting a display, and a
+/// window by its id where any is listed or through the platform's picker
+/// where none is.
+fn own_displays_next_steps(windows: bool) -> String {
+    let window = if windows {
+        (
+            "lpctl screen cast <DEVICE> --window <ID>",
+            "casts one of the windows above to a device",
+        )
+    } else {
+        (
+            "lpctl screen cast <DEVICE> --window",
+            "casts a window you choose in the system's picker, where it has one",
+        )
+    };
+    next_steps(&[
+        (
+            "lpctl screen cast <DEVICE> [--display <ID>]",
+            "casts a display above, the primary one by default, to a device",
+        ),
+        window,
+    ])
 }
 
 /// One record of `lpctl screen start --audio-out`: the packet's length as 4
@@ -1024,10 +1050,12 @@ async fn input(client: &mut Client, action: &InputAction) -> Result<(), Error> {
 async fn screen(client: &mut Client, action: &ScreenAction) -> Result<(), Error> {
     match action {
         ScreenAction::Displays { device } => {
-            let key = resolve_device(client, device).await?;
             let mut req = Request::new(types::SCREEN_DISPLAYS, 0);
-            req.key = Some(key);
+            if let Some(device) = device {
+                req.key = Some(resolve_device(client, device).await?);
+            }
             let d: ScreenDisplays = client.request(req).await?;
+            let local = device.is_none();
             for display in d.displays {
                 println!(
                     "{:<12} {}x{} at {}x{}  {}",
@@ -1039,6 +1067,7 @@ async fn screen(client: &mut Client, action: &ScreenAction) -> Result<(), Error>
                     display.name.unwrap_or_default()
                 );
             }
+            let windows = !d.windows.is_empty();
             for window in d.windows {
                 println!(
                     "window {:<12} {}x{}  {}  {}",
@@ -1048,6 +1077,9 @@ async fn screen(client: &mut Client, action: &ScreenAction) -> Result<(), Error>
                     window.app.unwrap_or_default(),
                     window.name.unwrap_or_default()
                 );
+            }
+            if local {
+                print!("{}", own_displays_next_steps(windows));
             }
         }
         ScreenAction::Cast {
@@ -1713,7 +1745,7 @@ mod tests {
 
         let idle = screen_status_next_steps(false, false);
         assert!(idle.contains("lpview <DEVICE>"), "{idle}");
-        assert!(idle.contains("lpctl screen displays <DEVICE>"), "{idle}");
+        assert!(idle.contains("lpctl screen displays [DEVICE]"), "{idle}");
         assert!(!idle.contains("stop"), "{idle}");
         assert!(screen_status_next_steps(true, false).contains("lpctl screen stop [DEVICE]"));
         assert!(!idle.contains("lpview --receive"));
@@ -1722,6 +1754,18 @@ mod tests {
         let record = audio_packet_record(0x0102, &[7, 8, 9]);
         assert_eq!(record, [0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 1, 2, 7, 8, 9]);
         assert_eq!(sound_summary(false, 0), "");
+        let listed = own_displays_next_steps(true);
+        assert!(
+            listed.contains("lpctl screen cast <DEVICE> --window <ID>"),
+            "{listed}"
+        );
+        assert!(listed.contains("lpctl screen cast <DEVICE> [--display <ID>]"));
+        let picked = own_displays_next_steps(false);
+        assert!(
+            picked.contains("lpctl screen cast <DEVICE> --window "),
+            "{picked}"
+        );
+        assert!(!picked.contains("--window <ID>"));
         assert_eq!(sound_summary(true, 12), ", 12 packets of sound");
 
         assert!(offers_next_steps(0).contains("lpctl files offer <PATH>"));

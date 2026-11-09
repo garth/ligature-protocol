@@ -21,14 +21,14 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
 
-use ligatured::camera_linux::{LinuxCamera, LinuxPresenter, PRESENTED_CAMERA};
+use ligatured::camera_linux::{LinuxCamera, LinuxPresenter, PRESENTED_CAMERA, pipewire_args};
 use ligatured::daemon::Daemon;
-use ligatured::screen::ScreenSync;
 use ligatured::screen::sound::PRESENTED_MICROPHONE;
+use ligatured::screen::{ScreenSync, Settings, ShareControl, Viewed, Watching};
 use lp_core::camera::CAMERA_TYPE;
 use lp_core::facts::Role;
 use lp_core::paths::Locations;
-use lp_core::screen::{AudioFormat, Format, ScreenParams, Start, StopReason};
+use lp_core::screen::{AudioFormat, Format, ScreenParams, SourceKind, Start, StopReason};
 use lp_core::wire::Timestamp;
 use lp_identity::cross_signing::PersonKeys;
 use lp_identity::facts;
@@ -113,6 +113,72 @@ fn gst(pipeline: &[&str], properties: &str) -> Child {
         .expect("gst-launch-1.0 starts")
 }
 
+/// The properties of a test camera node.
+fn camera_properties(name: &str) -> String {
+    format!(
+        "stream-properties=\"props,media.class=Video/Source,media.role=Camera,\
+         node.name={name},node.description=\\\"LP test camera\\\"\""
+    )
+}
+
+/// A test camera in the session's PipeWire: a white square moving across
+/// black, 1280 by 720 at 30 a second, given no priority so the session's
+/// default camera stays what it was. It is built as the daemon builds a
+/// presented camera, raw pictures on a pipe into `rawvideoparse`, a leaky
+/// queue and an unsynchronised sink, which is what makes it serve one reader
+/// after another: the node first, then the ffmpeg that draws its pictures.
+fn test_camera(name: &str) -> Vec<Child> {
+    let mut pictures = Command::new("ffmpeg")
+        .args(["-hide_banner", "-loglevel", "error", "-nostdin", "-re"])
+        .args(["-f", "lavfi", "-i", "color=black:s=1280x720:r=30"])
+        .args(["-f", "lavfi", "-i", "color=white:s=120x120:r=30"])
+        .args(["-filter_complex", "[0][1]overlay=x='mod(240*t,1160)':y=300"])
+        .args(["-pix_fmt", "yuv420p", "-f", "rawvideo", "pipe:1"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("ffmpeg starts");
+    let node = Command::new("gst-launch-1.0")
+        .args(["-q", "fdsrc", "fd=0", "blocksize=1382400", "!"])
+        .args(["rawvideoparse", "format=i420", "width=1280", "height=720"])
+        .args(["framerate=30/1", "!", "queue", "leaky=downstream"])
+        .args([
+            "max-size-buffers=2",
+            "max-size-bytes=0",
+            "max-size-time=0",
+            "!",
+        ])
+        .args(["pipewiresink", "mode=provide", "sync=false"])
+        .arg(camera_properties(name))
+        .stdin(Stdio::from(pictures.stdout.take().unwrap()))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("gst-launch-1.0 starts");
+    vec![node, pictures]
+}
+
+/// A test camera that stops for good when a reader holds it up: a live
+/// source straight into the sink, whose buffers run out when they are not
+/// given back in time. Some cameras and screens behave so; this one does
+/// reliably, and is left damaged for every later reader too.
+fn fragile_camera(name: &str) -> Child {
+    gst(
+        &[
+            "videotestsrc",
+            "is-live=true",
+            "pattern=ball",
+            "!",
+            "video/x-raw,format=I420,width=1280,height=720,framerate=30/1",
+            "!",
+            "pipewiresink",
+            "mode=provide",
+        ],
+        &camera_properties(name),
+    )
+}
+
 /// What a reader of the node `target`, and of no other, writes within ten
 /// seconds: `tail` is the pipeline after `pipewiresrc`.
 async fn read_back(target: &str, buffers: u32, tail: &str) -> Vec<u8> {
@@ -137,6 +203,60 @@ async fn read_back(target: &str, buffers: u32, tail: &str) -> Vec<u8> {
     })
     .await
     .unwrap()
+}
+
+/// The frames, and the keyframes among them, that arrive within `seconds`.
+async fn frames_within(watching: &mut Watching, seconds: u64) -> (usize, usize) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(seconds);
+    let (mut frames, mut keys) = (0, 0);
+    while let Ok(viewed) = tokio::time::timeout_at(deadline, watching.frames.recv()).await {
+        match viewed.expect("the share still runs") {
+            Viewed::Frame { key, .. } => {
+                frames += 1;
+                keys += usize::from(key);
+            }
+            Viewed::Audio { .. } => {}
+            Viewed::Stopped(reason) => panic!("the share stopped: {reason}"),
+        }
+    }
+    (frames, keys)
+}
+
+/// Reads whole pictures of `frame` bytes from `from` on a thread of its
+/// own, saying each one, and reads nothing while `paused` is set.
+fn count_pictures(
+    mut from: impl std::io::Read + Send + 'static,
+    frame: usize,
+    paused: Arc<std::sync::atomic::AtomicBool>,
+) -> std::sync::mpsc::Receiver<()> {
+    let (said, heard) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut picture = vec![0u8; frame];
+        loop {
+            if paused.load(std::sync::atomic::Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(20));
+                continue;
+            }
+            if from.read_exact(&mut picture).is_err() || said.send(()).is_err() {
+                return;
+            }
+        }
+    });
+    heard
+}
+
+/// How many pictures are said within `seconds`, however long the next one
+/// takes to come.
+fn pictures_within(pictures: &std::sync::mpsc::Receiver<()>, seconds: u64) -> usize {
+    let deadline = std::time::Instant::now() + Duration::from_secs(seconds);
+    let mut count = 0;
+    while let Some(left) = deadline.checked_duration_since(std::time::Instant::now()) {
+        if pictures.recv_timeout(left).is_err() {
+            break;
+        }
+        count += 1;
+    }
+    count
 }
 
 fn start(camera: &str, audio: bool) -> Start {
@@ -243,27 +363,12 @@ async fn a_test_camera_and_microphone_are_shared_and_presented_as_nodes_that_rea
     let camera = format!("lp_live_test_camera_{pid}");
     let microphone = format!("lp_live_test_microphone_{pid}");
     let mut helpers = Helpers(Vec::new());
-    // A camera that shows a white ball moving on black, and a microphone
+    // A camera that shows a white square moving across black, and a microphone
     // that hears a 440 Hz tone. Neither is given a priority, so the
     // session's defaults stay what they were, and nothing is shared before
     // both are seen to exist: a share must find them, not a device of the
     // machine's own.
-    helpers.0.push(gst(
-        &[
-            "videotestsrc",
-            "is-live=true",
-            "pattern=ball",
-            "!",
-            "video/x-raw,format=I420,width=640,height=480,framerate=30/1",
-            "!",
-            "pipewiresink",
-            "mode=provide",
-        ],
-        &format!(
-            "stream-properties=\"props,media.class=Video/Source,media.role=Camera,\
-             node.name={camera},node.description=\\\"LP test camera\\\"\""
-        ),
-    ));
+    helpers.0.extend(test_camera(&camera));
     until("the test camera exists", 10, || {
         nodes("Video/Source").contains(&camera)
     })
@@ -322,7 +427,7 @@ async fn a_test_camera_and_microphone_are_shared_and_presented_as_nodes_that_rea
     assert_eq!(listed.len(), 1, "the test camera alone: {listed:?}");
     assert_eq!(listed[0].id, camera);
     assert_eq!(listed[0].name.as_deref(), Some("LP test camera"));
-    assert_eq!((listed[0].width, listed[0].height), (640, 480));
+    assert_eq!((listed[0].width, listed[0].height), (1280, 720));
     assert_eq!(listed[0].frame_rates, [30]);
 
     // Presented with its microphone: a camera node and a source node named
@@ -335,7 +440,7 @@ async fn a_test_camera_and_microphone_are_shared_and_presented_as_nodes_that_rea
     assert_eq!(presenting.started.source_id(), camera);
     assert_eq!(
         (presenting.started.width, presenting.started.height),
-        (640, 480)
+        (1280, 720)
     );
     assert_eq!(presenting.started.frame_rate, 30);
     assert_eq!(presenting.started.audio, Some(AudioFormat::OPUS_MONO));
@@ -356,7 +461,7 @@ async fn a_test_camera_and_microphone_are_shared_and_presented_as_nodes_that_rea
     assert_eq!(p.sharer_sync.local_cameras().len(), 1);
 
     // The camera reads back: the pictures the test camera shows, moving.
-    let frame = 640 * 480 * 4;
+    let frame = 1280 * 720 * 4;
     let pictures = read_back(
         &presented_camera,
         45,
@@ -384,9 +489,9 @@ async fn a_test_camera_and_microphone_are_shared_and_presented_as_nodes_that_rea
         "the first picture: {dark} dark pixels and {bright} bright of {}",
         frame / 4
     );
-    assert!(dark > frame / 4 * 9 / 10, "the ball's black field");
-    assert!(bright > 50, "the white ball");
-    assert_ne!(first, last, "the ball moves");
+    assert!(dark > frame / 4 * 9 / 10, "the black field");
+    assert!(bright > 5000, "the white square");
+    assert_ne!(first, last, "the square moves");
 
     // The microphone reads back: the tone the test source plays, through a
     // recorder that takes no other source.
@@ -452,6 +557,57 @@ async fn a_test_camera_and_microphone_are_shared_and_presented_as_nodes_that_rea
     })
     .await;
 
+    // A viewer that asks for a keyframe as the share starts, as the phone's
+    // decoder does when its surface is ready, gets one and the share goes
+    // on at its rate, and the camera is as good for the next reader.
+    for round in 1..=1 {
+        let mut watching = p
+            .viewer_sync
+            .watch(&sharer_key, start(&camera, false))
+            .await
+            .expect("the camera is watched");
+        watching.control.send(ShareControl::Keyframe).unwrap();
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        watching.control.send(ShareControl::Keyframe).unwrap();
+        let (early, _) = frames_within(&mut watching, 3).await;
+        let (frames, _) = frames_within(&mut watching, 3).await;
+        println!(
+            "watch {round}: {early} frames in the three seconds around the requests, {frames} in the next three"
+        );
+        assert!(
+            frames >= 60,
+            "watch {round}: the camera stalled after the requests: {frames} frames in three seconds"
+        );
+        // And one asked for once the share runs.
+        watching.control.send(ShareControl::Keyframe).unwrap();
+        let (frames, keys) = frames_within(&mut watching, 3).await;
+        assert!(keys >= 1, "watch {round}: no keyframe when asked");
+        assert!(
+            frames >= 45,
+            "watch {round}: {frames} frames after a later request"
+        );
+        watching.control.send(ShareControl::Stop).unwrap();
+        until("the sharer shares nothing after the watch", 10, || {
+            p.sharer_sync.status().sharing.is_empty()
+        })
+        .await;
+        // The camera is as good for the next reader as it was: a share
+        // whose encoder was started again leaves it with all its buffers.
+        let after = read_back(
+            &camera,
+            400,
+            "! videoconvert ! video/x-raw,format=BGRx ! fdsink fd=1 sync=false",
+        )
+        .await
+        .len()
+            / frame;
+        println!("watch {round}: a reader of the camera itself then gets {after} pictures");
+        assert!(
+            after >= 100,
+            "watch {round}: the camera was left short of buffers: {after} pictures in ten seconds"
+        );
+    }
+
     // A camera that goes away ends its share: its reader takes no other
     // camera in its place.
     let presenting = p
@@ -468,7 +624,7 @@ async fn a_test_camera_and_microphone_are_shared_and_presented_as_nodes_that_rea
         !nodes("Audio/Source").contains(&presented_microphone),
         "no microphone without sound"
     );
-    // The first helper started is the test camera.
+    // The first helper started is the test camera's node.
     let mut test_camera = helpers.0.remove(0);
     test_camera.kill().unwrap();
     test_camera.wait().unwrap();
@@ -486,4 +642,80 @@ async fn a_test_camera_and_microphone_are_shared_and_presented_as_nodes_that_rea
         p.sharer_sync.local_cameras().is_empty() && !p.sharer_sync.status().shares
     })
     .await;
+}
+
+/// The camera's reader does not hold the camera up when what it feeds stops
+/// reading for a while, as the daemon does while an encoder is started again
+/// for a keyframe. Held up, the reader keeps the camera's buffers, the camera
+/// runs out of them, and its pictures stop for good: found with the phone,
+/// while chasing casts that stopped after some twenty frames. The reader is
+/// the daemon's own, and the camera one that does stall when it is held up.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs PipeWire and GStreamer; makes a test camera in the session's PipeWire"]
+async fn the_camera_s_reader_is_not_held_up_by_what_it_feeds() {
+    let camera = format!("lp_live_test_paused_{}", std::process::id());
+    let mut helpers = Helpers(Vec::new());
+    helpers.0.push(fragile_camera(&camera));
+    until("the test camera exists", 10, || {
+        nodes("Video/Source").contains(&camera)
+    })
+    .await;
+    let settings = Settings {
+        display: camera.clone(),
+        kind: SourceKind::Camera,
+        format: Format::H264,
+        audio: None,
+        width: 1280,
+        height: 720,
+        frame_rate: 30,
+        viewer: "the test".to_owned(),
+        cast: false,
+    };
+    let frame = 1280 * 720 * 4;
+    let counted = tokio::task::spawn_blocking(move || {
+        let reader = |settings: &Settings| {
+            Command::new("gst-launch-1.0")
+                .args(pipewire_args(&settings.display, settings))
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("the reader starts")
+        };
+        let mut first = reader(&settings);
+        let paused = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let pictures = count_pictures(first.stdout.take().unwrap(), frame, paused.clone());
+        let before = pictures_within(&pictures, 2);
+        paused.store(true, std::sync::atomic::Ordering::SeqCst);
+        std::thread::sleep(Duration::from_millis(1500));
+        paused.store(false, std::sync::atomic::Ordering::SeqCst);
+        let after = pictures_within(&pictures, 4);
+        let _ = first.kill();
+        let _ = first.wait();
+        // And the camera is as good for the next reader.
+        let mut second = reader(&settings);
+        let running = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let pictures = count_pictures(second.stdout.take().unwrap(), frame, running);
+        let next = pictures_within(&pictures, 4);
+        let _ = second.kill();
+        let _ = second.wait();
+        (before, after, next)
+    })
+    .await
+    .unwrap();
+    println!(
+        "the reader gave {} pictures in two seconds, {} in the four after a pause of 1.5 s, and the next reader {} in four",
+        counted.0, counted.1, counted.2
+    );
+    assert!(counted.0 >= 15, "only {} pictures at the start", counted.0);
+    assert!(
+        counted.1 >= 60,
+        "the camera stalled after the pause: {} pictures in four seconds",
+        counted.1
+    );
+    assert!(
+        counted.2 >= 60,
+        "the camera was left stalled for the next reader: {} pictures in four seconds",
+        counted.2
+    );
 }

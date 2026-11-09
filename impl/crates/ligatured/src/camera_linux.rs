@@ -268,6 +268,12 @@ fn quoted(value: &str) -> String {
 /// into raw BGRx pictures of the share's size and rate on stdout.
 /// `videorate` gives the agreed rate whatever the camera's own, and
 /// `videoscale` keeps the camera's shape within the agreed picture.
+///
+/// The queue before the pipe is leaky: when the daemon stops reading for a
+/// moment, as it does while an encoder is started again for a keyframe, the
+/// newest pictures replace the waiting ones and the camera is never held
+/// up. Held up, the reader keeps the camera's buffers, the camera runs out
+/// of them and its pictures stop for good.
 #[must_use]
 pub fn pipewire_args(target: &str, settings: &Settings) -> Vec<String> {
     let mut args = vec![
@@ -283,6 +289,7 @@ pub fn pipewire_args(target: &str, settings: &Settings) -> Vec<String> {
         format!(
             "! videorate ! videoconvert ! videoscale add-borders=true \
              ! video/x-raw,format=BGRx,width={},height={},framerate={}/1,pixel-aspect-ratio=1/1 \
+             ! queue leaky=downstream max-size-buffers=2 max-size-bytes=0 max-size-time=0 \
              ! fdsink fd=1 sync=false",
             settings.width,
             settings.height,
@@ -1494,7 +1501,11 @@ mod tests {
         assert!(joined.contains(
             "video/x-raw,format=BGRx,width=1280,height=720,framerate=30/1,pixel-aspect-ratio=1/1"
         ));
-        assert!(joined.ends_with("! fdsink fd=1 sync=false"));
+        // What waits for the daemon is dropped, so the camera is never held up.
+        assert!(joined.ends_with(
+            "! queue leaky=downstream max-size-buffers=2 max-size-bytes=0 max-size-time=0 \
+             ! fdsink fd=1 sync=false"
+        ));
         // A name with a quote in it stays one value.
         assert_eq!(quoted("a \"b\" \\c"), "\"a \\\"b\\\" \\\\c\"");
 

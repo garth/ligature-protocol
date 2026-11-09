@@ -98,6 +98,26 @@ borders, copied into the `LiveEncoder` by the screen's own relay. The camera adv
 `h264` alone: its picture is 4:2:0 at the source. The sharing notification is the screen's
 with a camera's words and icon, and a share that cannot show it does not start.
 
+**The reader never holds the camera up.** The last element before the reader's pipe is a
+leaky queue of two pictures. When the daemon stops reading for a moment, as it does while
+an encoder is started again for a keyframe, the newest pictures replace the waiting ones.
+Without it the reader is held on its pipe and keeps the camera's buffers, and a camera that
+needs them back in time runs out and stops for good: a test camera made of a live source
+straight into `pipewiresink` gave 15 pictures in the four seconds after a consumer had
+paused for 1.5 seconds, and 17 to every reader after that; with the queue it gave 124, and
+the next reader was served as before (`camera_live.rs`, the second test). A queue straight
+after the source, and `pipewiresrc`'s `always-copy`, did not help.
+
+**A test camera has to be built as a presented one is.** That same test camera, a live
+source straight into the sink, is also left damaged by some readers merely ending: its log
+says "failed to dequeue buffer: Device or resource busy" for every reader after, and each
+gets one pass of its sixteen buffers. It cost a long search while casting to the phone,
+where every cast but the first stopped after some twenty frames. A camera built as the
+daemon builds a presented one, raw pictures on a pipe into `rawvideoparse`, a leaky queue
+and an unsynchronised sink, serves reader after reader, whether a reader is killed or dies
+on a broken pipe, and so does the daemon's presented camera itself. The live test uses
+that, and keeps the fragile kind for the one test that wants a camera that stalls.
+
 **Presented as a PipeWire camera node, and on a loopback device where there is one.** The
 plan left the choice between the kernel's `v4l2loopback` and a PipeWire node open. The node
 is the default sink, since it needs nothing installed and no privilege: ffmpeg decodes the

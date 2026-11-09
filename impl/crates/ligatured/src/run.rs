@@ -32,6 +32,14 @@ pub const FAKE_SCREEN_ENV: &str = "LIGATURE_FAKE_SCREEN";
 /// (milestone 10), so `lpctl camera` can be driven without a platform
 /// backend.
 pub const FAKE_CAMERA_ENV: &str = "LIGATURE_FAKE_CAMERA";
+/// Names the one camera a Linux daemon lists, by its PipeWire node name,
+/// for a test daemon that must reach no camera of the machine's own: a
+/// camera that is not this one is neither offered nor started.
+pub const CAMERA_ONLY_ENV: &str = "LIGATURE_CAMERA_ONLY";
+/// Names the source a Linux daemon captures as its microphone, instead of
+/// the session's default one, for a test daemon that must not open the
+/// machine's own.
+pub const MICROPHONE_ENV: &str = "LIGATURE_MICROPHONE";
 
 /// The platform's notification backend, if this platform has one; icons it
 /// writes for the platform go under `locations`.
@@ -206,7 +214,10 @@ pub async fn run(
         // PipeWire's cameras and the default microphone, shown in lpview or
         // presented as a camera node of this machine's own (LP-207).
         let camera = daemon.attach_camera(
-            Some(crate::camera_linux::LinuxCamera::start()),
+            Some(crate::camera_linux::LinuxCamera::start_with(
+                named(CAMERA_ONLY_ENV),
+                named(MICROPHONE_ENV),
+            )),
             crate::screen_linux::viewer_params(),
             Some(crate::camera_linux::LinuxPresenter::start()),
         );
@@ -529,6 +540,13 @@ fn a_binding_is_missing(daemon: &Daemon) -> bool {
             .iter()
             .any(|e| e.role == "binding" && !e.this_device && !e.revoked && !e.connected)
     })
+}
+
+/// The value of the environment variable `name`, when it is set to
+/// something.
+#[cfg(target_os = "linux")]
+fn named(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|value| !value.is_empty())
 }
 
 /// A cast offered to this desktop opens in `lpview`, when one is installed

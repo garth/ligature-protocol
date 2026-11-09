@@ -121,6 +121,10 @@ impl Daemon {
             .args(["--device-name", name])
             .env("LIGATURE_FAKE_CLIPBOARD", "1")
             .env("LIGATURE_FAKE_NOTIFICATIONS", "1")
+            // No camera or microphone of the machine's own: the daemon
+            // lists the one camera named, which does not exist (LP-207).
+            .env("LIGATURE_CAMERA_ONLY", "ligature_test.none")
+            .env("LIGATURE_MICROPHONE", "ligature_test.none")
             .env("RUST_LOG", "info")
             .stdout(Stdio::null())
             .stderr(Stdio::piped())

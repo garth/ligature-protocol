@@ -122,6 +122,12 @@ through a queue of 120 frames or packets, so the share's task never waits on a p
 that ends or whose queue fills is dropped, and the presenting ends when the last picture
 sink does.
 
+**A test daemon is kept to a test camera.** A daemon run as a process lists every camera
+PipeWire has, the machine's own first, and captures the default microphone. For a run of
+the binaries that must reach neither, `LIGATURE_CAMERA_ONLY` names the one camera it lists
+and `LIGATURE_MICROPHONE` the source it captures, beside the `LIGATURE_FAKE_*` variables
+(`LinuxCamera::start_with`).
+
 **What was run, and what was not.** `camera_live.rs`, ignored by default, makes a test
 camera (a white ball on black) and a test microphone (a 440 Hz tone) in the session's
 PipeWire, shares them between two daemons and presents them: 45 pictures of the ball read

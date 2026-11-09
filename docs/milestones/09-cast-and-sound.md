@@ -1,6 +1,7 @@
 # Milestone 9: a screen or a window cast to another of the person's devices, with its sound
 
-**Status:** Draft, for acceptance by the owner. Raised as the epic LP-193 on 2026-11-08, the
+**Status:** Accepted by the owner on 2026-11-09; the tasks are LP-198 to LP-203 under the epic
+LP-193. Raised as the epic LP-193 on 2026-11-08, the
 day milestone 8 closed, at the owner's request: cast my screen or one application to a remote
 device, with its sound, and hear a device I watch or control. These are the window share and
 the audio with the picture that milestone 8 section 7 named as its candidates; the cast

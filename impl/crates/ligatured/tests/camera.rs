@@ -564,6 +564,14 @@ async fn cameras_over_the_control_socket() {
         .await
         .unwrap();
     assert!(status.presents && status.watching.len() == 1 && !status.watching[0].presented);
+    // A stop that names no device ends what this device shares and what it
+    // presents: a camera a client watches in a window is neither, and stays.
+    let nothing = client
+        .call(Request::new(types::CAMERA_STOP, 0), |_| None)
+        .await
+        .unwrap();
+    assert!(nothing.into_ok::<Empty>().is_err());
+    assert_eq!(p.viewer_sync.status().watching.len(), 1);
     let mut stop = Request::new(types::CAMERA_STOP, 0);
     stop.key = Some(viewer_key);
     let _: Empty = sharer_client.request(stop).await.unwrap();
@@ -598,9 +606,12 @@ async fn cameras_over_the_control_socket() {
         "the microphone by default"
     );
     assert_eq!(p.presenter.running(), 1);
-    let mut stop = Request::new(types::CAMERA_STOP, 0);
-    stop.key = Some(sharer_key);
-    let _: Empty = client.request(stop).await.unwrap();
+    // A presented camera has no window to close: the stop that names no
+    // device ends it, as `lpctl camera stop` promises.
+    let _: Empty = client
+        .request(Request::new(types::CAMERA_STOP, 0))
+        .await
+        .unwrap();
     assert_eq!(presenting.await.unwrap().reason, StopReason::Viewer);
     until("nothing is presented", || p.presenter.running() == 0).await;
 

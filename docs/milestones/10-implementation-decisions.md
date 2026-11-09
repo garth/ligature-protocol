@@ -46,6 +46,17 @@ shapes under `camera.started`, `camera.frame` and `camera.audio`. `lpctl camera`
 and never drives, and the daemon starts `lpview --receive --camera` for a camera cast to be
 shown.
 
+**A stop that names no device ends what this device shares and what it presents.** A share
+that is shown ends when its window closes; a presented one has no window, so `camera.stop`
+without a device stops the presented shares too (`ScreenSync::stop_presenting`). A camera a
+client watches in a window is neither and is left alone. Found in a run of the built
+daemons, where `lpctl camera stop` answered "no share to stop" on the presenting device.
+
+**A camera runs no faster than it captures.** The sharer caps a camera's rate at the
+fastest of the rates the camera lists, whatever the viewer asks (`capped_rate`): a cast to
+a viewer that takes 60 a second had been agreed at 60 for a camera that gives 30, and the
+capture would have sent every picture twice.
+
 **Fakes.** `FakeCapture::of_cameras` and `generating_camera`, and a `FakePresenter` that
 counts what it is given; `LIGATURE_FAKE_CAMERA=1` attaches them, so `lpctl camera` runs end
 to end on one machine. The two-daemon test `camera.rs` covers the listing, a watch by default

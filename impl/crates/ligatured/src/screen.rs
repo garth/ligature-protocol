@@ -178,6 +178,18 @@ pub enum ShareControl {
     Stop,
 }
 
+/// The rate a share runs at: what was asked, within the family's bounds,
+/// and no faster than the fastest of `rates`, the rates a camera says it
+/// captures at, when it says any.
+fn capped_rate(asked: u32, rates: &[u32]) -> u32 {
+    let asked = asked.clamp(1, MAX_FRAME_RATE);
+    rates
+        .iter()
+        .copied()
+        .max()
+        .map_or(asked, |top| asked.min(top.max(1)))
+}
+
 /// The settings a share runs with.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
@@ -1063,6 +1075,18 @@ impl ScreenSync {
         n
     }
 
+    /// Stops every share this device presents to its programs. A share that
+    /// is shown ends when its window closes; a presented one has no window,
+    /// so the user's stop is what ends it.
+    pub fn stop_presenting(&self) -> usize {
+        let mut n = 0;
+        for w in lock(&self.watching).values().filter(|w| w.presented) {
+            let _ = w.stop.send(ShareControl::Stop);
+            n += 1;
+        }
+        n
+    }
+
     /// A peer disconnected: its shares, both ways, are over.
     pub fn detach(&self, peer: &PublicKey) {
         let gone = self.stop_with(peer, StopReason::Error);
@@ -1657,6 +1681,18 @@ impl ScreenSync {
             return Err(RefuseReason::Busy);
         }
         let (width, height) = fit(chosen.width, chosen.height, start.width, start.height);
+        // A camera runs no faster than it says it captures: a screen is
+        // drawn at any rate, a camera's sensor is not.
+        let rates = if kind == SourceKind::Camera {
+            capture
+                .cameras()
+                .into_iter()
+                .find(|c| c.id == chosen.id)
+                .map(|c| c.frame_rates)
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
         let settings = Settings {
             display: chosen.id.clone(),
             kind,
@@ -1664,7 +1700,7 @@ impl ScreenSync {
             audio,
             width,
             height,
-            frame_rate: start.frame_rate.clamp(1, MAX_FRAME_RATE),
+            frame_rate: capped_rate(start.frame_rate, &rates),
             viewer: self
                 .daemon
                 .device_display_name(peer)
@@ -2535,6 +2571,19 @@ impl Reassembly {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_camera_runs_no_faster_than_it_captures() {
+        // A screen, or a camera that says no rate: what was asked, bounded.
+        assert_eq!(capped_rate(60, &[]), 60);
+        assert_eq!(capped_rate(0, &[]), 1);
+        assert_eq!(capped_rate(500, &[]), MAX_FRAME_RATE);
+        // A camera: no faster than its fastest rate, and slower when asked.
+        assert_eq!(capped_rate(60, &[30]), 30);
+        assert_eq!(capped_rate(60, &[30, 60]), 60);
+        assert_eq!(capped_rate(15, &[30, 60]), 15);
+        assert_eq!(capped_rate(60, &[0]), 1);
+    }
 
     fn asked() -> Start {
         Start {

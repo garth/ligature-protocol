@@ -219,7 +219,8 @@ enum CameraAction {
         #[arg(long)]
         frames: Option<u64>,
     },
-    /// Stop the camera shares with a device, or every one this device runs.
+    /// Stop the camera shares with a device, or every one this device runs
+    /// or presents.
     Stop {
         /// The device: its name, or a prefix of its key or fingerprint.
         device: Option<String>,

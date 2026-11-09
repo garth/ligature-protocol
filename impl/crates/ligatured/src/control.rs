@@ -1215,7 +1215,9 @@ async fn handle_screen(
         types::SCREEN_STOP | types::CAMERA_STOP => {
             let stopped = match request.key {
                 Some(peer) => screen.stop_with(&peer, StopReason::Sharer),
-                None => screen.stop_sharing(),
+                // With no device: what this device shares, and what it
+                // presents, which has no window to close instead.
+                None => screen.stop_sharing() + screen.stop_presenting(),
             };
             if stopped > 0 {
                 Response::ok(id, &Empty {})

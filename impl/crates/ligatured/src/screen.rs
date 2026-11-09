@@ -526,8 +526,9 @@ impl ScreenSync {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Chain`] when `peer` is not this person's device or
-    /// does not share, and [`Error::Transport`] when the stream fails.
+    /// Returns [`Error::Chain`] when `peer` is not this person's device,
+    /// [`Error::Refused`] when it does not share, and [`Error::Transport`]
+    /// when the stream fails.
     pub async fn displays(&self, peer: &PublicKey) -> Result<Vec<Display>, Error> {
         Ok(self.sources(peer).await?.displays.unwrap_or_default())
     }
@@ -716,9 +717,9 @@ impl ScreenSync {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Chain`] when `peer` is not this person's device or
-    /// does not receive, [`Error::Io`] when this device does not share or has
-    /// no such source, [`Error::Refused`] when the receiver declined (with
+    /// Returns [`Error::Chain`] when `peer` is not this person's device,
+    /// [`Error::Io`] when this device does not share or has no such source,
+    /// [`Error::Refused`] when `peer` shows no casts or declined (with
     /// the reason), and [`Error::Transport`] when the stream fails.
     pub async fn cast(
         self: &Arc<Self>,
@@ -927,7 +928,10 @@ impl ScreenSync {
     fn sharer_params(&self, peer: &PublicKey) -> Result<ScreenParams, Error> {
         let params = self.peer_params(peer)?;
         if !params.shares {
-            return Err(Error::Chain(format!("{peer} does not share its screen")));
+            return Err(Error::Refused(format!(
+                "{} does not share its screen right now",
+                self.name(peer)
+            )));
         }
         Ok(params)
     }
@@ -935,7 +939,11 @@ impl ScreenSync {
     fn receiver_params(&self, peer: &PublicKey) -> Result<ScreenParams, Error> {
         let params = self.peer_params(peer)?;
         if !params.views || !params.receives {
-            return Err(Error::Chain(format!("{peer} does not take a cast")));
+            return Err(Error::Refused(format!(
+                "{} does not show casts: it needs a version that does and, on a desktop, \
+                 lpview installed beside its daemon",
+                self.name(peer)
+            )));
         }
         Ok(params)
     }
@@ -954,7 +962,20 @@ impl ScreenSync {
                     .iter()
                     .find_map(ScreenParams::from_descriptor)
             })
-            .ok_or_else(|| Error::Chain(format!("{peer} offers no screen")))
+            .ok_or_else(|| {
+                Error::Refused(format!(
+                    "{} offers no screen: it is not connected, or shares and shows none",
+                    self.name(peer)
+                ))
+            })
+    }
+
+    /// The device's display name, or its key's fingerprint where no record
+    /// names it.
+    fn name(&self, peer: &PublicKey) -> String {
+        self.daemon
+            .device_display_name(peer)
+            .unwrap_or_else(|| peer.fingerprint())
     }
 
     fn same_person(&self, peer: &PublicKey) -> bool {

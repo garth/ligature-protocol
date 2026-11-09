@@ -572,7 +572,16 @@ async fn a_cast_is_offered_taken_and_runs_with_sound() {
         .cast(&viewer_key, CastSource::default(), true)
         .await
         .unwrap_err();
-    assert!(err.to_string().contains("does not take a cast"), "{err}");
+    assert!(err.to_string().contains("does not show casts"), "{err}");
+    assert!(
+        !err.to_string().starts_with("trust chain"),
+        "a device that shows no casts is not a trust failure: {err}"
+    );
+    assert!(
+        err.to_string()
+            .starts_with(&p.viewer.binding().public().fingerprint()),
+        "the device is named, by its fingerprint where no record names it: {err}"
+    );
     // And a viewer cannot cast: it shares nothing.
     let err = p
         .viewer_sync

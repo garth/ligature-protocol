@@ -123,7 +123,8 @@ plan left the choice between the kernel's `v4l2loopback` and a PipeWire node ope
 is the default sink, since it needs nothing installed and no privilege: ffmpeg decodes the
 share into raw pictures and `gst-launch-1.0 fdsrc ! rawvideoparse ! queue ! pipewiresink
 mode=provide` offers them as a node of the class `Video/Source` with the role `Camera`,
-named `ligature_camera.<device>` and described "Ligature camera (*device*)". That is what
+named `ligature_camera.<device>.<size and rate>` and described "Ligature camera
+(*device*)". That is what
 the Camera portal counts as a camera and what browsers that read cameras through PipeWire
 list. The queue is leaky and the sink unsynchronised, so a slow reader costs pictures and
 never delays the decoder, and a node nobody reads takes its pictures without blocking.
@@ -145,6 +146,32 @@ given and every program that reads one takes, at two bytes a pixel in place of o
 half. GStreamer's own `pipewiresrc` reads either, which is why the live test had not
 noticed; it now asserts that the presented camera's port says one block while it is read.
 The loopback device keeps planar 4:2:0, which V4L2 holds in one buffer.
+
+**The node's name carries its size and rate.** With the packed pictures installed, Firefox
+still did not start the camera, and now the share ended as it tried. A browser asks a
+camera for one exact form, size and rate, chosen from a list it keeps for as long as it
+runs under the camera's unique id, which is the node's `node.name`, and never asks the node
+again (`mAllCandidateCapabilities` in Firefox's `CamerasParent`). The node was named for the
+sharing device alone, so a Firefox that had met it once asked for what it offered then:
+I420 from a node that now gave YUY2, and it would have been the same for the front camera
+at 60 a second after the back one at 30. The two agree nothing, PipeWire reports the
+failed link to both ends, and to GStreamer's sink that is an error that ends it, and with
+the last sink the share. So `camera_node_name` gives
+`ligature_camera.<device>.<width>x<height>x<rate>`: each form is a camera the browser has
+not met, and the same form is the same camera, which a page that remembers its camera
+finds again. The description, which is what a person reads in the list, does not change.
+
+This was reproduced and checked in a Firefox 158 of its own, headless on a fresh profile
+and driven over Marionette, against synthetic cameras built as the presenter builds one,
+with only the test camera allowed in Firefox's own prompt: a YUY2 camera at 640 by 360
+showed 81 frames in three seconds; a camera of the same name at 1280 by 720 gave a track
+that ended at once with no frame, and its node was gone; a name that carried the size
+showed 82 frames at 1280 by 720.
+
+**A reader that can agree no format ends the presented camera.** That is the limit left:
+a program that asks the node for a form it does not offer takes the sink down as that
+Firefox did, and the share ends as if stopped here. Programs that pick from what the node
+lists, which is every one tried, do not.
 
 **The microphone is a loopback pair.** A source that GStreamer offers is read cleanly by a
 PipeWire client and badly through PulseAudio's interface, which is what browsers record

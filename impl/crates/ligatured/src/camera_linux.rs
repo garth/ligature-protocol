@@ -842,6 +842,24 @@ pub fn decode_args(started: &Started, pixels: &str, output: &[&str]) -> Vec<Stri
     args
 }
 
+/// The name of the PipeWire node a camera from `from` is presented as, which
+/// carries the picture's size and rate. A browser asks a camera for one exact
+/// form, size and rate out of a list it keeps under the node's name for as
+/// long as it runs: under one name for every share, a Firefox that had seen
+/// the back camera at 30 a second asked the front one at 60 for the old
+/// rate, the two could agree nothing, and that ended the node and the share.
+/// A name per form makes each a camera the browser has not met.
+#[must_use]
+pub fn camera_node_name(from: &str, started: &Started) -> String {
+    format!(
+        "{PRESENTED_CAMERA}{}.{}x{}x{}",
+        slug(from),
+        started.width,
+        started.height,
+        started.frame_rate.max(1)
+    )
+}
+
 /// The GStreamer pipeline that offers the raw pictures on its stdin, in the
 /// form [`NODE_PIXELS`], as a PipeWire camera node. The queue drops a picture rather than hold the
 /// decoder back when a reader is slow, and `sync=false` passes each on as it
@@ -863,8 +881,8 @@ pub fn camera_node_args(from: &str, started: &Started) -> Vec<String> {
     .collect();
     args.push(format!(
         "stream-properties=\"props,media.class=Video/Source,media.role=Camera,\
-         node.name={PRESENTED_CAMERA}{},node.description=\\\"{}\\\"\"",
-        slug(from),
+         node.name={},node.description=\\\"{}\\\"\"",
+        camera_node_name(from, started),
         camera_label(from)
     ));
     args
@@ -1565,12 +1583,22 @@ mod tests {
             node.last().map(String::as_str),
             Some(
                 "stream-properties=\"props,media.class=Video/Source,media.role=Camera,\
-                 node.name=ligature_camera.pixel_8_pro,\
+                 node.name=ligature_camera.pixel_8_pro.1280x720x30,\
                  node.description=\\\"Ligature camera (Pixel 8 Pro)\\\"\""
             )
         );
         // What is presented here is never listed as a camera to share.
-        assert!("ligature_camera.pixel_8_pro".starts_with(PRESENTED_CAMERA));
+        assert!(camera_node_name("Pixel 8 Pro", &started()).starts_with(PRESENTED_CAMERA));
+        // Another size or rate is another camera to a browser, which keeps
+        // what a camera offered under its name.
+        let faster = Started {
+            frame_rate: 60,
+            ..started()
+        };
+        assert_eq!(
+            camera_node_name("Pixel 8 Pro", &faster),
+            "ligature_camera.pixel_8_pro.1280x720x60"
+        );
 
         let decode = decode_args(&started(), NODE_PIXELS, &["-f", "rawvideo", "pipe:1"]).join(" ");
         assert!(

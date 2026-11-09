@@ -107,7 +107,10 @@ offered by GStreamer's `pipewiresink` from pictures ffmpeg decodes: that is what
 portal counts as a camera and what a program that finds cameras through PipeWire lists. Its
 pictures are packed 4:2:2 (YUY2), each in one block of memory: `pipewiresink` gives a planar
 picture a block for each plane, and the browsers' capture code reads the first block alone,
-so a planar camera is listed by a browser and shows nothing. A
+so a planar camera is listed by a browser and shows nothing. The node's name carries the
+picture's size and rate, since a browser keeps what a camera offered under its name for as
+long as it runs and asks for exactly that: a node of one name that came back with another
+size could agree nothing with it. A
 program that reads V4L2 alone needs the out-of-tree `v4l2loopback` module, to whose first
 device the daemon also writes when it is loaded. The camera's sound is a `pw-loopback` pair,
 an output the daemon plays into and a source at its other end, which programs list among the

@@ -183,7 +183,9 @@ The reference implementation is Rust and is also the production implementation
   (`docs/index.md`), the user guide and the specification, as `docs/SUMMARY.md` lists them,
   and nothing else (the ADRs, the milestone plans and the audits are for the repository; the
   `lp-book` preprocessor rewrites links to them, and to anything outside `docs/`, to
-  GitHub). `site/book.toml` configures it, `site/mermaid.js` renders the diagrams and
+  GitHub). `site/book.toml` configures it, `site/mermaid.js` renders the diagrams,
+  `site/theme/head.hbs` goes into every page's `<head>` (the Plausible page-view script, on
+  the site only) and
   `site/build.sh` builds it into `build/site` and checks every link and anchor with lychee,
   fetching both tools pinned by version and checksum. `.github/workflows/pages.yml` runs the
   script and deploys the result to GitHub Pages on every push to `main`, at

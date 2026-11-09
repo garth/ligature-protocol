@@ -80,6 +80,15 @@ while the portal logs "Out of buffers"; the daemon starts a capture that has gon
 again on the same portal session. Where the portal is missing, `wlr-screencopy` copies an
 output instead.
 
+A window is shared only as a cast, from the portal's picker opened on window sources, since
+the portal offers no list a daemon could name a window from and `wlr-screencopy` copies
+outputs alone; the pick is never remembered, and a window that changes shape is fitted into
+the agreed picture with borders. A share's sound is what plays on the default output: its
+monitor, read through PipeWire's PulseAudio interface and encoded as Opus by another ffmpeg,
+which a machine without `libopus` or a default output simply does not offer. A cast offered
+to the machine opens in `lpview`, which the daemon starts in the session from beside its own
+executable, and `lpview` plays a share's sound through ffmpeg onto the default output.
+
 Open question: the minimum set of compositors and portals to support (Hyprland is the first
 target), and how the system service drives audio and display without a session of its own.
 
@@ -150,7 +159,12 @@ why; each such limit is recorded as the platform's choice and not worked around:
   stopping the share there ends it with `consent`. ScreenCaptureKit delivers a frame only when the
   display changed, so a still screen's frame is repeated once a second. A launchd agent of process
   type `Background` is throttled so as not to disturb the user, which halved the frame rate and
-  slowed input to a quarter of a second, so the agent is `Interactive`.
+  slowed input to a quarter of a second, so the agent is `Interactive`. ScreenCaptureKit lists
+  the windows on screen, so a Mac offers them by id and shares one through its own filter,
+  scaled to fit the agreed picture. The system's sound comes from the same stream on macOS 13
+  and later, which is when Apple added it to the capture; on an older macOS a share is silent,
+  since Apple gives a program no other way to what the machine plays. A cast offered to the
+  Mac opens in `lpview`, started by the agent, which plays sound through AudioToolbox.
 - **Keys**: the Keychain stores the local store's keys; the Secure Enclave holds only
   P-256 keys, so an Ed25519 key is software-held and may be wrapped by one
   ([ADR 0027](../adr/0027-ed25519.md)).
@@ -263,7 +277,15 @@ protocol of its own. LineageOS is the first target (no Google services, sideload
   the media projection type while Android shows its cast indicator, and `MediaCodec`
   encodes it; stopping the cast from the system ends the share with `consent`. A shared
   desktop is decoded by `MediaCodec` into a surface on the app's watch screen, where touch
-  drives it.
+  drives it. A cast starts from the app's Cast card, so the dialog opens where the person
+  is; the dialog, not the app, decides between one app and the whole screen. What the phone
+  plays is captured under the projection only with the recording permission, the same one as
+  the microphone's, which the app asks for from that card alone; Android leaves out calls
+  and any app that opts out of capture, so a cast may be silent where sound was expected,
+  and that is the platform's rule. `MediaCodec` encodes and decodes the Opus. A cast offered
+  to the phone opens the watch screen while the app is in front or the accessibility service
+  is on, and is otherwise a notification, since Android keeps a background app from opening
+  itself.
 - **SMS, telephony.** SMS and telephony need their own permissions and, for SMS, store
   policy approval; neither is offered yet.
 - **Keys.** The Android Keystore holds no Ed25519 keys on most devices (section 4a); the

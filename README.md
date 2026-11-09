@@ -174,8 +174,11 @@ sharing device's own consent, and drive it from the picture
 [milestone 4](docs/milestones/04-files.md),
 [milestone 5](docs/milestones/05-rich-clipboard.md),
 [milestone 7](docs/milestones/07-shared-input.md) and
-[milestone 8](docs/milestones/08-remote-desktop.md). Everything else in the specification is
-unimplemented.
+[milestone 8](docs/milestones/08-remote-desktop.md). On `main` and not yet in a release:
+a screen or one window cast from the device that has it to another, and the sharing
+device's sound with every share ([milestone 9](docs/milestones/09-cast-and-sound.md)),
+implemented on all three platforms and awaiting its run with the real devices. Everything
+else in the specification is unimplemented.
 Apple phones and tablets are off the roadmap for now, because iOS does not let a person run
 an always-on peer on a device they own; what the platform would allow is recorded in the
 [platform notes](docs/spec/08-platform-notes.md#4-ios-and-ipados).
@@ -262,6 +265,13 @@ follow them.
    ([plan](docs/milestones/07-shared-input.md)).
 8. **A screen viewed, then controlled, from another device.** Done and released in
    0.2.0-alpha ([plan](docs/milestones/08-remote-desktop.md)).
+9. **A screen or a window cast to another device, with its sound.** Implemented on `main`:
+   a share started from the device that has the picture, windows beside displays, and Opus
+   sound on the share's stream; its run with the real devices is pending
+   ([plan](docs/milestones/09-cast-and-sound.md)).
+10. **A camera used from another device, as a picture and as a webcam.** Planned: the phone's
+    camera as the webcam of a call on a desktop
+    ([plan](docs/milestones/10-camera.md)).
 
 Not planned: Apple phones and tablets, for the reasons in the
 [platform notes](docs/spec/08-platform-notes.md#4-ios-and-ipados): the platform is closed,

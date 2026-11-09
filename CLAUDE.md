@@ -27,7 +27,12 @@ Linux and an event tap on the Mac, keys carrying their meaning by ADR 0043, the 
 touchpad and keyboard) and milestone 8 (a display watched in `lpview` or the app and driven
 from it: the ScreenCast portal and ffmpeg on Linux, ScreenCaptureKit and VideoToolbox on the
 Mac, media projection and `MediaCodec` on the phone, H.264 with a keyframe only at the start
-and on request), both run with the real devices before the release, and nothing beyond them.
+and on request), both run with the real devices before the release. On `main` since
+2026-11-09, unreleased and not yet run with the real devices, is milestone 9 (a share of the
+`screen` family started by the sharer as a cast, with `offer` and a `receives` param; windows
+beside displays, listed by a Mac and picked in the portal on Linux; Opus sound on the share's
+stream as `audio` messages, captured through PipeWire, ScreenCaptureKit and Android's
+playback capture and played by `lpview` through ffmpeg and by the app). Nothing beyond them.
 The project's domain is `ligatureprotocol.org`, so the `org.ligatureprotocol` type names
 and the schema `$id`s are official.
 
@@ -136,7 +141,12 @@ The reference implementation is Rust and is also the production implementation
   criteria and a task breakdown; milestones 1 to 5 are done, 6 is drafted (epic LP-111), 7 is
   done and released in 0.2.0-alpha (epic LP-112, tasks LP-141 to LP-146, LP-160 and LP-161;
   the run is LP-146) and 8 the same (epic LP-113, tasks LP-147 to LP-152, LP-162 for ADR
-  0044 and LP-164; the run is LP-152).
+  0044 and LP-164; the run is LP-152); 9 is implemented and awaits its run (epic LP-193,
+  tasks LP-198 to LP-203; the run is LP-203), with `09-implementation-decisions.md` for its
+  non-protocol choices (sound as `Captured::Audio`, Ogg Opus through ffmpeg in
+  `screen::sound` and `screen::ogg`, pending offers with `accept` and `decline`, `lpview
+  --receive` started by the daemon, the phone's recording permission for its sound); 10 (a
+  camera, epic LP-194) is drafted.
   macOS share the clipboard) and `01-implementation-decisions.md` records its non-protocol
   choices (store is
   SQLite via rusqlite bundled; keys in a separate 0600 file; state under `data/` in the
@@ -170,10 +180,10 @@ The reference implementation is Rust and is also the production implementation
   helper's own data-control source, NSPasteboard data providers, the Android content
   provider and Save action); its run with the real devices is recorded on LP-95.
   `07-shared-input.md` and `08-remote-desktop.md` are done, their implementation decisions
-  beside them. `06-phone-and-media.md` (the phone's SMS and calls, media control) and
-  `09-cast-and-sound.md` (a screen or a window cast to another device, every share with its
-  sound, epic LP-193) and `10-camera.md` (a camera watched from another device or presented to
-  a desktop's programs as a webcam, epic LP-194) are drafts.
+  beside them, and `09-cast-and-sound.md` (a screen or a window cast to another device, every
+  share with its sound) is accepted and implemented. `06-phone-and-media.md` (the phone's SMS
+  and calls, media control) and `10-camera.md` (a camera watched from another device or
+  presented to a desktop's programs as a webcam, epic LP-194) are drafts.
 - Sponsors are listed in two places that stay identical: the README's "Sponsors" section
   and the landing page `docs/index.md`, grouped by tier (Gold, Silver, Bronze; a tier is
   written only once it has a sponsor), each with a logo under `docs/assets/sponsors/` (a

@@ -6,6 +6,10 @@ H.264 on the device that shares and decoded on the one that watches. The phone c
 drive a desktop, share its own screen with one, and be driven from the picture once
 Ligature is on under Accessibility.
 
+From the release after 0.2.0-alpha you can also go the other way, and **cast** a screen or
+one window from the device you are at to another, and a share carries the sharing device's
+**sound** ([Casting](#casting-a-screen-or-a-window), [Sound](#sound)).
+
 ## Watching a desktop from a desktop
 
 ```sh
@@ -28,6 +32,8 @@ share.
 | `--actual-size` | Shows the screen at its actual size instead of scaled to the window (below); `--width` and `--height` are then ignored |
 | `--chroma 4:2:0` or `4:4:4` | Asks for that colour sampling only (below); by default the best both devices handle |
 | `--view-only` | Watch without ever driving |
+| `--window <id>` | Watches one window instead of a display, where the device lists windows (a Mac); a window is never driven |
+| `--mute` | The picture alone, without the device's sound |
 
 A device that takes no input, such as the phone before Ligature is on under Accessibility,
 is only watched, and the window's title says why.
@@ -61,12 +67,66 @@ the phone, send 4:2:0, since their hardware encoders do not produce 4:4:4. 4:4:4
 about half as much again of the network, so on a slow link `--chroma 4:2:0` asks for the
 lighter one.
 
+## Casting a screen or a window
+
+Watching starts at the device that shows the picture. Casting starts at the device that
+has it: you pick what to show and where, and it opens there by itself.
+
+```sh
+lpctl screen cast Garths-MacBook-Pro            # this device's primary display
+lpctl screen cast Garths-MacBook-Pro --window   # one window
+lpctl screen cast "Pixel 8 Pro" --no-audio      # the picture without this device's sound
+```
+
+The command says when the other device has taken the cast and what it settled on, and runs
+until the cast ends. **Ctrl+C** leaves the cast running; `lpctl screen stop` ends it, as
+closing the picture on the other device does.
+
+- **On Linux**, `--window` opens the screen-sharing picker so you choose the window there.
+  Linux has no list of windows a program may read, so a window is chosen each time and is
+  never remembered.
+- **On a Mac**, `lpctl screen displays` with no device lists this Mac's displays and
+  windows with their ids, and `--window <id>` casts one.
+- **On the phone**, tap **Cast to** followed by the device's name under **Cast this screen**.
+  Android's dialog opens at once and decides what is shown: one app, or the entire screen.
+- A window keeps its shape in the picture: resize it and it is fitted in with black borders.
+
+**On the receiving device** the picture opens without anyone asking for it: `lpview` on a
+desktop, the watch screen on the phone. A cast display can be driven from there with a
+click, as a watched one can; a cast window is only shown. On the phone the cast opens at
+once while the app is open or Ligature is on under Accessibility, and is otherwise a
+notification, *device* **is casting to this phone**: tap it to watch, swipe it away to
+decline. A cast nobody takes within a minute is declined, and the casting device says so.
+
+A device shows casts only when it has something to show them in: a desktop needs `lpview`
+installed beside the daemon, as the packages do, and ffmpeg. `lpctl screen status` says
+`receives: true` on a device that does, and lists a cast that is waiting to be taken.
+
+## Sound
+
+A share, watched or cast, carries what the sharing device plays, and the watching device
+plays it with the picture. `lpview --mute` and the watch screen's **Mute** silence it on the
+watching side; `lpctl screen cast --no-audio` sends none.
+
+- **Linux** shares what plays on its default output, and needs ffmpeg built with `libopus`
+  and PipeWire, as desktop distributions have.
+- **A Mac** shares its sound on macOS 13 and later. Before that Apple gives a program no
+  way to what the Mac plays, so an older Mac shares the picture alone.
+- **The phone** shares its sound only once you allow recording: under **Cast this screen**,
+  tap **Share the phone's sound too**. Android puts what the phone plays behind the same
+  permission as the microphone; Ligature uses it for that alone and never opens the
+  microphone. Android leaves calls out of every share, and any app that asks not to be
+  captured, so some sound never leaves the phone whatever you allow.
+- Watching a device that is in the same room plays its sound twice, once from each. Mute
+  one of them.
+
 ## What the sharing device asks
 
 - **Linux** shows its screen-sharing picker the first time a device asks to watch. It
   remembers your choice, so later shares start without asking. While a share runs, a
-  notification "Sharing *display* with *device*" stays up, and its **Stop sharing** button
-  ends the share. That notification is the only sign on Linux that the screen is shared,
+  notification "Sharing *display* with *device*" stays up ("Casting", for a cast you
+  started), and its **Stop sharing** button ends the share. That notification is the only
+  sign on Linux that the screen is shared,
   since the compositor shows none, so a share does not start when it cannot be shown, and
   dismissing it brings it back a few times before it stays dismissed; **Stop sharing** is the
   way to end the share. A notification daemon that hides popups after a while keeps it in
@@ -126,9 +186,10 @@ it, and the picture fills the screen. Touch drives the desktop:
 ## Stopping and checking
 
 ```sh
-lpctl screen status             # what this device shares and watches
+lpctl screen status             # what this device shares, casts, watches and is offered
 lpctl screen stop               # stop every share this device runs
 lpctl screen stop "Pixel 8 Pro" # or only those with one device
+lpctl screen displays           # this device's own displays, and its windows on a Mac
 ```
 
 A share also ends when the watching device closes its window or loses its connection. If the
@@ -143,8 +204,9 @@ lpctl screen start Garths-MacBook-Pro --out share.h264 --frames 300
 ffplay -f h264 share.h264
 ```
 
-It takes `--display`, `--width`, `--height` and `--rate` as `lpview` does, asking for 1280 by
-720 at 60 a second by default.
+It takes `--display`, `--window`, `--width`, `--height` and `--rate` as `lpview` does, asking
+for 1280 by 720 at 60 a second by default. `--audio-out sound.bin` asks for the sound too and
+writes its Opus packets to that file, for checking that sound arrives.
 
 ## What each platform needs
 
@@ -165,8 +227,12 @@ It takes `--display`, `--width`, `--height` and `--rate` as `lpview` does, askin
 - Screens are shared between your own devices only.
 - One device watches a display at a time: a second viewer of the same display is refused as
   busy. Another display of the same device can be shared alongside.
-- A whole display is shared, never a single window. Android's dialog offers one app as well;
-  choose the entire screen there.
+- Up to 0.2.0-alpha a whole display is shared, never a single window, and a share carries
+  no sound. After it, a window is shared from a Mac by its id and from Linux as a cast, a
+  window is never driven, and the phone shares what Android's dialog gives it.
 - A locked phone shares its lock screen but not its PIN, pattern or password screen, which
   is entered unseen from a viewer.
-- The share carries no sound; the protocol does not define audio yet.
+- Sound comes only with a picture. Music from the phone on a desktop's speakers alone, or a
+  microphone, is not something the protocol carries yet.
+- A cast goes to your own devices. A television or another person's device needs the
+  household groups the protocol specifies and the apps do not have yet.

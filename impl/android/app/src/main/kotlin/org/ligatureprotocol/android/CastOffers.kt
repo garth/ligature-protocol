@@ -9,7 +9,8 @@ import android.content.Intent
 import org.ligatureprotocol.core.ScreenOffer
 
 /**
- * A cast another of the person's devices offers this phone (milestone 9).
+ * A cast another of the person's devices offers this phone (milestone 9),
+ * of its screen, a window or, from milestone 10, a camera.
  * With the app in front the watch screen opens at once; with the
  * accessibility service on, Android lets the app open itself from the
  * background, so the screen wakes and the cast shows; otherwise a
@@ -49,7 +50,11 @@ object CastOffers {
 
     /** The notification's text: what is cast, and whether sound comes. */
     fun text(offer: ScreenOffer): String {
-        val what = if (offer.kind == "window") "A window (${offer.name})" else "Its screen"
+        val what = when (offer.kind) {
+            "window" -> "A window (${offer.name})"
+            "camera" -> "Its camera (${offer.name})"
+            else -> "Its screen"
+        }
         val sound = if (offer.audio) ", with sound" else ""
         return "$what$sound. Tap to watch, swipe away to decline."
     }
@@ -114,7 +119,8 @@ object CastOffers {
     class DeclineReceiver : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val peer = intent.getStringExtra(EXTRA_PEER) ?: return
-            if (take(context, peer) != null) NodeHolder.declineOffer(peer)
+            val offer = take(context, peer) ?: return
+            NodeHolder.declineOffer(peer, camera = offer.kind == "camera")
         }
     }
 }

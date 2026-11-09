@@ -37,6 +37,18 @@ class MainActivity : ComponentActivity() {
             if (NodeHolder.isRunning) NodeHolder.updateScreenShare()
         }
 
+    /**
+     * Asked for from the Camera card only, the first time a camera is to be
+     * shared or cast: the camera, and the microphone that goes with it.
+     */
+    private val askCamera =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+            if (NodeHolder.isRunning) {
+                NodeHolder.updateCameraShare()
+                NodeHolder.updateScreenShare()
+            }
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // The system bars follow the theme, light or dark; the screen pads
@@ -62,6 +74,7 @@ class MainActivity : ComponentActivity() {
                             height = watching.watch.height.toInt(),
                             canDrive = watching.canDrive,
                             cast = watching.cast,
+                            camera = watching.camera,
                             hasSound = watching.watch.audioChannels.toInt() > 0,
                             muted = watching.muted,
                             onMute = NodeHolder::setWatchMuted,
@@ -105,6 +118,12 @@ class MainActivity : ComponentActivity() {
                         onCast = NodeHolder::startCast,
                         onStopCast = NodeHolder::stopCast,
                         onAllowSound = { askSound.launch(Manifest.permission.RECORD_AUDIO) },
+                        onWatchCamera = NodeHolder::startCameraWatch,
+                        onCastCamera = NodeHolder::startCameraCast,
+                        onStopCameraCast = NodeHolder::stopCameraCast,
+                        onAllowCamera = {
+                            askCamera.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
+                        },
                     )
                 }
             }

@@ -33,5 +33,8 @@ class CastOffersTest {
         )
         val window = CastOffers.text(offer(kind = "window", audio = false))
         assertTrue(window, window.startsWith("A window (Firefox). Tap"))
+        // A camera's cast, with its microphone.
+        val camera = CastOffers.text(offer(kind = "camera"))
+        assertTrue(camera, camera.startsWith("Its camera (Firefox), with sound. Tap"))
     }
 }

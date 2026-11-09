@@ -36,6 +36,8 @@ import androidx.compose.ui.unit.dp
 import org.ligatureprotocol.android.AppSwitch
 import org.ligatureprotocol.android.PairingState
 import org.ligatureprotocol.android.UiState
+import org.ligatureprotocol.core.CameraInfo
+import org.ligatureprotocol.core.CameraTarget
 import org.ligatureprotocol.core.Device
 import org.ligatureprotocol.core.InputTarget
 import org.ligatureprotocol.core.ScreenTarget
@@ -67,6 +69,10 @@ fun MainScreen(
     onCast: (ScreenTarget) -> Unit,
     onStopCast: () -> Unit,
     onAllowSound: () -> Unit,
+    onWatchCamera: (ScreenTarget) -> Unit,
+    onCastCamera: (CameraTarget, String?, Boolean) -> Unit,
+    onStopCameraCast: () -> Unit,
+    onAllowCamera: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -106,6 +112,20 @@ fun MainScreen(
             if (state.screenTargets.isNotEmpty()) WatchCard(state.screenTargets, onWatch)
             if (state.castTargets.isNotEmpty() || state.casting != null) {
                 CastCard(state.castTargets, state.casting, state.soundAllowed, onCast, onStopCast, onAllowSound)
+            }
+            if (cameraCardShown(state.cameraTargets.size, state.cameraCastTargets.size, state.cameraCasting != null)) {
+                CameraCard(
+                    watchTargets = state.cameraTargets,
+                    castTargets = state.cameraCastTargets,
+                    casting = state.cameraCasting,
+                    cameras = state.cameras,
+                    cameraAllowed = state.cameraAllowed,
+                    soundAllowed = state.soundAllowed,
+                    onWatch = onWatchCamera,
+                    onCast = onCastCamera,
+                    onStopCast = onStopCameraCast,
+                    onAllow = onAllowCamera,
+                )
             }
             if (state.pairing == null) IntroduceCard(onStartIntroduce)
             DevicesCard(state.devices, onRevoke)
@@ -450,10 +470,94 @@ private fun CastCard(
             } else {
                 Text(
                     "The picture goes without sound: Android puts sharing what the phone plays behind " +
-                        "its recording permission. Ligature uses it for that alone, never the microphone.",
+                        "its recording permission. A cast of the screen never opens the microphone.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 TextButton(onClick = onAllowSound) { Text("Share the phone's sound too") }
+            }
+        }
+    }
+}
+
+/** Whether there is anything for the Camera card to offer: a camera to watch, a device to cast to, or a cast to stop. */
+fun cameraCardShown(watchTargets: Int, castTargets: Int, casting: Boolean): Boolean =
+    watchTargets > 0 || castTargets > 0 || casting
+
+/**
+ * The actions the Camera card has for a device this phone can cast to: shown
+ * in a window there, used by that device's programs as a webcam, or both, as
+ * the device says it can.
+ */
+fun cameraCastActions(target: CameraTarget): List<Pair<String, Boolean>> = buildList {
+    if (target.presents) add("Use as ${target.name}'s webcam" to true)
+    if (target.shows) add("Show on ${target.name}" to false)
+}
+
+/**
+ * Cameras (milestone 10): another device's camera watched here, and this
+ * phone's camera cast to a device, to be shown there or used by its programs
+ * as a webcam. The camera and the microphone are asked for here, the first
+ * time, and nowhere else; until the camera is allowed the phone offers none.
+ */
+@Composable
+private fun CameraCard(
+    watchTargets: List<ScreenTarget>,
+    castTargets: List<CameraTarget>,
+    casting: CameraTarget?,
+    cameras: List<CameraInfo>,
+    cameraAllowed: Boolean,
+    soundAllowed: Boolean,
+    onWatch: (ScreenTarget) -> Unit,
+    onCast: (CameraTarget, String?, Boolean) -> Unit,
+    onStopCast: () -> Unit,
+    onAllow: () -> Unit,
+) {
+    var chosen by remember { mutableStateOf(0) }
+    Card {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Cameras", style = MaterialTheme.typography.titleMedium)
+            watchTargets.forEach { target ->
+                OutlinedButton(onClick = { onWatch(target) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Watch ${target.name}'s camera")
+                }
+            }
+            if (casting != null) {
+                Text("This phone's camera is on ${casting.name}.")
+                Button(onClick = onStopCast, modifier = Modifier.fillMaxWidth()) { Text("Stop the camera") }
+            } else if (castTargets.isNotEmpty() && cameras.isNotEmpty()) {
+                if (!cameraAllowed) {
+                    Text(
+                        "This phone's camera can be a webcam for your other devices, with its microphone. " +
+                            "Android asks you to allow both, once; until then no device can see through it.",
+                    )
+                    Button(onClick = onAllow, modifier = Modifier.fillMaxWidth()) { Text("Allow the camera") }
+                } else {
+                    val camera = cameras[chosen.coerceIn(0, cameras.size - 1)]
+                    Text("Turn the phone on its side: the picture is the camera's own, which lies along the long edge.")
+                    if (cameras.size > 1) {
+                        TextButton(onClick = { chosen = (chosen + 1) % cameras.size }) {
+                            Text("Camera: ${camera.name} (tap to change)")
+                        }
+                    }
+                    castTargets.forEach { target ->
+                        cameraCastActions(target).forEach { (label, present) ->
+                            OutlinedButton(
+                                onClick = { onCast(target, camera.id, present) },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text(label) }
+                        }
+                    }
+                    Text(
+                        if (soundAllowed) {
+                            "The microphone goes with the camera. Your other devices can also start this camera " +
+                                "themselves; Android shows its green dot while it is on."
+                        } else {
+                            "The camera goes without sound: recording is not allowed. Your other devices can also " +
+                                "start this camera themselves; Android shows its green dot while it is on."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
             }
         }
     }

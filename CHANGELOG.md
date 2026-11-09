@@ -45,6 +45,11 @@ release workflow publishes the section as the release notes with the installers.
   lists both, and neither needs the daemon restarted. A Mac shows a camera it is sent and
   does not present one to its programs, which Apple allows only to notarised applications
   (LP-208).
+- The phone shares its cameras, with the microphone, once the camera is allowed from the
+  app's new Cameras card, and casts one to a device to be shown there or used as that
+  device's webcam. It watches another device's camera on the watch screen. Android starts a
+  camera only for an app in front, so a request that comes while the app is in the
+  background is a notification to tap unless Ligature is on under Accessibility (LP-209).
 
 ## [0.2.0-alpha] - 2026-11-08
 

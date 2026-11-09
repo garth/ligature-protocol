@@ -197,6 +197,8 @@ pub struct Node {
     host: SharedHost,
     /// The phone's screen, shared through the app (milestone 8).
     screen: Arc<crate::HostScreen>,
+    /// The phone's cameras, shared through the app (milestone 10).
+    camera: Arc<crate::HostCamera>,
     /// This phone driven by another device, through the app's service.
     drivable: Arc<crate::HostInput>,
     /// The share this phone watches: the sharer and its control.
@@ -270,6 +272,7 @@ impl Node {
             notifications: notifications.clone(),
             files: files.clone(),
             screen: crate::HostScreen::new(host.clone()),
+            camera: crate::HostCamera::new(host.clone()),
             drivable: crate::HostInput::new(host.clone()),
             watching: Arc::new(Mutex::new(None)),
             host,
@@ -307,6 +310,41 @@ impl Node {
                 let host = node.host.clone();
                 let daemon = node.daemon.clone();
                 screen.set_on_offer(Arc::new(move |peer, offer| {
+                    host.screen_offered(crate::ScreenOffer {
+                        peer: peer.to_string(),
+                        peer_name: daemon
+                            .device_display_name(&peer)
+                            .unwrap_or_else(|| peer.fingerprint()),
+                        kind: offer.source.kind.to_string(),
+                        name: offer.source.name.clone().unwrap_or(offer.source.id),
+                        width: offer.source.width,
+                        height: offer.source.height,
+                        audio: !offer.audio.is_empty(),
+                    });
+                }));
+            }
+            // The phone shares its cameras through the app's camera service
+            // and watches another device's in the app (milestone 10). It
+            // presents none: Android has no camera an app can offer to other
+            // apps. A camera cast to it goes to the app as a screen's does,
+            // with the kind `camera`.
+            let camera = node.daemon.attach_camera(
+                Some(node.camera.clone()),
+                Some(lp_core::screen::ScreenParams {
+                    views: true,
+                    max_frame_rate: ligatured::screen::VIEW_RATE,
+                    audio_decodes: vec![
+                        lp_core::screen::AudioFormat::OPUS_STEREO,
+                        lp_core::screen::AudioFormat::OPUS_MONO,
+                    ],
+                    ..lp_core::screen::ScreenParams::default()
+                }),
+                None,
+            );
+            {
+                let host = node.host.clone();
+                let daemon = node.daemon.clone();
+                camera.set_on_offer(Arc::new(move |peer, offer| {
                     host.screen_offered(crate::ScreenOffer {
                         peer: peer.to_string(),
                         peer_name: daemon
@@ -507,7 +545,7 @@ impl Node {
     /// connected devices whose descriptor says they share.
     #[must_use]
     pub fn screen_targets(&self) -> Vec<crate::ScreenTarget> {
-        self.screen_peers(|p| p.shares)
+        self.family_peers(lp_core::screen::ScreenParams::from_descriptor, |p| p.shares)
     }
 
     /// Watches `peer`'s primary display, no larger than `max_width` by
@@ -590,7 +628,9 @@ impl Node {
     /// connected devices whose descriptor says they receive.
     #[must_use]
     pub fn screen_cast_targets(&self) -> Vec<crate::ScreenTarget> {
-        self.screen_peers(|p| p.views && p.receives)
+        self.family_peers(lp_core::screen::ScreenParams::from_descriptor, |p| {
+            p.views && p.receives
+        })
     }
 
     /// Casts this phone's screen to `peer`, with its sound unless `audio` is
@@ -705,6 +745,227 @@ impl Node {
     /// `sharer` or `error`.
     pub fn screen_share_ended(&self, reason: String) {
         self.screen.ended(&reason);
+    }
+
+    /// The devices whose cameras this phone can watch: this person's
+    /// connected devices whose camera descriptor says they share.
+    #[must_use]
+    pub fn camera_targets(&self) -> Vec<crate::ScreenTarget> {
+        self.family_peers(lp_core::camera::camera_params, |p| p.shares)
+    }
+
+    /// The cameras `peer` shares, the one a watch without an id takes first.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LpError::BadRequest`] for a malformed key and
+    /// [`LpError::Mismatch`] for a device that shares no camera.
+    pub fn camera_list(&self, peer: String) -> Result<Vec<crate::CameraInfo>, LpError> {
+        let peer = PublicKey::parse(peer.trim())?;
+        let sync = self.camera_sync()?;
+        let cameras = self.with_runtime(|rt| rt.block_on(sync.cameras(&peer)))??;
+        Ok(cameras
+            .into_iter()
+            .map(|c| crate::CameraInfo {
+                name: c.name.unwrap_or_else(|| c.id.clone()),
+                id: c.id,
+                facing: c.facing.to_string(),
+                width: c.width,
+                height: c.height,
+                frame_rates: c.frame_rates,
+            })
+            .collect())
+    }
+
+    /// Watches `peer`'s camera `camera`, or its first when none is named,
+    /// no larger than `max_width` by `max_height` and no faster than
+    /// `frame_rate`, with its microphone when `audio` and the sharer has
+    /// one. The share runs as a watched screen does: frames to
+    /// [`crate::Host::screen_frame`], packets to
+    /// [`crate::Host::screen_audio`], the end to [`Event::ScreenEnded`], and
+    /// [`Node::screen_watch_stop`] leaves it. A camera is never driven.
+    ///
+    /// # Errors
+    ///
+    /// As [`Node::screen_watch`].
+    pub fn camera_watch(
+        &self,
+        peer: String,
+        camera: Option<String>,
+        max_width: u32,
+        max_height: u32,
+        frame_rate: u32,
+        audio: bool,
+    ) -> Result<crate::ScreenWatch, LpError> {
+        let peer = PublicKey::parse(peer.trim())?;
+        let sync = self.camera_sync_free()?;
+        let start = lp_core::screen::Start {
+            display: camera.filter(|c| !c.is_empty()),
+            window: None,
+            formats: Vec::new(),
+            width: max_width,
+            height: max_height,
+            frame_rate,
+            audio: if audio {
+                vec![
+                    lp_core::screen::AudioFormat::OPUS_STEREO,
+                    lp_core::screen::AudioFormat::OPUS_MONO,
+                ]
+            } else {
+                Vec::new()
+            },
+        };
+        let watching = self.with_runtime(|rt| rt.block_on(sync.watch(&peer, start)))??;
+        self.watch_started(peer, watching)
+    }
+
+    /// Takes the camera `peer` cast to this phone
+    /// ([`crate::Host::screen_offered`] with the kind `camera`), with its
+    /// microphone when `audio` and the offer has one.
+    ///
+    /// # Errors
+    ///
+    /// As [`Node::screen_offer_accept`].
+    pub fn camera_offer_accept(
+        &self,
+        peer: String,
+        audio: bool,
+    ) -> Result<crate::ScreenWatch, LpError> {
+        let peer = PublicKey::parse(peer.trim())?;
+        let sync = self.camera_sync_free()?;
+        let watching = self.with_runtime(|rt| rt.block_on(sync.accept(&peer, audio)))??;
+        self.watch_started(peer, watching)
+    }
+
+    /// Leaves the camera `peer` cast to this phone.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LpError::Mismatch`] when no offer from `peer` waits.
+    pub fn camera_offer_decline(&self, peer: String) -> Result<(), LpError> {
+        let peer = PublicKey::parse(peer.trim())?;
+        Ok(self.camera_sync()?.decline(&peer)?)
+    }
+
+    /// The devices this phone can cast a camera to: this person's connected
+    /// devices that show a cast camera, present one to their programs, or
+    /// both.
+    #[must_use]
+    pub fn camera_cast_targets(&self) -> Vec<crate::CameraTarget> {
+        use lp_core::camera::camera_params;
+        let wanted = |p: &lp_core::screen::ScreenParams| p.views && (p.receives || p.presents);
+        self.family_peers(camera_params, wanted)
+            .into_iter()
+            .filter_map(|target| {
+                let key = PublicKey::parse(&target.key).ok()?;
+                let params = self
+                    .daemon
+                    .registry()
+                    .peers()
+                    .into_iter()
+                    .find(|caps| caps.peer == key)?
+                    .capabilities
+                    .iter()
+                    .find_map(camera_params)?;
+                Some(crate::CameraTarget {
+                    key: target.key,
+                    name: target.name,
+                    shows: params.views && params.receives,
+                    presents: params.views && params.presents,
+                })
+            })
+            .collect()
+    }
+
+    /// Casts this phone's camera `camera`, or its first when none is named,
+    /// to `peer`, with the microphone unless `audio` is false, to be
+    /// presented to that device's programs as a webcam when `present` and
+    /// shown in a window otherwise. The app is asked for the camera at once
+    /// ([`crate::Host::camera_share_requested`]), the offer goes out, and
+    /// [`Event::CameraCastStarted`] or [`Event::CameraCastEnded`] say what
+    /// came of it. Returns at once.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LpError::BadRequest`] for a malformed key and
+    /// [`LpError::Internal`] when the camera family is not attached.
+    pub fn camera_cast(
+        &self,
+        peer: String,
+        camera: Option<String>,
+        audio: bool,
+        present: bool,
+    ) -> Result<(), LpError> {
+        let peer = PublicKey::parse(peer.trim())?;
+        let sync = self.camera_sync()?;
+        let host = self.host.clone();
+        let source = ligatured::screen::CastSource {
+            display: camera.filter(|c| !c.is_empty()),
+            window: None,
+            present,
+        };
+        self.with_runtime(|rt| {
+            rt.spawn(async move {
+                let peer_s = peer.to_string();
+                match sync.cast(&peer, source, audio).await {
+                    Ok(casting) => {
+                        host.on_event(Event::CameraCastStarted {
+                            peer: peer_s.clone(),
+                        });
+                        let reason = casting
+                            .ended
+                            .await
+                            .unwrap_or(lp_core::screen::StopReason::Error);
+                        host.on_event(Event::CameraCastEnded {
+                            peer: peer_s,
+                            reason: reason.to_string(),
+                        });
+                    }
+                    Err(e) => host.on_event(Event::CameraCastEnded {
+                        peer: peer_s,
+                        reason: e.to_string(),
+                    }),
+                }
+            });
+        })
+    }
+
+    /// Ends every camera share this phone runs, cast or watched by another
+    /// device: the user's Stop.
+    pub fn camera_cast_stop(&self) {
+        if let Some(sync) = self.daemon.camera_sync() {
+            sync.stop_sharing();
+        }
+    }
+
+    /// Whether the app can share a camera (it has an H.264 encoder and the
+    /// user allowed the camera), whether the microphone can go with it (it
+    /// has an Opus encoder and may record), and the phone's cameras, the one
+    /// shared by default first.
+    pub fn set_camera_share(&self, available: bool, audio: bool, cameras: Vec<crate::CameraInfo>) {
+        self.camera.set_available(available, audio, cameras);
+    }
+
+    /// The app started the camera for a share, or could not.
+    pub fn camera_share_started(&self, ok: bool) {
+        self.camera.started(ok);
+    }
+
+    /// One encoded access unit of this phone's camera.
+    pub fn camera_share_frame(&self, key: bool, bytes: Vec<u8>) {
+        self.camera.frame(key, bytes);
+    }
+
+    /// One packet of the microphone's sound from the app's Opus encoder:
+    /// 20 ms at 48 kHz.
+    pub fn camera_share_audio(&self, bytes: Vec<u8>) {
+        self.camera.audio(bytes);
+    }
+
+    /// The share of this phone's camera ended on the phone: `sharer`,
+    /// `consent` or `error`.
+    pub fn camera_share_ended(&self, reason: String) {
+        self.camera.ended(&reason);
     }
 
     /// Sends what the touchpad screen did to the device being driven, as one
@@ -1285,15 +1546,15 @@ fn finish(pairing: &Pairing, host: &SharedHost, result: Result<(), String>) {
     host.on_event(Event::StatusChanged);
 }
 
-/// Helpers of the screen calls, not exported.
+/// Helpers of the screen and camera calls, not exported.
 impl Node {
-    /// This person's connected devices whose screen params pass `wanted`,
-    /// sorted by name.
-    fn screen_peers(
+    /// This person's connected devices whose params of one family, read
+    /// from a descriptor by `params_of`, pass `wanted`, sorted by name.
+    fn family_peers(
         &self,
+        params_of: impl Fn(&lp_core::capability::Descriptor) -> Option<lp_core::screen::ScreenParams>,
         wanted: impl Fn(&lp_core::screen::ScreenParams) -> bool,
     ) -> Vec<crate::ScreenTarget> {
-        use lp_core::screen::ScreenParams;
         let mut targets: Vec<crate::ScreenTarget> = self
             .daemon
             .registry()
@@ -1308,7 +1569,7 @@ impl Node {
             .filter(|caps| {
                 caps.capabilities
                     .iter()
-                    .find_map(ScreenParams::from_descriptor)
+                    .find_map(&params_of)
                     .is_some_and(|p| wanted(&p))
             })
             .map(|caps| crate::ScreenTarget {
@@ -1331,6 +1592,22 @@ impl Node {
         self.daemon
             .screen_sync()
             .ok_or_else(|| LpError::Internal("screen is not attached".to_owned()))
+    }
+
+    /// The camera sync.
+    fn camera_sync(&self) -> Result<Arc<ligatured::screen::ScreenSync>, LpError> {
+        self.daemon
+            .camera_sync()
+            .ok_or_else(|| LpError::Internal("the camera family is not attached".to_owned()))
+    }
+
+    /// The camera sync, when no watch runs yet: the app has one watch
+    /// screen, for a screen or a camera.
+    fn camera_sync_free(&self) -> Result<Arc<ligatured::screen::ScreenSync>, LpError> {
+        if lock_watch(&self.watching).is_some() {
+            return Err(LpError::Internal("already watching".to_owned()));
+        }
+        self.camera_sync()
     }
 
     /// Records a share this phone now watches and forwards its frames and

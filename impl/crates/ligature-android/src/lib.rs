@@ -15,6 +15,7 @@
 
 #![allow(clippy::needless_pass_by_value)]
 
+mod camera;
 mod clipboard;
 mod files;
 mod input;
@@ -24,6 +25,7 @@ mod notifications;
 mod pairing;
 mod screen;
 
+pub use camera::HostCamera;
 pub use clipboard::HostClipboard;
 pub use files::HostFiles;
 pub use input::{DriveAction, DriveKey, DriveScreen, HostInput};
@@ -92,17 +94,61 @@ pub enum Event {
         /// `viewer`, `sharer`, `consent`, `error`, or why it was not taken.
         reason: String,
     },
+    /// The camera this phone cast was taken and runs (milestone 10).
+    CameraCastStarted {
+        /// The device that shows or presents it.
+        peer: String,
+    },
+    /// The camera this phone cast ended, or was never taken (milestone 10).
+    CameraCastEnded {
+        /// The device it was offered to.
+        peer: String,
+        /// `viewer`, `sharer`, `consent`, `error`, or why it was not taken.
+        reason: String,
+    },
+}
+
+/// One of the phone's cameras, as the app lists it (milestone 10).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct CameraInfo {
+    /// The platform's id for it.
+    pub id: String,
+    /// What it is called on the other device.
+    pub name: String,
+    /// `front`, `back` or `external`.
+    pub facing: String,
+    /// The widest picture it is captured at, in pixels.
+    pub width: u32,
+    /// The tallest picture it is captured at, in pixels.
+    pub height: u32,
+    /// The frame rates it captures at, the highest first.
+    pub frame_rates: Vec<u32>,
+}
+
+/// A device this phone can cast a camera to (milestone 10).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct CameraTarget {
+    /// Its binding key.
+    pub key: String,
+    /// Its display name.
+    pub name: String,
+    /// Whether it shows a cast camera in a window of its own.
+    pub shows: bool,
+    /// Whether it presents a cast camera to its programs as a webcam.
+    pub presents: bool,
 }
 
 /// A cast another device offers this phone (milestone 9): what it would
-/// show, until the app takes or declines it.
+/// show, until the app takes or declines it. A camera's cast (milestone 10)
+/// has the kind `camera`, and is taken and declined through the camera's
+/// calls.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct ScreenOffer {
     /// The caster's binding key.
     pub peer: String,
     /// The caster's display name.
     pub peer_name: String,
-    /// `display` or `window`.
+    /// `display`, `window` or `camera`.
     pub kind: String,
     /// What the caster calls it.
     pub name: String,
@@ -379,6 +425,26 @@ pub trait Host: Send + Sync {
     fn screen_share_stop(&self);
     /// The viewer wants a keyframe now.
     fn screen_share_keyframe(&self);
+    /// `viewer` asks to watch the camera `camera` at most `width` by
+    /// `height` at `frame_rate`, with `audio_channels` channels of the
+    /// microphone (0 for none), or the user cast it: start the camera, then
+    /// answer with [`node::Node::camera_share_started`]. Frames then go to
+    /// [`node::Node::camera_share_frame`] and packets to
+    /// [`node::Node::camera_share_audio`].
+    fn camera_share_requested(
+        &self,
+        viewer: String,
+        camera: String,
+        width: u32,
+        height: u32,
+        frame_rate: u32,
+        audio_channels: u8,
+    );
+    /// The share of this phone's camera, or the request for one, ends: stop
+    /// the camera and withdraw anything still asking the user.
+    fn camera_share_stop(&self);
+    /// The camera's viewer wants a keyframe now.
+    fn camera_share_keyframe(&self);
     /// Another device drives this phone: carry this out through the
     /// accessibility service.
     fn drive(&self, action: DriveAction);

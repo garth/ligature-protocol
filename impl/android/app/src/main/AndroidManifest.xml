@@ -14,8 +14,21 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <!-- The phone's sound with a share of its screen (milestone 9): Android
          puts capturing what the phone plays behind the recording permission.
-         Asked for only from the Cast card; the microphone is never opened. -->
+         Asked for only from the Cast card and the Camera card. A share of the
+         screen never opens the microphone; a shared camera carries it
+         (milestone 10). -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- A camera shared with the person's other devices or cast to one
+         (milestone 10): asked for only from the Camera card, and until it is
+         allowed the phone offers no camera. The service that runs the camera
+         is of the camera type, and of the microphone type with its sound. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- A phone without a camera installs the app all the same. -->
+    <uses-feature
+        android:name="android.hardware.camera.any"
+        android:required="false" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- A dark screen gives a viewer no picture and takes no touch. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -105,6 +118,27 @@
         <!-- The Stop sharing action on the share's notification. -->
         <receiver
             android:name=".ScreenShare$StopReceiver"
+            android:exported="false" />
+
+        <!-- In front for an instant, which is when Android lets the app start
+             a camera: starts the camera's service for a viewer's request or
+             the user's cast (milestone 10). -->
+        <activity
+            android:name=".CameraStartActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Ligature.Transparent" />
+
+        <service
+            android:name=".CameraShareService"
+            android:exported="false"
+            android:foregroundServiceType="camera|microphone" />
+
+        <!-- The Stop sharing action on the camera's notification. -->
+        <receiver
+            android:name=".CameraShare$StopReceiver"
             android:exported="false" />
 
         <!-- An offered cast's notification swiped away: the cast is declined. -->

@@ -30,6 +30,8 @@ import org.ligatureprotocol.core.DownloadTarget
 import org.ligatureprotocol.core.Event
 import org.ligatureprotocol.core.Host
 import org.ligatureprotocol.core.InputTarget
+import org.ligatureprotocol.core.CameraInfo
+import org.ligatureprotocol.core.CameraTarget
 import org.ligatureprotocol.core.ScreenTarget
 import org.ligatureprotocol.core.ScreenWatch
 import org.ligatureprotocol.core.TouchEvent
@@ -54,6 +56,8 @@ data class Watching(
     val canDrive: Boolean,
     val driving: Boolean = false,
     val cast: Boolean = false,
+    /** A camera, which is watched and never driven. */
+    val camera: Boolean = false,
     val muted: Boolean = false,
 )
 
@@ -98,6 +102,16 @@ data class UiState(
     val casting: ScreenTarget? = null,
     /** Whether the user let the app record, so a share carries the phone's sound. */
     val soundAllowed: Boolean = false,
+    /** The devices whose cameras this phone can watch (milestone 10). */
+    val cameraTargets: List<ScreenTarget> = emptyList(),
+    /** The devices this phone can cast a camera to, to be shown or used as a webcam. */
+    val cameraCastTargets: List<CameraTarget> = emptyList(),
+    /** The device this phone casts a camera to, from the tap until the cast ends. */
+    val cameraCasting: CameraTarget? = null,
+    /** This phone's cameras, the back one first. */
+    val cameras: List<CameraInfo> = emptyList(),
+    /** Whether the user let the app use the camera: until then the phone offers none. */
+    val cameraAllowed: Boolean = false,
 )
 
 /**
@@ -157,6 +171,7 @@ object NodeHolder : Host {
         )
         node = Node.start(config, this)
         updateScreenShare()
+        updateCameraShare()
         if (listenerConnected) node?.setNotificationsEmitting(true)
         node?.setDrivable(drivable, canType)
         _state.update {
@@ -195,6 +210,8 @@ object NodeHolder : Host {
         val targets = runCatching { n.inputTargets() }.getOrDefault(emptyList())
         val screens = runCatching { n.screenTargets() }.getOrDefault(emptyList())
         val casts = runCatching { n.screenCastTargets() }.getOrDefault(emptyList())
+        val cameras = runCatching { n.cameraTargets() }.getOrDefault(emptyList())
+        val cameraCasts = runCatching { n.cameraCastTargets() }.getOrDefault(emptyList())
         val driving = runCatching { n.inputDriving() }.getOrNull()
         _state.update {
             it.copy(
@@ -204,6 +221,8 @@ object NodeHolder : Host {
                 inputTargets = targets,
                 screenTargets = screens,
                 castTargets = casts,
+                cameraTargets = cameras,
+                cameraCastTargets = cameraCasts,
                 touchpad = if (driving == null) null else it.touchpad ?: targets.firstOrNull { t -> t.key == driving },
             )
         }
@@ -243,6 +262,67 @@ object NodeHolder : Host {
         _state.update { it.copy(soundAllowed = ScreenShare.soundAllowed(appContext)) }
     }
 
+    /**
+     * What the node is told of this phone's cameras: shared once the user
+     * has allowed the camera and the phone has an H.264 encoder, with the
+     * microphone where recording is allowed too. Called at start and when
+     * either permission changes.
+     */
+    fun updateCameraShare() {
+        val allowed = CameraShare.allowed(appContext)
+        val cameras = CameraShare.cameras(appContext)
+        node?.setCameraShare(
+            allowed && ScreenShare.hasEncoder(),
+            CameraShare.canShareMicrophone(appContext),
+            cameras,
+        )
+        _state.update { it.copy(cameras = cameras, cameraAllowed = allowed) }
+    }
+
+    /** Opens the watch screen on a device's camera, with its microphone; a camera is never driven. */
+    fun startCameraWatch(target: ScreenTarget) = async {
+        call { n ->
+            val watch = n.cameraWatch(target.key, null, 1920u, 1080u, 30u, true)
+            WatchSound.start(watch.audioChannels.toInt())
+            _state.update { it.copy(watching = Watching(target, watch, canDrive = false, camera = true)) }
+        }
+    }
+
+    /**
+     * Casts this phone's camera [camera] to [target], with the microphone
+     * where that is allowed: as its webcam when [present], else shown there.
+     */
+    fun startCameraCast(target: CameraTarget, camera: String?, present: Boolean) = async {
+        CameraShare.casting = true
+        _state.update { it.copy(cameraCasting = target) }
+        call { n -> n.cameraCast(target.key, camera, true, present) }
+    }
+
+    /** The user stops the camera's cast from the app. */
+    fun stopCameraCast() = async {
+        node?.cameraCastStop()
+    }
+
+    /** The camera service started the camera, or could not. */
+    fun cameraShareAnswered(ok: Boolean) {
+        node?.cameraShareStarted(ok)
+    }
+
+    /** One encoded access unit of this phone's camera. */
+    fun cameraShareFrame(key: Boolean, bytes: ByteArray) {
+        node?.cameraShareFrame(key, bytes)
+    }
+
+    /** One Opus packet of the microphone. */
+    fun cameraShareAudio(bytes: ByteArray) {
+        node?.cameraShareAudio(bytes)
+    }
+
+    /** The share of this phone's camera ended here. */
+    fun cameraShareEnded(reason: String) {
+        node?.cameraShareEnded(reason)
+    }
+
     /** Opens the watch screen: the device's primary display, at most 1920 by 1080, with its sound. */
     fun startWatch(target: ScreenTarget) = async {
         call { n ->
@@ -277,23 +357,24 @@ object NodeHolder : Host {
      */
     fun acceptOffer(peer: String) = async {
         val offer = CastOffers.take(appContext, peer) ?: return@async
+        val camera = offer.kind == "camera"
         if (_state.value.watching != null) {
-            runCatching { node?.screenOfferDecline(peer) }
+            runCatching { if (camera) node?.cameraOfferDecline(peer) else node?.screenOfferDecline(peer) }
             return@async
         }
         call { n ->
-            val watch = n.screenOfferAccept(peer, true)
+            val watch = if (camera) n.cameraOfferAccept(peer, true) else n.screenOfferAccept(peer, true)
             WatchSound.start(watch.audioChannels.toInt())
             val canDrive = offer.kind == "display" &&
                 runCatching { n.inputTargets() }.getOrDefault(emptyList()).any { it.key == peer }
             val target = ScreenTarget(key = peer, name = offer.peerName)
-            _state.update { it.copy(watching = Watching(target, watch, canDrive, cast = true)) }
+            _state.update { it.copy(watching = Watching(target, watch, canDrive, cast = true, camera = camera)) }
         }
     }
 
-    /** Leaves the cast [peer] offered this phone. */
-    fun declineOffer(peer: String) = async {
-        runCatching { node?.screenOfferDecline(peer) }
+    /** Leaves the cast [peer] offered this phone, of its screen or of a [camera]. */
+    fun declineOffer(peer: String, camera: Boolean = false) = async {
+        runCatching { if (camera) node?.cameraOfferDecline(peer) else node?.screenOfferDecline(peer) }
     }
 
     /**
@@ -893,6 +974,27 @@ object NodeHolder : Host {
 
     override fun screenShareKeyframe() = ScreenShare.keyframe()
 
+    override fun cameraShareRequested(
+        viewer: String,
+        camera: String,
+        width: UInt,
+        height: UInt,
+        frameRate: UInt,
+        audioChannels: UByte,
+    ) = CameraShare.request(
+        appContext,
+        viewer,
+        camera,
+        width.toInt(),
+        height.toInt(),
+        frameRate.toInt(),
+        audioChannels.toInt(),
+    )
+
+    override fun cameraShareStop() = CameraShare.stop(appContext)
+
+    override fun cameraShareKeyframe() = CameraShare.keyframe()
+
     override fun onEvent(event: Event) {
         when (event) {
             is Event.StatusChanged -> refresh()
@@ -935,6 +1037,18 @@ object NodeHolder : Host {
                     it.copy(
                         casting = null,
                         lastError = if (ordinary) it.lastError else "The cast did not run: ${event.reason}",
+                    )
+                }
+                refresh()
+            }
+            is Event.CameraCastStarted -> refresh()
+            is Event.CameraCastEnded -> {
+                CameraShare.casting = false
+                val ordinary = event.reason in setOf("viewer", "sharer", "consent")
+                _state.update {
+                    it.copy(
+                        cameraCasting = null,
+                        lastError = if (ordinary) it.lastError else "The camera was not cast: ${event.reason}",
                     )
                 }
                 refresh()

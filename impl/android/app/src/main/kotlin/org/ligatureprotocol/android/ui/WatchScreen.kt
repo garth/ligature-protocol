@@ -67,6 +67,17 @@ private const val SCROLL_STEP_PX = 40f
  * and the field types. A desktop wider than tall turns the screen to
  * landscape while it is watched. Leaving ends the watch and the drive.
  */
+/**
+ * What the watch screen is headed with: a cast is the other device's doing,
+ * a watch is this phone's, and a camera is said to be one.
+ */
+fun watchHeading(deviceName: String, cast: Boolean, camera: Boolean): String = when {
+    cast && camera -> "$deviceName is casting its camera"
+    cast -> "$deviceName is casting"
+    camera -> "Watching $deviceName's camera"
+    else -> "Watching $deviceName"
+}
+
 @Composable
 fun WatchScreen(
     deviceName: String,
@@ -74,6 +85,7 @@ fun WatchScreen(
     height: Int,
     canDrive: Boolean,
     cast: Boolean,
+    camera: Boolean,
     hasSound: Boolean,
     muted: Boolean,
     onMute: (Boolean) -> Unit,
@@ -81,8 +93,7 @@ fun WatchScreen(
     onType: (List<TouchEvent>) -> Unit,
     onStop: () -> Unit,
 ) {
-    // A cast is the other device's doing; a watch is this phone's.
-    val heading = if (cast) "$deviceName is casting" else "Watching $deviceName"
+    val heading = watchHeading(deviceName, cast, camera)
     BackHandler(onBack = onStop)
     val activity = LocalContext.current as? Activity
     DisposableEffect(width > height) {
@@ -106,7 +117,7 @@ fun WatchScreen(
                     Text(heading, style = MaterialTheme.typography.titleMedium)
                     TextButton(onClick = onStop) { Text("Done") }
                     if (hasSound) MuteButton(muted, onMute)
-                    Controls(deviceName, canDrive, onType)
+                    Controls(deviceName, canDrive, camera, onType)
                 }
             }
         } else {
@@ -123,7 +134,7 @@ fun WatchScreen(
                     }
                 }
                 Picture(width, height, canDrive, onTouch, Modifier.fillMaxWidth().weight(1f))
-                Controls(deviceName, canDrive, onType)
+                Controls(deviceName, canDrive, camera, onType)
             }
         }
     }
@@ -137,7 +148,9 @@ private fun MuteButton(muted: Boolean, onMute: (Boolean) -> Unit) {
 
 /** The keyboard field and keys, or why there are none. */
 @Composable
-private fun Controls(deviceName: String, canDrive: Boolean, onType: (List<TouchEvent>) -> Unit) {
+private fun Controls(deviceName: String, canDrive: Boolean, camera: Boolean, onType: (List<TouchEvent>) -> Unit) {
+    // A camera has nothing to type into or touch.
+    if (camera) return
     if (canDrive) {
         RemoteKeyboardField(
             label = "Type on $deviceName",

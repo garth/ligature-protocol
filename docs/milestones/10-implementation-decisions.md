@@ -179,3 +179,63 @@ the platform notes say so.
 `aarch64-apple-darwin` on Linux, which proves the calls exist with these types and nothing
 about how they behave. None of it has run on a Mac: the listing, the dialogs, the pictures,
 the microphone's format and the indicator are for the owner's run.
+
+## LP-209: Android, the camera through the app
+
+**The node asks the app, as it does for the screen.** `HostCamera` is the phone's capture
+for the camera family: the app tells it the phone's cameras and whether a camera and the
+microphone may be used (`Node::set_camera_share`), a share asks the host
+(`camera_share_requested`, with the camera's id, the size, the rate and the microphone's
+channels), and the app answers, delivers access units and Opus packets, and says when it
+ends. It runs one camera at a time and refuses a second as `busy`. The node attaches the
+camera family with that capture, a viewer and no presenter.
+
+**One watch screen for screens and cameras.** A camera this phone watches arrives through
+the calls a watched screen uses (`screen_frame`, `screen_audio`, `Event::ScreenEnded`,
+`screen_watch_stop`), since the app has one decoder and one watch screen; only the start
+differs (`camera_watch`, `camera_offer_accept`). A camera cast to the phone is told to the
+app as a screen's cast is, with the kind `camera`, which is how the app knows to answer
+through the camera's calls. The watch screen shows a camera without keys or touch.
+
+**Android's rules, and the app's answers.** The camera permission is asked for from the
+Camera card, with the microphone's, the first time the user wants to cast: never at first
+run, and until it is held the node is told the phone shares no camera, so no other device
+can ask. Android starts a foreground service of the camera type only for an app the user
+can see. So a request goes through `CameraStartActivity`, a transparent activity that is in
+front for an instant and starts the service: opened at once while the app is in front or
+the accessibility service is on, which is what lets an app open an activity from the
+background, and otherwise from a notification, "*device* wants to see this phone's camera",
+that the user taps. That tap is Android's condition, not a prompt of the protocol's. While
+the camera runs Android shows its green dot, and the service's notification carries Stop
+sharing.
+
+**The service.** `CameraShareService` opens the camera with Camera2 and points it at the
+input surface of `MediaCodec`'s H.264 encoder, at a size the camera has for an encoder:
+the largest of the agreed shape within the agreed size, give or take an encoder's rounding
+(`CameraShare.fitSize`), so the picture is never stretched, and in a frame rate range that
+holds the agreed rate where the camera has one (`rateRange`). The encoder's settings are
+the screen share's, without the repeated picture a still screen needs. The microphone is
+the screen share's Opus capture with the camcorder source in place of the playback
+capture (`PlaybackSound` without a projection), one channel. A failure before the first
+picture refuses the share; after it, it ends it with `error`.
+
+**The picture is the sensor's.** A phone's sensor lies along its long side, and nothing in
+this path rotates the picture: held upright, the phone sends a picture on its side. The
+card says to turn the phone on its side, which is how a phone stands as a webcam. Rotating
+in the app would need a drawing step between the camera and the encoder, which is left for
+when the run shows it is wanted.
+
+**The Camera card.** It appears when there is a camera to watch, a device to cast to, or a
+cast to stop. For each device it offers what that device's descriptor says: "Use as
+*device*'s webcam" where it presents, "Show on *device*" where it shows casts
+(`cameraCastActions`), with the back camera chosen first and a tap to change it.
+
+**What was checked, and what was not.** The two-node test runs a phone node against a
+desktop daemon: the phone lists and watches the desktop's camera, the desktop lists and
+watches the phone's with the microphone, a refused start and a missing camera, a cast
+presented on the desktop, and a camera cast to the phone and taken. `./gradlew
+assembleDebug testDebugUnitTest kotlinCoverage` passes, 57 unit tests, nine of them new
+for the size and rate choices, the card's actions and the wording. Nothing of the Kotlin
+has run on a phone: the permission dialogs, Camera2, the encoder's picture, the
+microphone, the start from the background and the indicator are for the owner's run on the
+Pixel.

@@ -24,6 +24,7 @@ import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaCodecList
 import android.media.MediaFormat
+import android.media.MediaRecorder
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
@@ -504,8 +505,15 @@ class ScreenShareService : Service() {
  * capture under the media projection, 48 kHz 16-bit samples read 20 ms at a
  * time into `MediaCodec`'s Opus encoder, each packet handed to the node. Apps
  * that opt out of capture, and calls, are silent in it: Android decides.
+ *
+ * Without a projection it captures the microphone instead, for a shared
+ * camera (milestone 10), and hands its packets to [packet].
  */
-class PlaybackSound(private val projection: MediaProjection, private val channels: Int) {
+class PlaybackSound(
+    private val projection: MediaProjection?,
+    private val channels: Int,
+    private val packet: (ByteArray) -> Unit = NodeHolder::screenShareAudio,
+) {
     private var record: AudioRecord? = null
     private var codec: MediaCodec? = null
     private var thread: Thread? = null
@@ -516,13 +524,8 @@ class PlaybackSound(private val projection: MediaProjection, private val channel
     // The caller checks RECORD_AUDIO (ScreenShare.canShareSound).
     @SuppressLint("MissingPermission")
     fun start() {
-        val config = AudioPlaybackCaptureConfiguration.Builder(projection)
-            .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
-            .addMatchingUsage(AudioAttributes.USAGE_GAME)
-            .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
-            .build()
         val mask = if (channels == 1) AudioFormat.CHANNEL_IN_MONO else AudioFormat.CHANNEL_IN_STEREO
-        val r = AudioRecord.Builder()
+        val builder = AudioRecord.Builder()
             .setAudioFormat(
                 AudioFormat.Builder()
                     .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
@@ -531,8 +534,19 @@ class PlaybackSound(private val projection: MediaProjection, private val channel
                     .build(),
             )
             .setBufferSizeInBytes(pcmBytesPerPacket(channels) * 4)
-            .setAudioPlaybackCaptureConfig(config)
-            .build()
+        if (projection != null) {
+            builder.setAudioPlaybackCaptureConfig(
+                AudioPlaybackCaptureConfiguration.Builder(projection)
+                    .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+                    .addMatchingUsage(AudioAttributes.USAGE_GAME)
+                    .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
+                    .build(),
+            )
+        } else {
+            // The microphone as a camera hears it.
+            builder.setAudioSource(MediaRecorder.AudioSource.CAMCORDER)
+        }
+        val r = builder.build()
         val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_OPUS, SAMPLE_RATE, channels).apply {
             setInteger(MediaFormat.KEY_BIT_RATE, opusBitRate(channels))
             setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, pcmBytesPerPacket(channels))
@@ -550,7 +564,9 @@ class PlaybackSound(private val projection: MediaProjection, private val channel
         record = r
         codec = c
         thread = Thread({ run(r, c) }, "ligature-screen-sound").apply { start() }
-        ScreenShare.log("sharing the phone's sound, $channels channels")
+        ScreenShare.log(
+            if (projection != null) "sharing the phone's sound, $channels channels" else "sharing the microphone, $channels channels",
+        )
     }
 
     private fun run(r: AudioRecord, c: MediaCodec) {
@@ -585,7 +601,7 @@ class PlaybackSound(private val projection: MediaProjection, private val channel
                 if (out != null && info.size > 0 && info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0) {
                     out.position(info.offset)
                     out.limit(info.offset + info.size)
-                    NodeHolder.screenShareAudio(ByteArray(info.size).also { out.get(it) })
+                    packet(ByteArray(info.size).also { out.get(it) })
                 }
                 runCatching { c.releaseOutputBuffer(index, false) }
             }

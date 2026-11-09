@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use ligature_android::{
-    Config, DownloadTarget, DriveAction, DriveScreen, Event, Host, HostClipValue,
+    CameraInfo, Config, DownloadTarget, DriveAction, DriveScreen, Event, Host, HostClipValue,
     LocalNotification, LogLevel, Node, NotificationCopy, OutgoingFile, PublishedDownload,
     ScreenOffer, TransferInfo,
 };
@@ -15,6 +15,10 @@ use ligature_android::{
 /// A share request as the host hears it: the viewer, the width, height and
 /// rate asked, and the channels of sound.
 type ShareRequest = (String, u32, u32, u32, u8);
+
+/// A camera request as the host hears it: the viewer, the camera, the
+/// width, height and rate asked, and the channels of the microphone.
+type CameraRequest = (String, String, u32, u32, u32, u8);
 
 #[derive(Default)]
 struct FakeHost {
@@ -41,6 +45,10 @@ struct FakeHost {
     share_requests: Mutex<Vec<ShareRequest>>,
     share_keyframes: Mutex<u32>,
     share_stops: Mutex<u32>,
+    /// Camera requests, and the keyframes and stops asked of the camera.
+    camera_requests: Mutex<Vec<CameraRequest>>,
+    camera_keyframes: Mutex<u32>,
+    camera_stops: Mutex<u32>,
     /// What a drive of this phone asked of it.
     driven: Mutex<Vec<DriveAction>>,
 }
@@ -206,6 +214,33 @@ impl Host for FakeHost {
 
     fn screen_share_keyframe(&self) {
         *self.share_keyframes.lock().unwrap() += 1;
+    }
+
+    fn camera_share_requested(
+        &self,
+        viewer: String,
+        camera: String,
+        width: u32,
+        height: u32,
+        frame_rate: u32,
+        audio_channels: u8,
+    ) {
+        self.camera_requests.lock().unwrap().push((
+            viewer,
+            camera,
+            width,
+            height,
+            frame_rate,
+            audio_channels,
+        ));
+    }
+
+    fn camera_share_stop(&self) {
+        *self.camera_stops.lock().unwrap() += 1;
+    }
+
+    fn camera_share_keyframe(&self) {
+        *self.camera_keyframes.lock().unwrap() += 1;
     }
 
     fn on_event(&self, event: Event) {
@@ -1316,6 +1351,389 @@ fn the_phone_watches_a_desktop_and_shares_its_own_screen() {
             matches!(e, Event::ScreenCastEnded { peer, reason } if *peer == desktop_key && reason == "sharer")
         })
     });
+
+    phone.stop();
+    desktop.shutdown();
+    runtime.shutdown_timeout(Duration::from_secs(2));
+}
+
+#[test]
+fn the_phone_shares_and_casts_its_cameras_and_watches_a_desktop_s() {
+    use ligatured::screen::{
+        AudioPacket, CastSource, EncodedFrame, FakeCapture, FakePresenter, ShareControl, Viewed,
+    };
+    use lp_core::camera::{CAMERA_TYPE, Camera, Facing, camera_params};
+    use lp_core::facts::Role;
+    use lp_core::paths::Locations;
+    use lp_core::screen::{AudioFormat, Format, SCREEN_TYPE, ScreenParams, Start, StopReason};
+    use lp_core::wire::Timestamp;
+    use lp_identity::cross_signing::PersonKeys;
+    use lp_identity::facts;
+
+    let at = |offset: i64| Timestamp::from_unix(1_760_000_000 + offset).unwrap();
+    let phone_dir = tempfile::tempdir().unwrap();
+    let phone_host = Arc::new(FakeHost::with_downloads());
+    let phone = Node::start(config(&phone_dir, "phone"), phone_host.clone()).unwrap();
+    let phone_cameras = || {
+        vec![
+            CameraInfo {
+                id: "0".to_owned(),
+                name: "Back camera".to_owned(),
+                facing: "back".to_owned(),
+                width: 1920,
+                height: 1080,
+                frame_rates: vec![60, 30],
+            },
+            CameraInfo {
+                id: "1".to_owned(),
+                name: "Front camera".to_owned(),
+                facing: "front".to_owned(),
+                width: 1280,
+                height: 720,
+                frame_rates: vec![30],
+            },
+        ]
+    };
+    // The app knows the cameras, but the user has not allowed the camera.
+    phone.set_camera_share(false, false, phone_cameras());
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let desktop_dir = tempfile::tempdir().unwrap();
+    let capture = FakeCapture::of_cameras(vec![Camera {
+        id: "desk-cam".to_owned(),
+        name: Some("Desk camera".to_owned()),
+        facing: Facing::External,
+        width: 1280,
+        height: 720,
+        frame_rates: vec![30],
+    }]);
+    capture.set_audio_encodes(vec![AudioFormat::OPUS_MONO]);
+    let presenter = FakePresenter::new();
+    let (desktop, desktop_sync, addr) = {
+        let _guard = runtime.enter();
+        let loc = Locations::resolve(Some(desktop_dir.path()), None);
+        let (d, events) =
+            ligatured::daemon::Daemon::open(loc, "127.0.0.1:0".parse().unwrap(), Some("desktop"))
+                .unwrap();
+        let sync = d.attach_camera(
+            Some(capture.clone()),
+            Some(ScreenParams {
+                views: true,
+                decodes: vec![Format::H264],
+                audio_decodes: vec![AudioFormat::OPUS_MONO],
+                max_width: 1280,
+                max_height: 720,
+                max_frame_rate: 30,
+                ..ScreenParams::default()
+            }),
+            Some(presenter.clone()),
+        );
+        ligatured::run::spawn_connection_events(d.clone(), events);
+        let addr = d.manager().endpoint().local_addr().unwrap();
+        (d, sync, addr)
+    };
+    let alice = PersonKeys::generate().unwrap();
+    let person = facts::person_fact(&alice, "Alice", 1, at(0)).unwrap();
+    let roles = [
+        facts::role_fact(
+            &alice,
+            Role::Binding,
+            *phone.daemon().binding().public(),
+            true,
+            at(1),
+        )
+        .unwrap(),
+        facts::role_fact(
+            &alice,
+            Role::Binding,
+            *desktop.binding().public(),
+            true,
+            at(2),
+        )
+        .unwrap(),
+    ];
+    for d in [phone.daemon(), &desktop] {
+        d.store().insert(&person).unwrap();
+        for r in &roles {
+            d.store().insert(r).unwrap();
+        }
+        d.update_keys(|k| k.set_joined(*alice.person(), Some(&alice.self_signing)))
+            .unwrap();
+    }
+    let dial = phone.daemon().clone();
+    runtime
+        .block_on(async move { dial.manager().connect(addr).await })
+        .unwrap();
+    let phone_key = *phone.daemon().binding().public();
+    let desktop_key = desktop.binding().public().to_string();
+    let phone_params = || {
+        desktop
+            .registry()
+            .peers()
+            .into_iter()
+            .filter(|p| p.peer == phone_key)
+            .flat_map(|p| p.capabilities)
+            .find_map(|d| camera_params(&d))
+    };
+    until("both see each other's camera family", || {
+        phone.daemon().registry().peers_offering(CAMERA_TYPE).len() == 1 && phone_params().is_some()
+    });
+    // The phone shows a camera and takes a cast, presents none, and shares
+    // none until the camera is allowed. The desktop offers no screen here.
+    let params = phone_params().unwrap();
+    assert!(params.views && params.receives && !params.presents && !params.shares);
+    assert!(desktop.registry().peers_offering(SCREEN_TYPE).len() <= 1);
+    phone.set_camera_share(true, true, phone_cameras());
+    until(
+        "the phone shares its cameras once the camera is allowed",
+        || phone_params().is_some_and(|p| p.shares && p.audio_encodes == [AudioFormat::OPUS_MONO]),
+    );
+
+    // The phone watches the desktop's camera with its microphone: frames
+    // and packets reach the app as a watched screen's do.
+    let targets = phone.camera_targets();
+    assert_eq!(targets.len(), 1);
+    assert_eq!(targets[0].key, desktop_key);
+    let listed = phone.camera_list(desktop_key.clone()).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(
+        (
+            listed[0].id.as_str(),
+            listed[0].name.as_str(),
+            listed[0].facing.as_str()
+        ),
+        ("desk-cam", "Desk camera", "external")
+    );
+    let watch = phone
+        .camera_watch(desktop_key.clone(), None, 1920, 1080, 30, true)
+        .unwrap();
+    assert_eq!(
+        (
+            watch.display.as_str(),
+            watch.width,
+            watch.height,
+            watch.audio_channels
+        ),
+        ("desk-cam", 1280, 720, 1)
+    );
+    // One watch screen: a second watch, of a screen or a camera, waits.
+    assert!(
+        phone
+            .camera_watch(desktop_key.clone(), None, 1920, 1080, 30, false)
+            .is_err()
+    );
+    until("the desktop's camera runs", || {
+        capture.running() == vec!["desk-cam".to_owned()]
+    });
+    assert!(capture.emit_audio(
+        "desk-cam",
+        AudioPacket {
+            at: 0,
+            bytes: vec![5; 25],
+        }
+    ));
+    assert!(capture.emit(
+        "desk-cam",
+        EncodedFrame {
+            at: 0,
+            key: true,
+            bytes: vec![0, 0, 0, 1, 0x65, 9],
+        }
+    ));
+    until("the app got the camera's picture and sound", || {
+        *phone_host.screen_frames.lock().unwrap() == vec![(true, 6)]
+            && phone_host.screen_audio.lock().unwrap().len() == 1
+    });
+    phone.screen_watch_stop();
+    until("the desktop's camera stops", || {
+        capture.running().is_empty()
+    });
+
+    // The desktop lists the phone's cameras and watches the front one with
+    // the microphone: the app is asked for that camera.
+    let cameras = runtime
+        .block_on({
+            let sync = desktop_sync.clone();
+            async move { sync.cameras(&phone_key).await }
+        })
+        .unwrap();
+    assert_eq!(
+        cameras
+            .iter()
+            .map(|c| (c.id.as_str(), c.facing))
+            .collect::<Vec<_>>(),
+        [("0", Facing::Back), ("1", Facing::Front)]
+    );
+    let start = Start {
+        display: Some("1".to_owned()),
+        window: None,
+        formats: Vec::new(),
+        width: 1920,
+        height: 1080,
+        frame_rate: 60,
+        audio: vec![AudioFormat::OPUS_MONO],
+    };
+    let watch = {
+        let sync = desktop_sync.clone();
+        let start = start.clone();
+        runtime.spawn(async move { sync.watch(&phone_key, start).await })
+    };
+    until("the app was asked for the camera", || {
+        phone_host.camera_requests.lock().unwrap().len() == 1
+    });
+    let request = phone_host.camera_requests.lock().unwrap()[0].clone();
+    assert_eq!(request.0, desktop.binding().public().fingerprint());
+    assert_eq!(
+        (
+            request.1.as_str(),
+            request.2,
+            request.3,
+            request.4,
+            request.5
+        ),
+        ("1", 1280, 720, 30, 1)
+    );
+    phone.camera_share_started(true);
+    let mut watching = runtime.block_on(watch).unwrap().unwrap();
+    assert_eq!(watching.started.source_id(), "1");
+    assert_eq!(watching.started.audio, Some(AudioFormat::OPUS_MONO));
+    phone.camera_share_audio(vec![2; 40]);
+    phone.camera_share_frame(true, vec![7; 20_000]);
+    let (mut frames, mut packets) = (0, 0);
+    runtime.block_on(async {
+        while frames == 0 || packets == 0 {
+            match watching.frames.recv().await.unwrap() {
+                Viewed::Frame { key, bytes, .. } => {
+                    assert!(key);
+                    assert_eq!(bytes.len(), 20_000);
+                    frames += 1;
+                }
+                Viewed::Audio { bytes, .. } => {
+                    assert_eq!(bytes.len(), 40);
+                    packets += 1;
+                }
+                Viewed::Stopped(r) => panic!("stopped: {r}"),
+            }
+        }
+    });
+    watching.control.send(ShareControl::Keyframe).unwrap();
+    until("the app was asked for a keyframe", || {
+        *phone_host.camera_keyframes.lock().unwrap() == 1
+    });
+    // The user taps Stop sharing on the phone.
+    phone.camera_share_ended("sharer".to_owned());
+    let reason = runtime.block_on(async {
+        loop {
+            if let Viewed::Stopped(r) = watching.frames.recv().await.unwrap() {
+                return r;
+            }
+        }
+    });
+    assert_eq!(reason, StopReason::Sharer);
+    until("the app was told to stop the camera", || {
+        *phone_host.camera_stops.lock().unwrap() == 1
+    });
+    // A camera the phone does not have is refused before the app is asked,
+    // and one the app cannot start is refused for consent.
+    let missing = Start {
+        display: Some("7".to_owned()),
+        ..start.clone()
+    };
+    let refused = runtime.block_on({
+        let sync = desktop_sync.clone();
+        async move { sync.watch(&phone_key, missing).await }
+    });
+    assert!(refused.is_err());
+    assert_eq!(phone_host.camera_requests.lock().unwrap().len(), 1);
+    let refused = {
+        let sync = desktop_sync.clone();
+        runtime.spawn(async move { sync.watch(&phone_key, start).await })
+    };
+    until("the app was asked again", || {
+        phone_host.camera_requests.lock().unwrap().len() == 2
+    });
+    phone.camera_share_started(false);
+    assert!(runtime.block_on(refused).unwrap().is_err());
+
+    // The phone casts its back camera to the desktop as a webcam: the
+    // desktop presents it at once, with nobody asked there.
+    let cast_targets = phone.camera_cast_targets();
+    assert_eq!(cast_targets.len(), 1);
+    assert_eq!(cast_targets[0].key, desktop_key);
+    assert!(cast_targets[0].presents && !cast_targets[0].shows);
+    phone
+        .camera_cast(desktop_key.clone(), None, true, true)
+        .unwrap();
+    until("the app was asked for the camera to cast", || {
+        phone_host.camera_requests.lock().unwrap().len() == 3
+    });
+    let request = phone_host.camera_requests.lock().unwrap()[2].clone();
+    assert_eq!(
+        (request.1.as_str(), request.5),
+        ("0", 1),
+        "the first camera, with the microphone"
+    );
+    phone.camera_share_started(true);
+    until("the desktop presents the phone's camera", || {
+        presenter.started().len() == 1
+    });
+    until("the app was told the cast runs", || {
+        phone_host
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|e| matches!(e, Event::CameraCastStarted { peer } if *peer == desktop_key))
+    });
+    phone.camera_share_frame(true, vec![1; 300]);
+    phone.camera_share_audio(vec![1; 30]);
+    until("the presenter has the picture and the sound", || {
+        presenter.frames() == 1 && presenter.audio() == 1
+    });
+    phone.camera_cast_stop();
+    until("the app was told the cast ended", || {
+        phone_host.events.lock().unwrap().iter().any(|e| {
+            matches!(e, Event::CameraCastEnded { peer, reason } if *peer == desktop_key && reason == "sharer")
+        })
+    });
+    until("the desktop presents nothing", || presenter.running() == 0);
+
+    // The desktop casts its camera to the phone: the app is offered a
+    // camera, takes it through the camera's call, and watches it.
+    let cast = {
+        let sync = desktop_sync.clone();
+        runtime.spawn(async move { sync.cast(&phone_key, CastSource::default(), true).await })
+    };
+    until("the app was offered the camera", || {
+        phone_host.offers.lock().unwrap().len() == 1
+    });
+    let offer = phone_host.offers.lock().unwrap()[0].clone();
+    assert_eq!(
+        (offer.kind.as_str(), offer.name.as_str(), offer.audio),
+        ("camera", "Desk camera", true)
+    );
+    assert_eq!(offer.peer, desktop_key);
+    // It is the camera's offer, not the screen's.
+    assert!(
+        phone
+            .screen_offer_accept(desktop_key.clone(), true)
+            .is_err()
+    );
+    let taken = phone
+        .camera_offer_accept(desktop_key.clone(), true)
+        .unwrap();
+    assert_eq!(
+        (taken.display.as_str(), taken.audio_channels),
+        ("desk-cam", 1)
+    );
+    let casting = runtime.block_on(cast).unwrap().unwrap();
+    phone.screen_watch_stop();
+    assert_eq!(runtime.block_on(casting.ended).unwrap(), StopReason::Viewer);
+    assert!(phone.camera_offer_decline(desktop_key).is_err());
 
     phone.stop();
     desktop.shutdown();

@@ -52,3 +52,83 @@ to end on one machine. The two-daemon test `camera.rs` covers the listing, a wat
 and by id with the microphone, `busy` and a camera the sharer lacks, a camera presented and
 its end, a cast presented at once and one shown after an accept, a device that no longer
 presents, and all of it over the control socket.
+
+## LP-207: Linux, PipeWire's cameras and a camera node of its own
+
+**Cameras are PipeWire's, listed by `pw-dump`.** `camera_linux` links no media library, as
+the screen's capture links none. The daemon reads `pw-dump`'s JSON every ten seconds and
+lists every node of the class `Video/Source` that offers raw pictures, the session's
+preferred one first: its `node.name` is the camera's id, its description the name,
+`api.libcamera.location` the facing, and its size the largest it offers within 1920 by
+1080, at 30 a second where it says no rate. A laptop camera behind libcamera, such as this
+machine's, appears nowhere else. The daemon reads PipeWire directly and not through the
+Camera portal: the portal exists to let a sandboxed program reach what an unsandboxed one
+already reaches, so its remote would only narrow what the daemon has, and there is no
+picker in it to stand for consent. When PipeWire lists no camera, the first node of each
+plain V4L2 device is asked for its formats through ffmpeg's `v4l2` input, once for each set
+of devices, and read by ffmpeg.
+
+**A share reads the camera it names and no other.** PipeWire's session manager links a
+stream whose target is missing to the default camera, which was found the hard way: a
+reader started for a test node that had failed to start opened this machine's own camera
+instead. So `pipewiresrc` is given `node.dont-fallback` and `node.dont-reconnect`, with
+which a missing camera gives "defined target not found" and no picture, at the start and
+when the camera goes away during a share. The cameras are listed again when a share starts,
+and a share whose camera has sent nothing for six seconds ends with `error`, since a reader
+waiting on a camera that is not there waits for ever. The microphone is read the same way,
+by `pw-record` with the same two properties into the encoder that takes a platform's
+samples (`Sound::start_microphone`), not through PulseAudio's interface, which moves a
+recorder to another source when its own goes: a microphone that is unplugged leaves the
+share silent rather than listening through a device nobody chose.
+
+**The pipeline.** `gst-launch-1.0 pipewiresrc ! videorate ! videoconvert ! videoscale` gives
+raw BGRx pictures of the agreed size at the agreed rate, the camera's shape kept with black
+borders, copied into the `LiveEncoder` by the screen's own relay. The camera advertises
+`h264` alone: its picture is 4:2:0 at the source. The sharing notification is the screen's
+with a camera's words and icon, and a share that cannot show it does not start.
+
+**Presented as a PipeWire camera node, and on a loopback device where there is one.** The
+plan left the choice between the kernel's `v4l2loopback` and a PipeWire node open. The node
+is the default sink, since it needs nothing installed and no privilege: ffmpeg decodes the
+share into raw 4:2:0 pictures and `gst-launch-1.0 fdsrc ! rawvideoparse ! queue ! pipewiresink
+mode=provide` offers them as a node of the class `Video/Source` with the role `Camera`,
+named `ligature_camera.<device>` and described "Ligature camera (*device*)". That is what
+the Camera portal counts as a camera and what browsers that read cameras through PipeWire
+list. The queue is leaky and the sink unsynchronised, so a slow reader costs pictures and
+never delays the decoder, and a node nobody reads takes its pictures without blocking.
+Where a `v4l2loopback` device exists, a second ffmpeg writes the same share to the first
+one, for the programs that read V4L2 alone; the daemon cannot name that device, which is
+named when the module is loaded. `presents` is advertised when either can be made. A node
+whose name starts `ligature_camera.` is never listed as a camera to share.
+
+**The microphone is a loopback pair.** A source that GStreamer offers is read cleanly by a
+PipeWire client and badly through PulseAudio's interface, which is what browsers record
+through: a fifth of the samples arrived. `pw-cat` as a source reads cleanly and stops taking
+samples while nobody listens, so a program that starts listening would hear what queued.
+`pw-loopback` makes an output, "Ligature microphone feed (*device*)", and a source,
+"Ligature microphone (*device*)" (`ligature_microphone.<device>`), passes one to the other
+in real time whether or not anything listens, and reads cleanly both ways. ffmpeg decodes
+the share's Opus and plays it into the feed through its `pulse` output with a 40 ms buffer.
+The player starts only once the feed exists and ends when the loopback does, since a player
+whose output is missing is put on the default output, where the other device's microphone
+would play on this machine's speakers. What arrived while the feed was being made is passed
+over, so the microphone starts at the present. A source whose name starts
+`ligature_microphone.` is never captured as this machine's own microphone. Neither the
+camera node nor the pair is given a priority, so neither becomes the session's default over
+the machine's own devices; this was checked before and after each run.
+
+**A sink that is stuck is dropped.** Each chain of processes is fed from a thread of its own
+through a queue of 120 frames or packets, so the share's task never waits on a pipe. A chain
+that ends or whose queue fills is dropped, and the presenting ends when the last picture
+sink does.
+
+**What was run, and what was not.** `camera_live.rs`, ignored by default, makes a test
+camera (a white ball on black) and a test microphone (a 440 Hz tone) in the session's
+PipeWire, shares them between two daemons and presents them: 45 pictures of the ball read
+back from the presented camera, four seconds of a 439 Hz tone from the presented microphone,
+both nodes gone when the viewer stops, and the share ended with `error` when the test camera
+was killed. A daemon run as a process lists this machine's built-in camera and says it
+shares, views, receives and presents; the built-in camera was never started by the daemon.
+Not run: this machine's own camera and microphone in a share, a browser or a call picking
+the presented camera and microphone, the V4L2 fallback and the loopback device (this machine
+has neither a plain V4L2 camera nor the module), whose commands are tested as text alone.

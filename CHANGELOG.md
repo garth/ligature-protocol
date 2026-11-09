@@ -35,6 +35,11 @@ release workflow publishes the section as the release notes with the installers.
   that says `presents` shows a camera it is sent to its own programs as a camera. In the
   daemon one sync runs both families; `lpctl camera` lists, presents, casts and stops, and
   `lpview <device> --camera` watches one (LP-205, LP-206).
+- Linux shares the cameras PipeWire lists, with the default microphone, and presents a
+  camera it is sent as a PipeWire camera node, "Ligature camera (*device*)", and its sound
+  as a microphone, "Ligature microphone (*device*)", and on a `v4l2loopback` device where
+  one exists. A share reads the camera and the microphone it started with and never another
+  in their place, and shows the sharing notification for its life (LP-207).
 
 ## [0.2.0-alpha] - 2026-11-08
 

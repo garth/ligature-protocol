@@ -71,9 +71,10 @@ What this milestone pins:
    call's own delay sits on top of it.
 4. **Sources per platform.** Linux: cameras through PipeWire where the machine's cameras are
    behind it (laptop cameras on libcamera, such as this machine's IPU6, appear only there),
-   through the Camera portal when it is present and directly otherwise, with ffmpeg's `v4l2`
+   read directly, since the Camera portal is for sandboxed programs, with ffmpeg's `v4l2`
    input as the fallback for a plain V4L2 device; the microphone from PipeWire's default
-   source; both into the child encoders of milestones 8 and 9. macOS: AVFoundation's capture
+   source; both into the child encoders of milestones 8 and 9. A share reads the camera and
+   the microphone it started with and never another in their place. macOS: AVFoundation's capture
    devices into the `LiveEncoder` of milestone 8 through `lp-macos`, the microphone through
    the same session, both behind the Camera and Microphone permissions granted once to the
    LP-94 bundle. Android: Camera2 into the encoder's input surface and `AudioRecord` into the
@@ -81,19 +82,18 @@ What this milestone pins:
    camera and record-audio permissions, which the app asks for on the first share.
 5. **Sinks: shown, and presented on Linux.** Shown, a camera is what a screen is: `lpview
    <device> --camera [ID]` on the desktops and the Watch screen on the phone, without input.
-   Presented, on Linux, the daemon decodes the share through ffmpeg into a V4L2 loopback
-   device (`v4l2loopback`, the out-of-tree module the user installs, with `exclusive_caps`
-   so browsers list it), named "Ligature camera (<device>)", and plays the sound into a
-   PipeWire virtual source named the same, which programs pick as a microphone; V4L2 and
-   PipeWire are what every Linux program reads a camera and a microphone through, so nothing
-   in the browser changes. A PipeWire camera node instead of the kernel module is the
-   standard the portals and the browsers are moving to and is evaluated under this
-   milestone; it is adopted when the owner's browsers list such a node, otherwise named for
-   later. `lpctl camera present <device> [--camera ID]` starts a presented share and `stop`
-   ends it, and a cast (`offer`) from a device to a Linux machine that `presents` is presented
-   rather than shown when the caster asks for that (`lpctl camera cast <device> --present`,
-   the phone's Cast camera action with "as webcam" on); `presents` is advertised only when the
-   loopback device exists.
+   Presented, on Linux, the daemon decodes the share through ffmpeg into a PipeWire camera
+   node, named "Ligature camera (<device>)", which is what the Camera portal and the
+   programs that read cameras through PipeWire list, and into a V4L2 loopback device as well
+   where one exists (`v4l2loopback`, the out-of-tree module the user installs, with
+   `exclusive_caps` so browsers list it), for the programs that read V4L2 alone. The sound
+   is played into a PipeWire virtual source, "Ligature microphone (<device>)", which
+   programs pick as a microphone. PipeWire and V4L2 are what every Linux program reads a
+   camera and a microphone through, so nothing in the browser changes. `lpctl camera present
+   <device> [--camera ID]` starts a presented share and `stop` ends it, and a cast (`offer`)
+   from a device to a Linux machine that `presents` is presented rather than shown when the
+   caster asks for that (`lpctl camera cast <device> --present`, the phone's Cast camera
+   action with "as webcam" on); `presents` is advertised when either sink can be made.
 6. **What the Mac and the phone cannot do, and why.** A camera presented to macOS programs is a
    Core Media I/O camera extension, a system extension that macOS loads only from a Developer
    ID signed and notarised application with the system-extension entitlement; the project's
@@ -107,10 +107,10 @@ What this milestone pins:
 7. **Consent and indicators.** Android asks for the camera and microphone permissions once,
    and shows its own green indicator while the service captures; the app's notification
    carries Stop sharing, as the screen's does. macOS asks once per bundle and shows the camera's
-   indicator light and the microphone indicator. Linux asks nothing for a V4L2 device, and the
-   portal asks once where it is used, so the daemon posts "Sharing <camera> with <device>"
-   with a Stop action for the share's life, as it does for a screen. A withdrawn permission
-   ends the share with `consent`.
+   indicator light and the microphone indicator. Linux asks nothing of a program that is not
+   sandboxed, so the daemon posts "Sharing <camera> with <device>" with a Stop action for
+   the share's life, as it does for a screen, and does not share when it cannot. A withdrawn
+   permission ends the share with `consent`.
 8. **Chapter 09.** A camera on a phone left in a room shows the room to any of the person's
    devices, and its microphone hears it, which is the screen's sensitivity turned outward. It
    travels only on the authenticated pairwise session to a device of the same person, nothing
@@ -139,7 +139,7 @@ sequenceDiagram
     P->>L: started format=h264 width=1280 height=720 frameRate=30 audio=opus 1ch
     P->>L: frame seq=1 key last=true bytes
     P->>L: audio seq=1 at=0 bytes
-    Note over L: ffmpeg decodes into the loopback device, the sound plays into the virtual source
+    Note over L: ffmpeg decodes into the camera node, the sound plays into the virtual source
     Note over L: the browser's call lists "Ligature camera (phone)" and uses it
     Note over L: lpctl camera stop phone
     L->>P: stop reason=viewer
@@ -170,7 +170,7 @@ sequenceDiagram
 - A camera is cast from the phone to the Linux machine and presented there, and from the Mac to
   the phone and shown there.
 - A share ends cleanly when the consumer stops it, when the sharer stops it, when the platform
-  withdraws its permission, and when the session drops; the loopback device and the virtual
+  withdraws its permission, and when the session drops; the camera node and the virtual
   source are released and the next share works.
 - The Mac and the phone advertise no `presents`, and the guide and the platform notes name why.
 - A share without audio gives a camera and no microphone; the microphone's sound is heard in
@@ -188,7 +188,7 @@ sequenceDiagram
 flowchart LR
     P["LP-196 plan"] --> S["schema, chapter 05 3i, chapter 09"]
     S --> D["daemon core: the family on the screen sync, lpctl camera, the test"]
-    D --> X["Linux: PipeWire and V4L2 sources, the loopback and virtual source sinks"]
+    D --> X["Linux: PipeWire and V4L2 sources, the camera node and virtual source sinks"]
     D --> M["macOS: AVFoundation source, lpview --camera"]
     D --> A["Android: Camera2 and AudioRecord source, Cast camera, the Watch screen"]
     X --> C["chapter 08, the guide, README, the run, close"]
@@ -204,8 +204,8 @@ flowchart LR
   trait; the presenting sink as a trait with a fake; `lpctl camera list`, `start`, `present`,
   `cast`, `stop`, `status`; the test. `10-implementation-decisions.md` records the choices as
   they are made, the Linux camera path first.
-- **Linux.** PipeWire and V4L2 sources with the probe, the microphone, the loopback and virtual
-  source sinks and their names, the notification, `lpview --camera`.
+- **Linux.** PipeWire and V4L2 sources with the probe, the microphone, the camera node, the
+  loopback device and the virtual source with their names, the notification, `lpview --camera`.
 - **macOS.** AVFoundation in `lp-macos`, the permissions, `lpview --camera`.
 - **Android.** The camera service, the permissions, the Cast camera action, the Watch screen.
 - **Chapter 08, the guide, README, the run.** The platform notes, a guide page on cameras, the
@@ -215,13 +215,12 @@ flowchart LR
 ## 6. Risks
 
 - **The kernel module.** `v4l2loopback` is out of tree, installed by the user through DKMS,
-  and may lag a kernel; a Linux machine without it shows a camera and presents none, and the
-  guide says how to install it. The PipeWire node of decision 5 removes the module when the
-  browsers are ready.
+  and may lag a kernel; a Linux machine without it presents through the PipeWire node alone,
+  which a program that reads V4L2 alone does not list, and the guide says which programs
+  those are and how to install the module.
 - **Linux camera stacks.** A laptop camera behind libcamera is reachable only through
-  PipeWire, and the portal's picker may stand between the daemon and it; the probe records
-  what it found, and a USB camera is the fallback for the run.
-- **Latency as a webcam.** A decode into the loopback device adds a hop to milestone 8's
+  PipeWire; the probe records what it found, and a USB camera is the fallback for the run.
+- **Latency as a webcam.** A decode into the camera node adds a hop to milestone 8's
   figures, which were 100 to 270 ms by pair; the run measures and the rate-controlled
   encoder's settings are tuned there.
 - **Phone cameras.** Camera2 on LineageOS varies by device; the share picks a size the camera

@@ -1,6 +1,8 @@
 //! The daemon's library side: what `main` wires together and what tests
 //! exercise. See the crate's `main.rs` for the binary.
 
+#[cfg(target_os = "linux")]
+pub mod camera_linux;
 pub mod capabilities;
 pub mod ceremony;
 pub mod clipboard;

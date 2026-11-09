@@ -201,6 +201,21 @@ pub async fn run(
         );
         receive_casts_in_lpview(&screen, &locations);
     }
+    #[cfg(target_os = "linux")]
+    if std::env::var_os(FAKE_SCREEN_ENV).is_none() && std::env::var_os(FAKE_CAMERA_ENV).is_none() {
+        // PipeWire's cameras and the default microphone, shown in lpview or
+        // presented as a camera node of this machine's own (LP-207).
+        let camera = daemon.attach_camera(
+            Some(crate::camera_linux::LinuxCamera::start()),
+            crate::screen_linux::viewer_params(),
+            Some(crate::camera_linux::LinuxPresenter::start()),
+        );
+        if let Some(launcher) =
+            crate::screen::lpview_launcher_for(&locations, crate::screen::Family::Camera)
+        {
+            camera.set_on_offer(launcher);
+        }
+    }
     #[cfg(target_os = "macos")]
     if std::env::var_os(FAKE_SCREEN_ENV).is_none() {
         // ScreenCaptureKit into ffmpeg's VideoToolbox encoder (LP-150), and

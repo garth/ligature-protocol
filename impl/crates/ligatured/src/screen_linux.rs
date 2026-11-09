@@ -314,7 +314,7 @@ enum Origin {
 /// Copies a producer's raw frames into the encoder a whole picture at a
 /// time, on a thread of its own; when the producer ends without
 /// `generation` set, the share ends with an error.
-fn relay(
+pub(crate) fn relay(
     producer: &mut Child,
     input: &RawInput,
     encoder: Arc<LiveEncoder>,
@@ -932,13 +932,17 @@ impl Capture for LinuxScreen {
                     .unwrap_or_else(|| settings.display.clone()),
                 SourceKind::Display | SourceKind::Camera => settings.display.clone(),
             };
-            let summary = format!(
-                "{} {what} with {}",
-                if settings.cast { "Casting" } else { "Sharing" },
-                settings.viewer
-            );
+            let notice = Notice {
+                summary: format!(
+                    "{} {what} with {}",
+                    if settings.cast { "Casting" } else { "Sharing" },
+                    settings.viewer
+                ),
+                body: "Your screen is being shown on another of your devices; this notice stays while it is.",
+                icon: "video-display",
+            };
             self.handle.spawn(async move {
-                sharing_notification(&summary, notification, frames_tx, posted_tx).await;
+                sharing_notification(&notice, notification, frames_tx, posted_tx).await;
             });
         }
         match posted_rx.blocking_recv() {
@@ -1108,10 +1112,22 @@ impl Capture for LinuxScreen {
 
 /// Closes the sharing notification if the share it was posted for never
 /// started.
-struct NotificationGuard {
-    slot: Arc<Mutex<Option<u32>>>,
-    handle: tokio::runtime::Handle,
-    armed: bool,
+pub(crate) struct NotificationGuard {
+    pub(crate) slot: Arc<Mutex<Option<u32>>>,
+    pub(crate) handle: tokio::runtime::Handle,
+    pub(crate) armed: bool,
+}
+
+/// What a sharing notification says: a screen's and a camera's differ in
+/// their words and icon, and in nothing else.
+#[derive(Debug, Clone)]
+pub(crate) struct Notice {
+    /// "Sharing `what` with `device`".
+    pub(crate) summary: String,
+    /// The line under it.
+    pub(crate) body: &'static str,
+    /// The icon's name in the desktop's theme.
+    pub(crate) icon: &'static str,
 }
 
 impl Drop for NotificationGuard {
@@ -1172,8 +1188,8 @@ const REPOST_WINDOW: std::time::Duration = std::time::Duration::from_secs(60);
 /// when it cannot be (LP-187). A server that hides the popup after a timeout,
 /// whatever the request, reports an expiry: the notification stays in its
 /// list, and showing it again would nag, so it is left as it is.
-async fn sharing_notification(
-    summary: &str,
+pub(crate) async fn sharing_notification(
+    notice: &Notice,
     slot: Arc<Mutex<Option<u32>>>,
     frames: mpsc::UnboundedSender<Captured>,
     posted: tokio::sync::oneshot::Sender<zbus::Result<u32>>,
@@ -1184,7 +1200,7 @@ async fn sharing_notification(
         let proxy = SharingNotificationsProxy::new(&conn).await?;
         let actions = proxy.receive_action_invoked().await?;
         let closed = proxy.receive_notification_closed().await?;
-        let id = post_sharing_notification(&proxy, summary).await?;
+        let id = post_sharing_notification(&proxy, notice).await?;
         Ok::<_, zbus::Error>((proxy, actions, closed, id))
     }
     .await;
@@ -1231,7 +1247,7 @@ async fn sharing_notification(
                     tracing::info!(reason = args.reason, "the sharing notification was closed again; left closed while the share goes on");
                     continue;
                 }
-                match post_sharing_notification(&proxy, summary).await {
+                match post_sharing_notification(&proxy, notice).await {
                     Ok(again) => {
                         tracing::info!(reason = args.reason, "the sharing notification was closed; shown again");
                         reposts.push_back(Instant::now());
@@ -1255,7 +1271,7 @@ async fn sharing_notification(
 /// Shows the sharing notification once, within [`NOTIFY_TIMEOUT`].
 async fn post_sharing_notification(
     proxy: &SharingNotificationsProxy<'_>,
-    summary: &str,
+    notice: &Notice,
 ) -> zbus::Result<u32> {
     let mut hints: HashMap<&str, zbus::Variant<'_>> = HashMap::new();
     // Marked as the daemon's own, so the notifications monitor never sends
@@ -1267,9 +1283,9 @@ async fn post_sharing_notification(
         proxy.notify(
             "Ligature",
             0,
-            "video-display",
-            summary,
-            "Your screen is being shown on another of your devices; this notice stays while it is.",
+            notice.icon,
+            &notice.summary,
+            notice.body,
             &[STOP_ACTION, "Stop sharing"],
             hints,
             0,
@@ -1279,7 +1295,7 @@ async fn post_sharing_notification(
     .map_err(|_| zbus::Error::Failure("the notification server did not answer".to_owned()))?
 }
 
-async fn close_notification(id: u32) {
+pub(crate) async fn close_notification(id: u32) {
     let result = async {
         let conn = zbus::Connection::session().await?;
         SharingNotificationsProxy::new(&conn)

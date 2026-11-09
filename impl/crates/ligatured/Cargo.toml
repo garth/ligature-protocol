@@ -39,6 +39,8 @@ rustix.workspace = true
 zbus.workspace = true
 futures-util.workspace = true
 xkbcommon.workspace = true
+# PipeWire's cameras are listed by `pw-dump`, which prints JSON.
+serde_json.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 lp-macos.workspace = true

@@ -112,7 +112,11 @@ block2 = "0.6"
 # ScreenCaptureKit for the Mac's screen share (LP-150), the sample and pixel
 # buffers its frames arrive in, and the dispatch queue they arrive on.
 objc2-screen-capture-kit = { version = "0.3", default-features = false, features = ["std", "block2", "dispatch2", "objc2-core-foundation", "objc2-core-graphics", "objc2-core-media", "SCError", "SCShareableContent", "SCStream"] }
-objc2-core-media = { version = "0.3", default-features = false, features = ["std", "objc2", "objc2-core-video", "CMBase", "CMSampleBuffer", "CMTime"] }
+objc2-core-media = { version = "0.3", default-features = false, features = ["std", "objc2", "objc2-core-video", "objc2-core-audio-types", "CMBase", "CMBlockBuffer", "CMFormatDescription", "CMSampleBuffer", "CMTime"] }
+# The audio buffer and stream description types ScreenCaptureKit's sound comes in, and the
+# CoreFoundation retain for the block buffer it hands back (LP-201).
+objc2-core-audio-types = { version = "0.3", default-features = false, features = ["std", "objc2", "CoreAudioBaseTypes"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFBase"] }
 objc2-core-video = { version = "0.3", default-features = false, features = ["std", "objc2", "CVBase", "CVBuffer", "CVImageBuffer", "CVPixelBuffer", "CVReturn"] }
 dispatch2 = { version = "0.3", default-features = false, features = ["std", "block2", "objc2"] }
 

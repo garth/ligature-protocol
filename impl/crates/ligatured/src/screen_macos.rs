@@ -17,18 +17,25 @@
 //! the next process, so the daemon is restarted once after allowing it. The
 //! menu bar's sharing indicator is the platform's own, and stopping the
 //! share there ends it with `consent`.
+//!
+//! Milestone 9 (LP-201): the windows ScreenCaptureKit lists are offered by
+//! id and one is shared through its own filter, fitted into the picture; the
+//! system's sound, on macOS 13 and later, comes from the same stream as
+//! float samples, which another ffmpeg encodes as Opus
+//! ([`crate::screen::sound`]). An older Mac shares silently.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use lp_core::input::Region;
-use lp_core::screen::{Display, RefuseReason, ScreenParams, StopReason};
+use lp_core::screen::{Display, RefuseReason, ScreenParams, SourceKind, StopReason, Window};
 use lp_macos::screen::{self as sck, Ended, ScreenDisplay, StartError};
 use tokio::sync::mpsc;
 
 use crate::input::geometry::{Zone, region_of};
 use crate::screen::encode::{Encoder, LiveEncoder, RawInput, encodes, probe_encoder};
+use crate::screen::sound;
 use crate::screen::{Capture, Captured, Settings, Share, ShareControl};
 
 /// How often ffmpeg's encoders are looked at again, for an ffmpeg
@@ -60,17 +67,20 @@ fn name(d: &ScreenDisplay) -> String {
     }
 }
 
-/// A running share: the encoder and the capture, ended together.
+/// A running share: the encoder, the capture and the sound, ended together.
 struct Running {
     encoder: Arc<LiveEncoder>,
     stream: Option<sck::Stream>,
+    sound: Option<sound::Sound>,
 }
 
 /// The Mac's screen capture. Implements [`Capture`]; shares while ffmpeg
-/// has an H.264 encoder.
+/// has an H.264 encoder, with sound while it has `libopus` and macOS has
+/// `capturesAudio`.
 pub struct MacScreen {
     handle: tokio::runtime::Handle,
     encoder: Arc<Mutex<Option<Encoder>>>,
+    sound: Arc<Mutex<bool>>,
 }
 
 impl std::fmt::Debug for MacScreen {
@@ -87,19 +97,25 @@ impl MacScreen {
         let this = Arc::new(Self {
             handle: tokio::runtime::Handle::current(),
             encoder: Arc::new(Mutex::new(None)),
+            sound: Arc::new(Mutex::new(false)),
         });
         let encoder = this.encoder.clone();
+        let sound = this.sound.clone();
         if let Err(e) = std::thread::Builder::new()
             .name("screen-probe".into())
             .spawn(move || {
                 let mut last = None;
+                let mut last_sound = None;
                 loop {
                     let found = probe_encoder();
-                    if found != last {
-                        tracing::info!(encoder = ?found, "screen sharing encoder probed");
+                    let sounds = sound::probe_encoder() && sck::audio_supported();
+                    if found != last || Some(sounds) != last_sound {
+                        tracing::info!(encoder = ?found, sound = sounds, "screen sharing encoder probed");
                         last = found;
+                        last_sound = Some(sounds);
                     }
                     *lock(&encoder) = found;
+                    *lock(&sound) = sounds;
                     std::thread::sleep(PROBE_EVERY);
                 }
             })
@@ -116,8 +132,34 @@ impl Capture for MacScreen {
             shares: lock(&self.encoder).is_some() && !sck::screen_displays().is_empty(),
             views: false,
             encodes: lock(&self.encoder).map(encodes).unwrap_or_default(),
+            audio_encodes: if *lock(&self.sound) {
+                sound::encodes()
+            } else {
+                Vec::new()
+            },
             ..ScreenParams::default()
         }
+    }
+
+    /// The windows on screen with a title, by `CGWindowID`, their size in
+    /// pixels at the main display's scale.
+    fn windows(&self) -> Vec<Window> {
+        let scale = sck::screen_displays()
+            .iter()
+            .find(|d| d.main)
+            .filter(|d| d.width > 0.0)
+            .map_or(1.0, |d| f64::from(d.pixel_width) / d.width);
+        sck::screen_windows()
+            .into_iter()
+            .map(|w| Window {
+                id: w.id.to_string(),
+                name: w.title,
+                app: w.app,
+                width: (w.width * scale).round().max(1.0) as u32,
+                height: (w.height * scale).round().max(1.0) as u32,
+                scale: Some(scale),
+            })
+            .collect()
     }
 
     fn displays(&self) -> Vec<Display> {
@@ -151,6 +193,10 @@ impl Capture for MacScreen {
             .display
             .parse()
             .map_err(|_| RefuseReason::NoDisplay)?;
+        let target = match settings.kind {
+            SourceKind::Display => sck::Target::Display(id),
+            SourceKind::Window => sck::Target::Window(id),
+        };
         if !sck::screen_access() {
             sck::request_screen_access();
             tracing::info!(
@@ -189,6 +235,33 @@ impl Capture for MacScreen {
                 }
             }) as sck::OnFrame
         };
+        // The sound, when agreed: its encoder takes the stream's samples; one
+        // that cannot start leaves the share silent.
+        let (sound_capture, on_audio) = match settings.audio {
+            Some(format) if *lock(&self.sound) => {
+                match sound::Sound::start_pcm(format, frames_tx.clone()) {
+                    Ok((capture, stdin)) => {
+                        let stdin = Mutex::new(Some(stdin));
+                        let on_audio = Box::new(move |samples: &[f32]| {
+                            use std::io::Write as _;
+                            let mut guard = lock(&stdin);
+                            let Some(pipe) = guard.as_mut() else { return };
+                            let bytes: Vec<u8> =
+                                samples.iter().flat_map(|s| s.to_le_bytes()).collect();
+                            if pipe.write_all(&bytes).is_err() {
+                                *guard = None;
+                            }
+                        }) as sck::OnAudio;
+                        (Some(capture), Some(on_audio))
+                    }
+                    Err(e) => {
+                        tracing::warn!(%e, "cannot encode the sound; sharing silent");
+                        (None, None)
+                    }
+                }
+            }
+            _ => (None, None),
+        };
         let on_end = {
             let frames_tx = frames_tx.clone();
             let stopping = stopping.clone();
@@ -207,16 +280,19 @@ impl Capture for MacScreen {
             }) as sck::OnEnd
         };
         let stream = match sck::stream(
-            id,
+            target,
             settings.width,
             settings.height,
             settings.frame_rate,
+            settings.audio.map(|a| a.channels),
             on_frame,
+            on_audio,
             on_end,
         ) {
             Ok(s) => s,
             Err(e) => {
                 live.stop();
+                drop(sound_capture);
                 return Err(match e {
                     StartError::Consent => RefuseReason::Consent,
                     StartError::NoDisplay => RefuseReason::NoDisplay,
@@ -229,7 +305,9 @@ impl Capture for MacScreen {
         };
         tracing::info!(
             display = %settings.display,
+            kind = %settings.kind,
             ?encoder,
+            sound = sound_capture.is_some(),
             size = format!("{}x{}", settings.width, settings.height),
             "screen capture started"
         );
@@ -276,6 +354,7 @@ impl Capture for MacScreen {
         let running = Arc::new(Mutex::new(Running {
             encoder: live,
             stream: Some(stream),
+            sound: sound_capture,
         }));
         // Control: a keyframe from the encoder started again; a stop ends the
         // capture, the pacer and the encoder.
@@ -290,6 +369,7 @@ impl Capture for MacScreen {
             let _ = tokio::task::spawn_blocking(move || {
                 let mut r = lock(&running);
                 drop(r.stream.take());
+                drop(r.sound.take());
                 r.encoder.stop();
             })
             .await;
@@ -299,7 +379,10 @@ impl Capture for MacScreen {
         Ok(Share {
             frames,
             control,
-            region: self.region(&settings.display),
+            region: match settings.kind {
+                SourceKind::Display => self.region(&settings.display),
+                SourceKind::Window => None,
+            },
         })
     }
 }

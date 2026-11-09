@@ -112,3 +112,34 @@ status` ("casting" and "receiving", with sound), and closing the window ended th
 `lpview`'s player complained of each and played nothing; real packets, from the nested test's
 capture, decode. `lpview` now sets its Wayland application id and shows the device's name in
 its title when it was given a key, as the daemon gives it.
+
+## LP-201: the Mac's windows and sound
+
+**Windows by id.** `SCShareableContent` lists the windows on screen in the normal layer with
+a title, each with its owning application's name and its size in points, which the daemon
+offers in pixels at the main display's scale as the `windows` of the `displays` answer; a
+`start` or a cast naming one shares it through
+`SCContentFilter(desktopIndependentWindow:)` with `scalesToFit`, so the window keeps its
+aspect in the agreed picture and the spare area stays blank when it changes shape. A window
+share has no input region. The listing needs Screen Recording like the capture, so an
+unpermitted Mac lists none.
+
+**Sound from the same stream.** On macOS 13 and later the share's `SCStream` captures the
+system's sound too (`capturesAudio`, 48 kHz, the channels agreed, the daemon's own output
+excluded) and hands the output object `CMSampleBuffer`s of 32-bit float linear PCM, planar
+or interleaved, which `lp-macos` reads through the sample's audio buffer list and hands on
+interleaved. The daemon writes them into ffmpeg's stdin (`sound::Sound::start_pcm`: `-f
+f32le`, then `libopus` and Ogg as on Linux), and the packets reach the sync as they do from
+the Linux capture. `audioEncodes` is advertised when ffmpeg has `libopus` and macOS is 13 or
+later; an older Mac shares silently, and the platform notes say so. The bindings gained
+`objc2-core-audio-types` and `objc2-core-foundation`, and `objc2-core-media`'s block buffer
+and format description features.
+
+**`lpview` plays through AudioToolbox.** The player's ffmpeg writes to `-f audiotoolbox` on
+a Mac, the same decoding as on Linux; the daemon starts `lpview --receive` from beside
+itself in the bundle's `MacOS` directory as on Linux.
+
+**Type-checked here, run on the Mac.** `cargo clippy --target aarch64-apple-darwin` with the
+stand-in C compiler passes for `lp-macos`, `ligatured`, `lpview` and `lpctl`; the sample
+extraction, the window filter's scaling and the AudioToolbox device are checked in the
+owner's run (LP-203), since nothing links or runs here.

@@ -24,7 +24,9 @@ release workflow publishes the section as the release notes with the installers.
   default output's sound is captured through PipeWire and encoded by ffmpeg's `libopus`,
   `lpview` plays a share's sound through ffmpeg (`--mute` for the picture alone), a cast with
   `--window` and no id picks the window in the portal's picker, and a window that changes
-  shape is letterboxed (LP-200).
+  shape is letterboxed (LP-200). On a Mac the windows ScreenCaptureKit lists are shared by
+  id and the system's sound comes with the picture on macOS 13 and later; `lpview` plays
+  through AudioToolbox (LP-201).
 
 ## [0.2.0-alpha] - 2026-11-08
 

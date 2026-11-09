@@ -175,6 +175,17 @@ identification header of RFC 7845 and the two delays it wants, and writes what i
 an `AudioTrack` in its low-latency mode with a 60 ms buffer; a packet that finds the decoder
 busy is lost rather than played late. The watch screen has Mute where a share has sound.
 
+**The thread that plays lets the decoder and the track go.** `AudioTrack.write` is given the
+decoder's own output buffer, so the decoder must outlive the write. Ending a watch only
+forgets the sound and pauses the track, which lets go of a write that waits on it; the
+playing thread then releases the decoder and the track itself. Released from the thread
+that ended the watch, as it first was, the decoder went from under a write in progress and
+the app died with a segmentation fault in `memcpy`: once on the owner's Pixel on leaving a
+watched camera, and once in six casts of a screen with sound left from the phone, where
+fourteen in a row then passed with the change. The picture's decoder is released from
+outside its thread too, but that thread only calls `MediaCodec`, which answers a released
+codec with an exception it catches.
+
 **An offered cast opens where Android allows.** With the app in front the watch screen opens
 at once; with the accessibility service on, the app opens itself and wakes the screen, as it
 does for a share request; otherwise a notification names the caster and what is cast, a tap

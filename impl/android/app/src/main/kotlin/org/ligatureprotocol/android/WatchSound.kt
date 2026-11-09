@@ -14,6 +14,11 @@ import java.nio.ByteOrder
  * hands each 20 ms Opus packet to [feed], `MediaCodec` decodes it and an
  * [AudioTrack] in its low-latency mode plays it as it comes, so the sound
  * stays close to the picture. Muted, packets are dropped before the decoder.
+ *
+ * The thread that plays is the one that lets the decoder and the track go,
+ * once it has finished with them: `AudioTrack.write` reads the decoder's own
+ * output buffer, and a decoder released under it from another thread leaves
+ * the write copying from memory that is gone, which ends the app (LP-202).
  */
 object WatchSound {
     private const val TAG = "ligature"
@@ -22,9 +27,13 @@ object WatchSound {
     /** What an Opus decoder is told to decode and discard after a seek: 80 ms. */
     const val SEEK_PRE_ROLL_NS = 80_000_000L
 
-    private var codec: MediaCodec? = null
-    private var track: AudioTrack? = null
-    private var drain: Thread? = null
+    /** A share's sound being played: its decoder, its track, and whether it has been told to end. */
+    private class Playing(val codec: MediaCodec, val track: AudioTrack) {
+        @Volatile
+        var ended = false
+    }
+
+    private var playing: Playing? = null
     private var startedAt = 0L
 
     @Volatile
@@ -73,16 +82,16 @@ object WatchSound {
             runCatching { c.release() }
             return
         }
-        codec = c
-        track = t
+        val p = Playing(c, t)
+        playing = p
         startedAt = System.nanoTime()
-        drain = Thread({ drain(c, t) }, "ligature-watch-sound").apply { start() }
+        Thread({ play(p) }, "ligature-watch-sound").start()
     }
 
     /** One Opus packet from the node. */
     @Synchronized
     fun feed(bytes: ByteArray) {
-        val c = codec ?: return
+        val c = playing?.codec ?: return
         if (muted) return
         val index = runCatching { c.dequeueInputBuffer(5_000) }.getOrDefault(-1)
         // Behind: this packet is lost and the next one plays, which is
@@ -98,24 +107,32 @@ object WatchSound {
         c.queueInputBuffer(index, 0, bytes.size, (System.nanoTime() - startedAt) / 1000, 0)
     }
 
-    private fun drain(c: MediaCodec, t: AudioTrack) {
+    /** Plays what the decoder gives until told to end, then lets the decoder and the track go. */
+    private fun play(p: Playing) {
+        val (c, t) = p.codec to p.track
         val info = MediaCodec.BufferInfo()
-        while (true) {
-            val index = try {
-                c.dequeueOutputBuffer(info, 100_000)
-            } catch (e: IllegalStateException) {
-                return
-            }
-            if (index >= 0) {
+        try {
+            while (!p.ended) {
+                val index = try {
+                    c.dequeueOutputBuffer(info, 100_000)
+                } catch (e: IllegalStateException) {
+                    return
+                }
+                if (index < 0) continue
                 val out = runCatching { c.getOutputBuffer(index) }.getOrNull()
-                if (out != null && info.size > 0) {
+                if (out != null && info.size > 0 && !p.ended) {
                     out.position(info.offset)
                     out.limit(info.offset + info.size)
                     runCatching { t.write(out, info.size, AudioTrack.WRITE_BLOCKING) }
                 }
                 runCatching { c.releaseOutputBuffer(index, false) }.onFailure { return }
             }
-            if (codec !== c) return
+        } finally {
+            // Nothing else uses either by now: [release] forgot them before
+            // it told this thread to end.
+            runCatching { c.stop() }
+            runCatching { c.release() }
+            runCatching { t.release() }
         }
     }
 
@@ -123,23 +140,20 @@ object WatchSound {
     @Synchronized
     fun release() = releaseLocked()
 
+    /**
+     * Forgets the sound being played and tells its thread to end. Pausing
+     * the track lets go of a write that waits on it; the thread releases the
+     * decoder and the track itself.
+     */
     private fun releaseLocked() {
-        val c = codec
-        val t = track
-        codec = null
-        track = null
+        val p = playing
+        playing = null
         muted = false
-        if (c != null) {
-            runCatching { c.stop() }
-            runCatching { c.release() }
+        if (p != null) {
+            p.ended = true
+            runCatching { p.track.pause() }
+            runCatching { p.track.flush() }
         }
-        if (t != null) {
-            runCatching { t.pause() }
-            runCatching { t.flush() }
-            runCatching { t.release() }
-        }
-        runCatching { drain?.join(500) }
-        drain = null
     }
 
     /**

@@ -57,10 +57,11 @@ flowchart LR
 ## 3. Initial capability families
 
 The first families are: notifications, clipboard, files, share, input, media control,
-telephony/SMS, screen, sensors. Each will become its own spec section with its own schema;
-clipboard (section 3b), notifications (section 3c), files (section 3d), input (section 3g)
-and screen (section 3h) are specified so far, and share (section 3a) is outlined with no
-schema yet. Sections 3e and 3f are reserved for media control and telephony.
+telephony/SMS, screen, camera, sensors. Each will become its own spec section with its own
+schema; clipboard (section 3b), notifications (section 3c), files (section 3d), input
+(section 3g), screen (section 3h) and camera (section 3i) are specified so far, and share
+(section 3a) is outlined with no schema yet. Sections 3e and 3f are reserved for media
+control and telephony.
 
 ## 3a. Sharing between people
 
@@ -359,6 +360,50 @@ Nothing of a share is stored, and the sharing device shows that it shares, by th
 indicator or a notification of its own, for the share's life (chapter 09 section 4.4). Open
 questions: a bit-rate ceiling in `start` (ADR 0044), and whether a share's picture may change
 size mid-share with a new `started` and a keyframe, instead of the letterbox.
+
+## 3i. Camera
+
+`org.ligatureprotocol.capability.camera`
+([schema](../../schemas/capability.camera.schema.json)) sends a camera of one device, with
+the device's microphone when both sides take it, live to another of the person's devices,
+which shows it or presents it to its own programs as a camera, so a call on one device can
+use the camera of another. It is device-scoped, offered as the screen is
+([ADR 0040](../adr/0040-binding-stands-in-for-principal.md)), and between one person's own
+devices the protocol asks nothing: the platform's camera and microphone consent, where the
+platform has one, is the gate (chapter 08).
+
+The family is the screen family (section 3h) under its own type names, and everything said
+there of formats, their negotiation
+([ADR 0044](../adr/0044-screen-formats-are-negotiated.md)), chunked `frame` messages,
+`audio` packets on the share's stream, `keyframe`, `stop`, pacing and dropping holds here,
+the two schemas sharing those shapes. What differs:
+
+- **The params** are the screen family's (`shares`, `views`, `receives`, `encodes`,
+  `decodes`, `audioEncodes`, `audioDecodes`, `maxWidth`, `maxHeight`, `maxFrameRate`) and
+  `presents`: this device can present a camera it is sent to its platform's other programs
+  as a camera device, and the sound as a microphone where it can.
+- **The listing** is `cameras`: without a list it asks, and the answer lists each camera's
+  `id`, stable for the session, its `name`, its `facing` (`front`, towards the person at the
+  screen, `back`, or `external` for one plugged in or of unknown direction), the largest
+  `width` and `height` it captures and its `frameRates` where the platform says them. The
+  first listed is the one a `start` without an id shares.
+- **`start`** names a `camera` rather than a display or a window, and `started` the `camera`
+  shared; the sharer picks a capture size no larger than asked, keeping the camera's aspect.
+  The share's `audio`, when asked for and given, is the sharing device's microphone.
+- **`offer`**, a cast of a camera, carries a `source` whose `kind` is `camera`, and `present`
+  when the caster asks for the camera to be presented to the receiver's programs rather
+  than shown; a caster asks that only of a device whose descriptor says `presents`, and a
+  receiver that cannot shows the camera instead or refuses.
+- **A camera sends every frame.** A screen sends a frame when it changes; a camera's picture
+  changes everywhere all the time, so its sharer paces frames at the agreed rate and codes
+  them to a bit rate.
+- **A camera is never driven**: no input stream accompanies it.
+
+One stream carries one share for its life, and a second viewer of a camera is refused
+`busy`, since most platforms give a camera to one capture at a time. Nothing of a share is
+stored, and the sharing device shows that its camera is in use, by the platform's indicator
+or a notification of its own, for the share's life (chapter 09 section 4.4). Open questions:
+camera controls (zoom, focus, the torch), and a camera switched mid-share.
 
 ## 4. Requests and grants
 

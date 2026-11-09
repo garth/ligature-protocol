@@ -134,6 +134,16 @@ a device nobody asked from: it goes only to a device of the same person that say
 receives, the receiver may decline it, and a receiver that is lost shows and plays whatever is
 cast to it until it is revoked, which is the same weight on revocation again.
 
+A camera (chapter 05 section 3i) turns that sensitivity outward: a phone left in a room
+shows the room to any of the person's devices, and its microphone hears it. It travels as a
+screen does, only on the authenticated pairwise session to a device of the same person, with
+nothing stored, and the device whose camera is in use shows it for the share's life, by the
+platform's own indicator where it has one and a notification where it has none. The
+platform's camera and microphone permissions are the gate where the platform has them, and
+a lost device can start a camera, as it can watch a screen, until it is revoked. A received
+camera presented to a device's programs is as trusted as the device it comes from: a call
+made with it shows what that device's camera sees, which the person chose by presenting it.
+
 ### 4.5 No remote trust
 
 Nothing a stranger can do over the network makes any device recognise them. A `person`

@@ -1,0 +1,436 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ligatureprotocol.org/schemas/capability.camera.schema.json",
+  "title": "org.ligatureprotocol.capability.camera",
+  "description": "DRAFT. The camera capability (spec chapter 05 section 3i): device-scoped, a camera of one device, with the device's microphone when both sides take it, sent live to another of the person's devices, which shows it or presents it to its own programs as a camera. The messages are the screen capability's (capability.screen.schema.json) under this family's type names: a share is one stream (purpose org.ligatureprotocol.capability.camera, ADR 0036) that either side may open. Opened by the viewer: cameras to list the sharer's cameras, start answered by started or refused. Opened by the sharer, a cast: offer naming the camera, answered by start or refused. Then frame chunks and audio packets from the sharer, keyframe from the viewer, and stop from either side. A camera is never driven.",
+  "$defs": {
+    "params": {
+      "type": "object",
+      "description": "The descriptor's params for this capability.",
+      "properties": {
+        "shares": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether this device captures and encodes a camera now. False while the platform has not granted the camera, or the device has none."
+        },
+        "views": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether this device decodes and shows a camera."
+        },
+        "receives": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether this device takes a camera offered to it (a cast) without anyone at it asking. A sharer never offers to a device without it."
+        },
+        "presents": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether this device can present a camera it is sent to its platform's other programs as a camera device, and the sound as a microphone where it can. A caster asks for that with present in its offer only of a device that says so."
+        },
+        "encodes": {
+          "type": "array",
+          "items": {
+            "$ref": "capability.screen.schema.json#/$defs/format"
+          },
+          "default": [
+            {
+              "codec": "h264",
+              "chroma": "4:2:0"
+            }
+          ],
+          "description": "The picture formats this device can encode as a sharer now, most preferred first (ADR 0044)."
+        },
+        "decodes": {
+          "type": "array",
+          "items": {
+            "$ref": "capability.screen.schema.json#/$defs/format"
+          },
+          "default": [
+            {
+              "codec": "h264",
+              "chroma": "4:2:0"
+            }
+          ],
+          "description": "The picture formats this device can decode as a viewer now, most preferred first (ADR 0044)."
+        },
+        "audioEncodes": {
+          "type": "array",
+          "items": {
+            "$ref": "capability.screen.schema.json#/$defs/audioFormat"
+          },
+          "default": [],
+          "description": "The audio formats this device can encode from its microphone now; empty or absent when it shares none."
+        },
+        "audioDecodes": {
+          "type": "array",
+          "items": {
+            "$ref": "capability.screen.schema.json#/$defs/audioFormat"
+          },
+          "default": [],
+          "description": "The audio formats this device can decode and play, or present as a microphone; empty or absent when it takes none."
+        },
+        "maxWidth": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1920,
+          "description": "The widest picture this device takes, in pixels."
+        },
+        "maxHeight": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1080,
+          "description": "The tallest picture this device takes, in pixels."
+        },
+        "maxFrameRate": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 30,
+          "description": "The highest frame rate this device takes, in frames per second."
+        }
+      }
+    },
+    "cameraId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "The sharer's name for one of its cameras, stable for the session."
+    },
+    "camera": {
+      "type": "object",
+      "description": "One camera a sharer offers.",
+      "required": [
+        "id",
+        "width",
+        "height"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/cameraId"
+        },
+        "name": {
+          "type": "string",
+          "description": "What the platform calls it, for a picker."
+        },
+        "facing": {
+          "type": "string",
+          "enum": [
+            "front",
+            "back",
+            "external"
+          ],
+          "description": "Which way it looks: front (towards the person at the screen), back, or external (a camera that is plugged in, or whose direction the platform does not say). A viewer that does not know a value treats it as external."
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The widest picture it captures, in pixels."
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The tallest picture it captures, in pixels."
+        },
+        "frameRates": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "description": "The frame rates it captures at, in frames per second; absent when the platform does not say."
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "description": "What a cast shares: one camera of the caster, as it chose it.",
+      "required": [
+        "kind",
+        "id",
+        "width",
+        "height"
+      ],
+      "properties": {
+        "kind": {
+          "const": "camera"
+        },
+        "id": {
+          "$ref": "#/$defs/cameraId"
+        },
+        "name": {
+          "type": "string",
+          "description": "What the platform calls the camera."
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The widest picture it captures, in pixels."
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The tallest picture it captures, in pixels."
+        }
+      }
+    },
+    "cameras": {
+      "type": "object",
+      "description": "From the viewer, without a list: what cameras does the sharer have. From the sharer: the list, the first being the one a start without an id shares.",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.camera.cameras"
+        },
+        "cameras": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/camera"
+          },
+          "description": "The sharer's cameras; present only in the answer."
+        }
+      }
+    },
+    "offer": {
+      "type": "object",
+      "description": "From the sharer, as the first message of a stream it opened: a cast of one of its cameras. Answer start, or refused.",
+      "required": [
+        "type",
+        "source",
+        "formats",
+        "maxFrameRate"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.camera.offer"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "formats": {
+          "type": "array",
+          "items": {
+            "$ref": "capability.screen.schema.json#/$defs/format"
+          },
+          "description": "The picture formats the caster can encode for this share, most preferred first."
+        },
+        "maxFrameRate": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The fastest the caster will pace this share, in frames per second."
+        },
+        "audio": {
+          "type": "array",
+          "items": {
+            "$ref": "capability.screen.schema.json#/$defs/audioFormat"
+          },
+          "description": "The audio formats the caster can send from its microphone, most preferred first; absent or empty when it sends none."
+        },
+        "present": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether the caster asks for the camera to be presented to the receiver's programs as a camera, rather than shown. A receiver that does not present shows it, or refuses."
+        }
+      }
+    },
+    "start": {
+      "type": "object",
+      "description": "From the viewer: share this camera (the first listed when none is named) in the first of these formats the sharer can encode, no larger than this and no faster than this, with the microphone in the first of these audio formats when any are given. From a receiver answering an offer: the same, naming no camera.",
+      "required": [
+        "type",
+        "formats",
+        "width",
+        "height",
+        "frameRate"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.camera.start"
+        },
+        "camera": {
+          "$ref": "#/$defs/cameraId"
+        },
+        "formats": {
+          "type": "array",
+          "items": {
+            "$ref": "capability.screen.schema.json#/$defs/format"
+          },
+          "description": "The formats the viewer takes for this share, most preferred first."
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The widest picture the viewer wants, in pixels."
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The tallest picture the viewer wants, in pixels."
+        },
+        "frameRate": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The frame rate the viewer wants, in frames per second."
+        },
+        "audio": {
+          "type": "array",
+          "items": {
+            "$ref": "capability.screen.schema.json#/$defs/audioFormat"
+          },
+          "description": "The audio formats the viewer takes, most preferred first; absent or empty for a camera without its microphone."
+        }
+      }
+    },
+    "started": {
+      "type": "object",
+      "description": "From the sharer: the share runs with these settings, which may be smaller or slower than asked, never larger or faster; the picture keeps the camera's aspect.",
+      "required": [
+        "type",
+        "camera",
+        "format",
+        "width",
+        "height",
+        "frameRate"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.camera.started"
+        },
+        "camera": {
+          "$ref": "#/$defs/cameraId"
+        },
+        "format": {
+          "$ref": "capability.screen.schema.json#/$defs/format"
+        },
+        "audio": {
+          "$ref": "capability.screen.schema.json#/$defs/audioFormat"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The picture's width in pixels."
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The picture's height in pixels."
+        },
+        "frameRate": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The frame rate the sharer paces to."
+        }
+      }
+    },
+    "refused": {
+      "type": "object",
+      "description": "From the side that was asked: the share does not start and the stream ends after it. The reasons are the screen family's, no-display meaning no camera with that id and consent the platform's camera permission.",
+      "allOf": [
+        {
+          "$ref": "capability.screen.schema.json#/$defs/refusedBody"
+        }
+      ],
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.camera.refused"
+        }
+      }
+    },
+    "frame": {
+      "type": "object",
+      "description": "From the sharer: one chunk of one encoded frame, as the screen family chunks it.",
+      "allOf": [
+        {
+          "$ref": "capability.screen.schema.json#/$defs/frameBody"
+        }
+      ],
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.camera.frame"
+        }
+      }
+    },
+    "audio": {
+      "type": "object",
+      "description": "From the sharer: one packet of the microphone's sound, on the share's stream between frame chunks.",
+      "allOf": [
+        {
+          "$ref": "capability.screen.schema.json#/$defs/audioBody"
+        }
+      ],
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.camera.audio"
+        }
+      }
+    },
+    "keyframe": {
+      "type": "object",
+      "description": "From the viewer: send a keyframe now, after a loss or a late start.",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.camera.keyframe"
+        }
+      }
+    },
+    "stop": {
+      "type": "object",
+      "description": "From either side: the share ends, with the screen family's reasons.",
+      "allOf": [
+        {
+          "$ref": "capability.screen.schema.json#/$defs/stopBody"
+        }
+      ],
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "const": "org.ligatureprotocol.capability.camera.stop"
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/cameras"
+    },
+    {
+      "$ref": "#/$defs/offer"
+    },
+    {
+      "$ref": "#/$defs/start"
+    },
+    {
+      "$ref": "#/$defs/started"
+    },
+    {
+      "$ref": "#/$defs/refused"
+    },
+    {
+      "$ref": "#/$defs/frame"
+    },
+    {
+      "$ref": "#/$defs/audio"
+    },
+    {
+      "$ref": "#/$defs/keyframe"
+    },
+    {
+      "$ref": "#/$defs/stop"
+    }
+  ]
+}

@@ -333,13 +333,21 @@
       }
     },
     "refused": {
-      "type": "object",
       "description": "From the side that was asked: the sharer answering a start, or the receiver answering an offer. The share does not start and the stream ends after it.",
-      "required": ["type", "reason"],
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/refusedBody" }],
+      "required": ["type"],
       "properties": {
         "type": {
           "const": "org.ligatureprotocol.capability.screen.refused"
-        },
+        }
+      }
+    },
+    "refusedBody": {
+      "type": "object",
+      "description": "What a refused message carries, whatever family's type names it; the camera family uses it too.",
+      "required": ["reason"],
+      "properties": {
         "reason": {
           "type": "string",
           "enum": ["consent", "no-encoder", "no-display", "busy", "declined", "no-decoder"],
@@ -348,13 +356,21 @@
       }
     },
     "frame": {
-      "type": "object",
       "description": "From the sharer: one chunk of one encoded frame. A frame is the concatenation of its chunks in order, the last marked; no chunk exceeds 256 KiB, so no message exceeds the bound of ADR 0036.",
-      "required": ["type", "seq", "at", "key", "last", "bytes"],
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/frameBody" }],
+      "required": ["type"],
       "properties": {
         "type": {
           "const": "org.ligatureprotocol.capability.screen.frame"
-        },
+        }
+      }
+    },
+    "frameBody": {
+      "type": "object",
+      "description": "What a frame message carries, whatever family's type names it.",
+      "required": ["seq", "at", "key", "last", "bytes"],
+      "properties": {
         "seq": {
           "type": "integer",
           "minimum": 0,
@@ -381,13 +397,21 @@
       }
     },
     "audio": {
-      "type": "object",
       "description": "From the sharer: one packet of the share's sound, on the share's stream between frame chunks. Sound is never dropped for flow control; a frame is.",
-      "required": ["type", "seq", "at", "bytes"],
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/audioBody" }],
+      "required": ["type"],
       "properties": {
         "type": {
           "const": "org.ligatureprotocol.capability.screen.audio"
-        },
+        }
+      }
+    },
+    "audioBody": {
+      "type": "object",
+      "description": "What an audio message carries, whatever family's type names it.",
+      "required": ["seq", "at", "bytes"],
+      "properties": {
         "seq": {
           "type": "integer",
           "minimum": 0,
@@ -416,13 +440,21 @@
       }
     },
     "stop": {
-      "type": "object",
       "description": "From either side: the share ends. The stream ends after it; a stream that ends without one is a stop too.",
-      "required": ["type", "reason"],
+      "type": "object",
+      "allOf": [{ "$ref": "#/$defs/stopBody" }],
+      "required": ["type"],
       "properties": {
         "type": {
           "const": "org.ligatureprotocol.capability.screen.stop"
-        },
+        }
+      }
+    },
+    "stopBody": {
+      "type": "object",
+      "description": "What a stop message carries, whatever family's type names it.",
+      "required": ["reason"],
+      "properties": {
         "reason": {
           "type": "string",
           "enum": ["viewer", "sharer", "consent", "error"],

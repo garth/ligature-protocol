@@ -309,9 +309,37 @@ reports a camera present and the nodes read back, and no browser or call has bee
 the phone, which have run nothing of milestone 10. The latency, which needs a real camera
 and a clock in front of it.
 
-**Still to run with someone at the devices**, by the plan's exit criteria: the phone's back
-camera and microphone as the camera and microphone of a call in a browser on the Linux
-machine, with the glass-to-glass latency; the Mac's camera presented on the Linux machine
-and the Linux machine's camera shown on the Mac and the phone; a camera cast from the phone
-and from the Mac; each share ended from each side, by the platform's indicator and by a
-dropped connection; and the permissions on the Mac and the phone asked for and refused.
+**With the Pixel, 2026-11-09.** The Linux machine's own daemon was reinstalled from this
+tree and the debug APK installed on the phone over adb, its identity kept. Nothing was
+granted on the phone, so its camera stayed unallowed, and the Linux machine's own camera
+and microphone were never started: the camera cast was a test camera in the session's
+PipeWire, named with `--camera`, and without sound.
+
+- The phone's node advertised the camera family as it should before the camera is allowed:
+  it views and receives, presents nothing and shares nothing. `lpctl camera list` and
+  `lpctl camera present` for it were refused with "Pixel 8 Pro does not share its camera
+  right now".
+- The app's Cameras card showed "Watch tmarchy's camera", the words about the phone's
+  camera as a webcam, and **Allow the camera**.
+- `lpctl camera cast "Pixel 8 Pro" --camera <test camera> --no-audio` opened the watch
+  screen at once with the app in front, turned to landscape, headed "tmarchy is casting
+  its camera", with the moving picture and no keys or touch. With the phone on its home
+  screen it opened by itself, Ligature being on under Accessibility.
+- Four casts in a row each ran about 290 frames in ten seconds at 1280 by 720 and 30 a
+  second, none dropped, and ended from the laptop with the phone back on its main screen
+  in portrait. One was left from the phone with Back and ended on the laptop as `viewer`.
+- No crash in the phone's log.
+
+The first casts of this run stopped after some twenty frames, every one but the first. The
+cause was the test camera, not the phone or the daemon, and is recorded under LP-207.
+
+**Still to run with someone at the devices**, by the plan's exit criteria: the phone's
+permissions granted from the Cameras card, then its camera shared, cast and used as the
+Linux machine's webcam; the phone watching the Linux machine's own camera, which starts that
+camera and its microphone; a request to the phone while its app is in the background without
+Accessibility; and, as before, the phone's back camera and microphone as the camera and
+microphone of a call in a browser on the Linux machine, with the glass-to-glass latency; the
+Mac's camera presented on the Linux machine and the Linux machine's camera shown on the Mac
+and the phone; a camera cast from the phone and from the Mac; each share ended from each
+side, by the platform's indicator and by a dropped connection; and the permissions on the
+Mac and the phone asked for and refused.

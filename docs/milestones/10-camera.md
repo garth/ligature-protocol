@@ -1,20 +1,21 @@
 # Milestone 10: a camera on one of the person's devices used from another, as a picture and as a webcam
 
-**Status:** Accepted by the owner on 2026-11-09 and implemented; the tasks LP-205 to LP-209
-under the epic LP-194 are done, and the run with the real devices (LP-210) is begun. Run on
-2026-11-09 on the Linux machine alone, between two daemons of this build kept to a test
-camera and a test microphone: the camera listed, presented with its microphone and read back
-from the camera and microphone nodes the daemon made, cast as a webcam, watched into a file,
-and each ended from either side, as
+**Status:** Accepted by the owner on 2026-11-09 and implemented; the tasks LP-205 to LP-209 under
+the epic LP-194 are done, and the run with the real devices (LP-210) is begun. Run on 2026-11-09
+on the Linux machine alone, between two daemons of this build kept to a test camera and a test
+microphone: the camera listed, presented with its microphone and read back from the camera and
+microphone nodes the daemon made, cast as a webcam, watched into a file, and each ended from
+either side; and with the Pixel on this build, a test camera cast to it from the Linux machine and
+shown there, four times running, with the phone's own camera not yet allowed, as
 [10-implementation-decisions.md](10-implementation-decisions.md) records. Still to run, with
-someone at the devices: the Linux machine's own camera and microphone, a call in a browser
-picking the presented camera and microphone, the Mac's part and the phone's, neither of
-which has run on its device, and the latency. Raised as the epic LP-194 on 2026-11-08 at the
-owner's request, with milestone 9: send a camera's feed the way a screen is sent, and let a
-device use another device's camera for a conference call. The capture, encoding, transport,
-viewers and sound of milestones 8 and 9 carry it; the new work is a camera as a source on each
-platform and, where the platform allows, a received camera presented to the platform's other
-programs as a camera and a microphone.
+someone at the devices: the Linux machine's own camera and microphone, a call in a browser picking
+the presented camera and microphone, the phone's camera once its owner allows it, the Mac's part,
+which has not run on a Mac, and the latency. Raised as the epic LP-194 on 2026-11-08 at the
+owner's request, with milestone 9: send a camera's feed the way a screen is sent, and let a device
+use another device's camera for a conference call. The capture, encoding, transport, viewers and
+sound of milestones 8 and 9 carry it; the new work is a camera as a source on each platform and,
+where the platform allows, a received camera presented to the platform's other programs as a
+camera and a microphone.
 
 ## 1. Goal
 

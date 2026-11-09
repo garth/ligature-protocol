@@ -1,7 +1,16 @@
 # Milestone 9: a screen or a window cast to another of the person's devices, with its sound
 
-**Status:** Accepted by the owner on 2026-11-09; the tasks are LP-198 to LP-203 under the epic
-LP-193. Raised as the epic LP-193 on 2026-11-08, the
+**Status:** Accepted by the owner on 2026-11-09 and implemented; the tasks LP-198 to LP-202
+under the epic LP-193 are done, and the run with the real devices (LP-203) is begun. Run on
+2026-11-08 with the Linux machine and the Pixel on this build and the Mac still on 0.2.0's:
+the Linux display cast to the phone over the LAN at 1728 by 1080 and about 58 frames a
+second with none dropped, with the Linux machine's sound as Opus (about 47 packets a second
+counted at the sender, the phone's decoder running on them), each cast ended from the caster
+with `sharer`, and the older builds never offered a cast and refused by name. Still to run,
+with someone at the devices: the Mac on this build, a window picked on Linux, a cast from the
+phone, a cast received in `lpview` on a desktop from a real device, a cast declined at the
+phone, the sound heard and its offset from the picture measured, and the remaining exit
+criteria. Raised as the epic LP-193 on 2026-11-08, the
 day milestone 8 closed, at the owner's request: cast my screen or one application to a remote
 device, with its sound, and hear a device I watch or control. These are the window share and
 the audio with the picture that milestone 8 section 7 named as its candidates; the cast

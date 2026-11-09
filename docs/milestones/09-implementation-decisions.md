@@ -187,3 +187,36 @@ desktop that receives, with its frames and packets arriving and its end reported
 builds and the JVM tests cover the Opus header, the buffer sizes, the packet sizes and the
 choice between opening and notifying. The capture, the decoder and the notification paths on
 a real phone are for the run (LP-203), with the owner's go-ahead for the projection.
+
+## LP-203: the run with the real devices, so far
+
+**Run on 2026-11-08 from the Linux machine, the phone locked and nobody at it.** The Linux
+daemon was reinstalled from this build through `install.sh` and the phone's app over adb,
+both keeping their identities; the Mac stayed on its 0.2.0 build, its lid closed, so it
+offered no screen. Found:
+
+- **The older builds are left alone.** `lpctl screen cast` to the Mac and to the phone
+  before its update was refused before anything was offered, since neither says `receives`.
+  The refusal had named the device by its key under "trust chain"; it now names the device
+  and says what it needs (LP-199).
+- **A display cast to the phone.** With the app updated, the phone's accessibility service
+  woke it and the app took the offer within a fifth of a second; the share ran through the
+  portal with its remembered choice and VA-API at 1728 by 1080, about 58 frames a second
+  over twenty seconds with none dropped, and `lpctl screen stop` ended it as `sharer` at both
+  ends. The phone showed its lock screen, the watch screen behind it, so the picture itself
+  was not seen.
+- **Sound with it.** With nothing playing on the Linux machine, a cast with sound captured
+  the speaker's monitor from the systemd service and sent about 47 packets a second beside
+  the picture (280 in six seconds, the first second being the capture's start), and the phone
+  created its Opus decoder from the header the app builds and ran until the stop. Whether it
+  is heard, and how far from the picture, needs someone listening.
+- **One stall.** The first cast's capture went quiet five seconds in, with the portal's "Out
+  of buffers", and the watchdog started it again as milestone 8 arranged; the next two casts
+  ran without one. It is the portal's own fault of LP-149, not this milestone's pipeline.
+
+**Left for a run with someone at the devices:** the Mac built from this commit (its windows,
+its sound, `lpview` receiving and playing through AudioToolbox), a window chosen in the
+Linux picker, a cast started on the phone and received in `lpview` here, the phone's own
+sound after its recording permission, a cast declined from the phone's notification, the
+sound heard on each viewer with the flash-and-beep offset measured, a drive of a cast
+display, and clipboard and files during a cast.

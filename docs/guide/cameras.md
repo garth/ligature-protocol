@@ -6,8 +6,8 @@ camera and microphone as if they were plugged in. The picture and the sound go s
 between the two devices, as a watched screen's do.
 
 Cameras are on `main` and in no release yet, so they come after 0.2.0-alpha. They have run
-between test devices on a Linux machine; the Mac's and the phone's parts are written and
-have not yet been run on those devices.
+between a Linux machine and an Android phone; the Mac's part is written and has not yet
+been run on a Mac.
 
 ## Seeing which cameras a device has
 

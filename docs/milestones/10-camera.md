@@ -2,20 +2,19 @@
 
 **Status:** Accepted by the owner on 2026-11-09 and implemented; the tasks LP-205 to LP-209 under
 the epic LP-194 are done, and the run with the real devices (LP-210) is begun. Run on 2026-11-09
-on the Linux machine alone, between two daemons of this build kept to a test camera and a test
-microphone: the camera listed, presented with its microphone and read back from the camera and
-microphone nodes the daemon made, cast as a webcam, watched into a file, and each ended from
-either side; and with the Pixel on this build, a test camera cast to it from the Linux machine and
-shown there, four times running, with the phone's own camera not yet allowed, as
-[10-implementation-decisions.md](10-implementation-decisions.md) records. Still to run, with
-someone at the devices: the Linux machine's own camera and microphone, a call in a browser picking
-the presented camera and microphone, the phone's camera once its owner allows it, the Mac's part,
-which has not run on a Mac, and the latency. Raised as the epic LP-194 on 2026-11-08 at the
-owner's request, with milestone 9: send a camera's feed the way a screen is sent, and let a device
-use another device's camera for a conference call. The capture, encoding, transport, viewers and
-sound of milestones 8 and 9 carry it; the new work is a camera as a source on each platform and,
-where the platform allows, a received camera presented to the platform's other programs as a
-camera and a microphone.
+between the Linux machine and the Pixel on this build: the phone's cameras listed, watched into a
+file and presented on the Linux machine as its camera and microphone, with nobody at the phone and
+from the phone's own Cameras card, the front camera at 1920 by 1080 and about 58 frames a second,
+each ended from either side; a camera cast to the phone and shown there; and, between two daemons
+on the Linux machine kept to a test camera and microphone, the same paths with the pictures and a
+test tone read back, as [10-implementation-decisions.md](10-implementation-decisions.md) records.
+Still to run, with someone at the devices: a call in a browser picking the presented camera and
+microphone, the latency, which way up the phone's picture is, and the Mac's part, which has not
+run on a Mac. Raised as the epic LP-194 on 2026-11-08 at the owner's request, with milestone 9:
+send a camera's feed the way a screen is sent, and let a device use another device's camera for a
+conference call. The capture, encoding, transport, viewers and sound of milestones 8 and 9 carry
+it; the new work is a camera as a source on each platform and, where the platform allows, a
+received camera presented to the platform's other programs as a camera and a microphone.
 
 ## 1. Goal
 

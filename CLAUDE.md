@@ -36,8 +36,8 @@ playback capture and played by `lpview` through ffmpeg and by the app) and miles
 `camera` family, the screen family under its own names with `cameras` and a `presents` param:
 PipeWire's cameras on Linux, AVFoundation's on the Mac and Camera2's on the phone, each with
 the microphone; a received camera shown in `lpview` or the app, and presented on Linux as a
-PipeWire camera node and a `pw-loopback` microphone; the Mac's and the phone's parts are
-type-checked and built, not run). Nothing beyond them.
+PipeWire camera node and a `pw-loopback` microphone; run between the Linux machine and the
+phone on 2026-11-09, the Mac's part type-checked and not run). Nothing beyond them.
 The project's domain is `ligatureprotocol.org`, so the `org.ligatureprotocol` type names
 and the schema `$id`s are official.
 

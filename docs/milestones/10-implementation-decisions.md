@@ -333,13 +333,43 @@ PipeWire, named with `--camera`, and without sound.
 The first casts of this run stopped after some twenty frames, every one but the first. The
 cause was the test camera, not the phone or the daemon, and is recorded under LP-207.
 
-**Still to run with someone at the devices**, by the plan's exit criteria: the phone's
-permissions granted from the Cameras card, then its camera shared, cast and used as the
-Linux machine's webcam; the phone watching the Linux machine's own camera, which starts that
-camera and its microphone; a request to the phone while its app is in the background without
-Accessibility; and, as before, the phone's back camera and microphone as the camera and
-microphone of a call in a browser on the Linux machine, with the glass-to-glass latency; the
-Mac's camera presented on the Linux machine and the Linux machine's camera shown on the Mac
-and the phone; a camera cast from the phone and from the Mac; each share ended from each
-side, by the platform's indicator and by a dropped connection; and the permissions on the
-Mac and the phone asked for and refused.
+**With the Pixel's own camera, 2026-11-09.** The owner allowed the camera and the
+microphone from the Cameras card, and had already watched the Linux machine's camera from
+the phone themselves. Pictures were counted and measured for brightness, never looked at,
+and nothing recorded was kept.
+
+- The phone then listed two cameras, back and front, each at 1920 by 1080.
+- `lpctl camera start "Pixel 8 Pro"` wrote 120 frames of H.264 (High profile, 1280 by 720)
+  that `ffprobe` reads, and 206 packets of the microphone's sound. This was the first time
+  `CameraShareService` ran, and it ran as written. `--camera 1` gave the front camera.
+- With the phone on its home screen, `lpctl camera present "Pixel 8 Pro"` started the camera
+  with no tap, Ligature being on under Accessibility, and the phone stayed on its home
+  screen. The Linux machine got "Ligature camera (Pixel 8 Pro)" at 1920 by 1080 and
+  "Ligature microphone (Pixel 8 Pro)": pictures read back from the one, four seconds of
+  quiet room sound from the other.
+- The back camera's pictures were pure black and the front camera's had a brightness of
+  about 110 that varied across the picture and changed between pictures: the phone lay on
+  its back lens, and the path is sound.
+- A second request while the camera ran was refused: "Pixel 8 Pro refused the share: busy".
+- From the card, with the front camera chosen, **Use as tmarchy's webcam** presented the
+  camera and microphone on the Linux machine at 1920 by 1080. It was agreed at 60 a second,
+  which the front camera lists, and 57.8 frames a second arrived over six seconds with
+  exactly 50 packets of sound a second. The phone showed Android's green camera and
+  microphone indicator and the notification "Casting your camera and microphone to
+  tmarchy" with **Stop sharing**; the card said "This phone's camera is on tmarchy".
+- `lpctl camera stop` on the Linux machine, and **Stop the camera** on the phone's card,
+  each ended it: both nodes gone, the phone's camera service stopped.
+- No crash in any of these.
+
+**A crash found on the way, in milestone 9's code.** When the owner left the watch screen
+after watching the Linux machine's camera, the app died in its sound thread. It is fixed
+under LP-202 and recorded in `09-implementation-decisions.md`.
+
+**Still to run with someone at the devices**, by the plan's exit criteria: a call in a
+browser on the Linux machine picking the phone's camera and microphone, with the
+glass-to-glass latency; which way up the phone's picture is, held upright and on its side;
+**Show on** a desktop, which opens `lpview` there; the notification's **Stop sharing**; a
+request to the phone while its app is in the background without Accessibility; the Linux
+machine's own camera in a share started from here; the Mac's camera presented on the Linux
+machine and a camera shown on the Mac; each share ended by the platform's indicator and by
+a dropped connection; and the permissions on the Mac and the phone refused.

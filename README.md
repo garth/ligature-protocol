@@ -179,8 +179,8 @@ a screen or one window cast from the device that has it to another, and the shar
 device's sound with every share ([milestone 9](docs/milestones/09-cast-and-sound.md)),
 implemented on all three platforms and awaiting its run with the real devices; and a camera
 watched from another device, with its microphone, or used by a Linux machine's programs as
-a webcam ([milestone 10](docs/milestones/10-camera.md)), run between test devices on Linux
-and written but not yet run on the Mac and the phone. Everything else in the specification
+a webcam ([milestone 10](docs/milestones/10-camera.md)), run between the Linux machine and
+the phone and written but not yet run on the Mac. Everything else in the specification
 is unimplemented.
 Apple phones and tablets are off the roadmap for now, because iOS does not let a person run
 an always-on peer on a device they own; what the platform would allow is recorded in the
@@ -275,8 +275,9 @@ follow them.
 10. **A camera used from another device, as a picture and as a webcam.** Implemented on
     `main`: a camera shared with its microphone from all three platforms and shown on all
     three, and presented to a Linux machine's programs as a webcam. A Mac and the phone do
-    not present one, since neither system lets an app offer a camera to other programs. Its
-    run with the real devices is pending ([plan](docs/milestones/10-camera.md)).
+    not present one, since neither system lets an app offer a camera to other programs. Run
+    between the Linux machine and the phone; its run on the Mac is pending
+    ([plan](docs/milestones/10-camera.md)).
 
 Not planned: Apple phones and tablets, for the reasons in the
 [platform notes](docs/spec/08-platform-notes.md#4-ios-and-ipados): the platform is closed,

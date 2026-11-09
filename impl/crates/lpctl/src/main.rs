@@ -10,8 +10,8 @@ use clap::{Parser, Subcommand};
 use std::sync::{Arc, Mutex};
 
 use ligatured::control::{
-    Caps, Client, ClipboardPasted, ClipboardText, Devices, Empty, Event, InitResult, InputLayout,
-    Offers, Permissions, Request, ScreenDisplays, ScreenStopped, Transfers, types,
+    CameraList, Caps, Client, ClipboardPasted, ClipboardText, Devices, Empty, Event, InitResult,
+    InputLayout, Offers, Permissions, Request, ScreenDisplays, ScreenStopped, Transfers, types,
 };
 use ligatured::daemon::Status;
 use ligatured::files_sync::{FileState, TransferEnd, TransferProgress};
@@ -120,6 +120,12 @@ enum Command {
         #[command(subcommand)]
         action: ScreenAction,
     },
+    /// Use a camera of one device from another: watch it, cast it, or
+    /// present it to this device's programs as a webcam.
+    Camera {
+        #[command(subcommand)]
+        action: CameraAction,
+    },
     /// The permissions macOS asks for: which the daemon holds, or reset them
     /// so macOS asks again, or open one's page in System Settings.
     Permissions {
@@ -139,6 +145,85 @@ enum PermissionsAction {
         /// accessibility, input-monitoring or screen-recording.
         permission: String,
     },
+}
+
+/// `lpctl camera` actions.
+#[derive(Debug, Subcommand)]
+enum CameraAction {
+    /// List a device's cameras; with no device, this device's own, whose
+    /// ids `cast` takes.
+    List {
+        /// The device: its name, or a prefix of its key or fingerprint.
+        /// This device when left out.
+        device: Option<String>,
+    },
+    /// Present a device's camera, with its microphone, to this device's
+    /// programs as a camera and a microphone, so a call here uses it. Runs
+    /// until the share ends; Ctrl-C leaves it running, `lpctl camera stop`
+    /// ends it.
+    Present {
+        /// The device: its name, or a prefix of its key or fingerprint.
+        device: String,
+        /// The camera id, from `list`; the device's first by default.
+        #[arg(long)]
+        camera: Option<String>,
+        /// The picture alone, without the device's microphone.
+        #[arg(long)]
+        no_audio: bool,
+    },
+    /// Cast one of this device's cameras, with its microphone, to a device:
+    /// shown there in a window, or with `--present` presented to its
+    /// programs as a webcam. Runs until the cast ends.
+    Cast {
+        /// The device: its name, or a prefix of its key or fingerprint.
+        device: String,
+        /// The camera id, from `lpctl camera list` of this device; the first
+        /// by default.
+        #[arg(long)]
+        camera: Option<String>,
+        /// The picture alone, without this device's microphone.
+        #[arg(long)]
+        no_audio: bool,
+        /// Ask the device to present the camera to its programs as a webcam
+        /// rather than show it, where it can.
+        #[arg(long)]
+        present: bool,
+    },
+    /// Watch a device's camera into a file (diagnostics: play it with
+    /// `ffplay -f h264 FILE`); `lpview <device> --camera` shows it.
+    Start {
+        /// The device: its name, or a prefix of its key or fingerprint.
+        device: String,
+        /// The camera id, from `list`; the device's first by default.
+        #[arg(long)]
+        camera: Option<String>,
+        /// Ask for the microphone too, written as Opus packets to this file,
+        /// each after its 4-byte big-endian length and 8-byte capture time.
+        #[arg(long)]
+        audio_out: Option<PathBuf>,
+        /// The widest picture wanted.
+        #[arg(long, default_value_t = 1280)]
+        width: u32,
+        /// The tallest picture wanted.
+        #[arg(long, default_value_t = 720)]
+        height: u32,
+        /// The frame rate wanted.
+        #[arg(long, default_value_t = 30)]
+        rate: u32,
+        /// Where the stream goes.
+        #[arg(long)]
+        out: PathBuf,
+        /// Stop after this many frames.
+        #[arg(long)]
+        frames: Option<u64>,
+    },
+    /// Stop the camera shares with a device, or every one this device runs.
+    Stop {
+        /// The device: its name, or a prefix of its key or fingerprint.
+        device: Option<String>,
+    },
+    /// What this device shares, shows and presents of cameras.
+    Status,
 }
 
 /// `lpctl screen` actions.
@@ -901,6 +986,7 @@ async fn run(options: &Options, locations: &Locations) -> Result<(), Error> {
         Command::Files { action } => files(&mut client, locations, action).await?,
         Command::Input { action } => input(&mut client, action).await?,
         Command::Screen { action } => screen(&mut client, action).await?,
+        Command::Camera { action } => camera(&mut client, action).await?,
         Command::Caps => {
             let caps: Caps = client.request(Request::new(types::CAPS, 0)).await?;
             println!("this device offers:");
@@ -1041,6 +1127,266 @@ async fn input(client: &mut Client, action: &InputAction) -> Result<(), Error> {
                 .request(Request::new(types::INPUT_RELEASE, 0))
                 .await?;
             println!("released.");
+        }
+    }
+    Ok(())
+}
+
+/// After `lpctl camera status` and `lpctl camera list`: what a camera can be
+/// used for from here, with presenting only where this device can.
+fn camera_next_steps(presents: bool, active: bool) -> String {
+    let mut steps = vec![
+        (
+            "lpctl camera list [DEVICE]",
+            "lists a device's cameras, or this device's own",
+        ),
+        (
+            "lpview <DEVICE> --camera [ID]",
+            "watches a device's camera in a window, with its microphone",
+        ),
+    ];
+    if presents {
+        steps.push((
+            "lpctl camera present <DEVICE> [--camera ID]",
+            "makes a device's camera this device's webcam, and its microphone a microphone",
+        ));
+    }
+    steps.push((
+        "lpctl camera cast <DEVICE> [--camera ID] [--present]",
+        "sends one of this device's cameras to a device, to show or to be its webcam",
+    ));
+    if active {
+        steps.push((
+            "lpctl camera stop [DEVICE]",
+            "stops the camera shares with a device, or every one this device runs",
+        ));
+    }
+    next_steps(&steps)
+}
+
+/// How a share's settings read: the source, the size, the rate, the format
+/// and the sound.
+fn started_summary(started: &lp_core::screen::Started) -> String {
+    format!(
+        "{} at {}x{} {} fps ({}{})",
+        started.source_id(),
+        started.width,
+        started.height,
+        started.frame_rate,
+        started.format,
+        match started.audio {
+            Some(audio) => format!(", {audio}"),
+            None => ", no sound".to_owned(),
+        }
+    )
+}
+
+/// `lpctl camera`.
+async fn camera(client: &mut Client, action: &CameraAction) -> Result<(), Error> {
+    match action {
+        CameraAction::List { device } => {
+            let mut req = Request::new(types::CAMERA_LIST, 0);
+            if let Some(device) = device {
+                req.key = Some(resolve_device(client, device).await?);
+            }
+            let listed: CameraList = client.request(req).await?;
+            if listed.cameras.is_empty() {
+                println!("no cameras.");
+            }
+            for (i, camera) in listed.cameras.iter().enumerate() {
+                println!(
+                    "{:<16} {}x{}  {:<8} {}{}",
+                    camera.id,
+                    camera.width,
+                    camera.height,
+                    camera.facing,
+                    camera.name.as_deref().unwrap_or_default(),
+                    if i == 0 { "  (default)" } else { "" }
+                );
+            }
+            if device.is_none() {
+                let status: ScreenStatus = client
+                    .request(Request::new(types::CAMERA_STATUS, 0))
+                    .await?;
+                print!("{}", camera_next_steps(status.presents, false));
+            }
+        }
+        CameraAction::Present {
+            device,
+            camera,
+            no_audio,
+        } => {
+            let key = resolve_device(client, device).await?;
+            let mut req = Request::new(types::CAMERA_PRESENT, 0);
+            req.key = Some(key);
+            req.camera = camera.clone();
+            req.audio = Some(!no_audio);
+            let response = client
+                .call(req, |event: &Event| {
+                    if let Some(started) = &event.started {
+                        eprintln!(
+                            "presenting {device}'s camera {} to this device's programs; \
+                             choose \"Ligature camera ({device})\" in a call",
+                            started_summary(started)
+                        );
+                    }
+                    None
+                })
+                .await?;
+            let ended: ScreenStopped = response.into_ok()?;
+            eprintln!("the camera is no longer presented ({})", ended.reason);
+        }
+        CameraAction::Cast {
+            device,
+            camera,
+            no_audio,
+            present,
+        } => {
+            let key = resolve_device(client, device).await?;
+            let mut req = Request::new(types::CAMERA_CAST, 0);
+            req.key = Some(key);
+            req.camera = camera.clone();
+            req.audio = Some(!no_audio);
+            req.present = Some(*present);
+            eprintln!("offering the camera to {device}");
+            let response = client
+                .call(req, |event: &Event| {
+                    if let Some(started) = &event.started {
+                        eprintln!(
+                            "casting camera {} to {device}{}",
+                            started_summary(started),
+                            if *present { ", presented there" } else { "" }
+                        );
+                    }
+                    None
+                })
+                .await?;
+            let ended: ScreenStopped = response.into_ok()?;
+            eprintln!("cast ended ({})", ended.reason);
+        }
+        CameraAction::Start {
+            device,
+            camera,
+            audio_out,
+            width,
+            height,
+            rate,
+            out,
+            frames,
+        } => {
+            let key = resolve_device(client, device).await?;
+            let mut req = Request::new(types::CAMERA_START, 0);
+            req.key = Some(key);
+            req.camera = camera.clone();
+            req.width = Some(*width);
+            req.height = Some(*height);
+            req.frame_rate = Some(*rate);
+            req.audio = Some(audio_out.is_some());
+            let mut file = std::fs::File::create(out)
+                .map_err(|e| Error::Io(format!("{}: {e}", out.display())))?;
+            let mut audio_file = match audio_out {
+                Some(path) => Some(
+                    std::fs::File::create(path)
+                        .map_err(|e| Error::Io(format!("{}: {e}", path.display())))?,
+                ),
+                None => None,
+            };
+            let (mut count, mut bytes_total, mut packets, mut asked_stop) =
+                (0u64, 0u64, 0u64, false);
+            let response = client
+                .call(req, |event: &Event| {
+                    if let Some(started) = &event.started {
+                        eprintln!(
+                            "watching camera {}; stream in {}",
+                            started_summary(started),
+                            out.display()
+                        );
+                    }
+                    if let (Some(packet), Some(file)) = (&event.audio, audio_file.as_mut()) {
+                        let _ = file.write_all(&audio_packet_record(packet.at, &packet.bytes.0));
+                        packets += 1;
+                    }
+                    if let Some(frame) = &event.frame {
+                        let _ = file.write_all(&frame.bytes.0);
+                        bytes_total += frame.bytes.0.len() as u64;
+                        if frame.last {
+                            count += 1;
+                            if !asked_stop && frames.is_some_and(|n| count >= n) {
+                                asked_stop = true;
+                                let mut stop = Request::new(types::CAMERA_STOP, 0);
+                                stop.key = Some(key);
+                                return Some(stop);
+                            }
+                        }
+                    }
+                    None
+                })
+                .await?;
+            let ended: ScreenStopped = response.into_ok()?;
+            eprintln!(
+                "share ended ({}): {count} frames, {}{}",
+                ended.reason,
+                human(bytes_total),
+                sound_summary(audio_out.is_some(), packets)
+            );
+        }
+        CameraAction::Stop { device } => {
+            let mut req = Request::new(types::CAMERA_STOP, 0);
+            if let Some(device) = device {
+                req.key = Some(resolve_device(client, device).await?);
+            }
+            let _: Empty = client.request(req).await?;
+            println!("stopped.");
+        }
+        CameraAction::Status => {
+            let s: ScreenStatus = client
+                .request(Request::new(types::CAMERA_STATUS, 0))
+                .await?;
+            println!("shares:   {}", s.shares);
+            println!("views:    {}", s.views);
+            println!("receives: {}", s.receives);
+            println!("presents: {}", s.presents);
+            let active = !s.sharing.is_empty() || !s.watching.is_empty();
+            for share in &s.sharing {
+                println!(
+                    "{} camera {} to {}…, {} frames, {} dropped{}",
+                    if share.cast { "casting" } else { "sharing" },
+                    started_summary(&share.started),
+                    share.peer.fingerprint(),
+                    share.frames,
+                    share.dropped,
+                    sound_summary(share.started.audio.is_some(), share.audio)
+                );
+            }
+            for watch in &s.watching {
+                println!(
+                    "{} camera {} of {}…, {} frames{}",
+                    if watch.presented {
+                        "presenting"
+                    } else if watch.cast {
+                        "receiving"
+                    } else {
+                        "watching"
+                    },
+                    started_summary(&watch.started),
+                    watch.peer.fingerprint(),
+                    watch.frames,
+                    sound_summary(watch.started.audio.is_some(), watch.audio)
+                );
+            }
+            for offer in &s.offered {
+                println!(
+                    "offered camera {} by {}…",
+                    offer
+                        .offer
+                        .source
+                        .name
+                        .as_deref()
+                        .unwrap_or(&offer.offer.source.id),
+                    offer.peer.fingerprint()
+                );
+            }
+            print!("{}", camera_next_steps(s.presents, active));
         }
     }
     Ok(())
@@ -1754,6 +2100,32 @@ mod tests {
         let record = audio_packet_record(0x0102, &[7, 8, 9]);
         assert_eq!(record, [0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 1, 2, 7, 8, 9]);
         assert_eq!(sound_summary(false, 0), "");
+        // `lpctl camera`: presenting is offered only where this device can.
+        let cannot = camera_next_steps(false, false);
+        assert!(cannot.contains("lpctl camera list [DEVICE]"), "{cannot}");
+        assert!(cannot.contains("lpview <DEVICE> --camera [ID]"));
+        assert!(cannot.contains("lpctl camera cast <DEVICE>"));
+        assert!(!cannot.contains("lpctl camera present"));
+        assert!(!cannot.contains("lpctl camera stop"));
+        let can = camera_next_steps(true, true);
+        assert!(
+            can.contains("lpctl camera present <DEVICE> [--camera ID]"),
+            "{can}"
+        );
+        assert!(can.contains("lpctl camera stop [DEVICE]"));
+        let started = lp_core::screen::Started {
+            display: Some("back".to_owned()),
+            window: None,
+            format: lp_core::screen::Format::H264,
+            audio: Some(lp_core::screen::AudioFormat::OPUS_MONO),
+            width: 1280,
+            height: 720,
+            frame_rate: 30,
+        };
+        assert_eq!(
+            started_summary(&started),
+            "back at 1280x720 30 fps (h264 4:2:0, opus mono)"
+        );
         let listed = own_displays_next_steps(true);
         assert!(
             listed.contains("lpctl screen cast <DEVICE> --window <ID>"),

@@ -556,6 +556,8 @@ impl LinuxScreen {
                 PersistMode::ExplicitlyRevoked,
             ),
             SourceKind::Window => (SourceType::Window, None, PersistMode::DoNot),
+            // A camera is the camera family's, never the portal's screen cast.
+            SourceKind::Camera => return Err(RefuseReason::NoDisplay),
         };
         let store = self.store.clone();
         let result = self.handle.block_on(async move {
@@ -623,6 +625,7 @@ impl LinuxScreen {
                     .and_then(|id| list.region(&id));
                 (started, region)
             }
+            SourceKind::Camera => return Err(RefuseReason::NoDisplay),
         };
         let PortalStart {
             session: portal,
@@ -927,7 +930,7 @@ impl Capture for LinuxScreen {
                     .get(&settings.display)
                     .and_then(|p| p.source.name.clone())
                     .unwrap_or_else(|| settings.display.clone()),
-                SourceKind::Display => settings.display.clone(),
+                SourceKind::Display | SourceKind::Camera => settings.display.clone(),
             };
             let summary = format!(
                 "{} {what} with {}",

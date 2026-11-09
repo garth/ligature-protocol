@@ -130,6 +130,38 @@ pub mod types {
     pub const SCREEN_FRAME: &str = "org.ligatureprotocol.control.screen.frame";
     /// Event: one packet of the share's sound.
     pub const SCREEN_AUDIO: &str = "org.ligatureprotocol.control.screen.audio";
+    /// `camera.list`: list a device's cameras (`key`), or this device's own
+    /// when no key is given.
+    pub const CAMERA_LIST: &str = "org.ligatureprotocol.control.camera.list";
+    /// `camera.start`: watch a device's camera (`key`, `camera`, `width`,
+    /// `height`, `frameRate`, `audio` for its microphone); answered as
+    /// `screen.start` is, with the camera events.
+    pub const CAMERA_START: &str = "org.ligatureprotocol.control.camera.start";
+    /// `camera.present`: present a device's camera (`key`, `camera`, the
+    /// microphone unless `audio` is false) to this device's programs as a
+    /// camera; answered by `camera.started` and, when the share ends, the
+    /// response.
+    pub const CAMERA_PRESENT: &str = "org.ligatureprotocol.control.camera.present";
+    /// `camera.cast`: cast a camera of this device (`camera`, the first
+    /// when absent) to a device (`key`), with the microphone unless `audio`
+    /// is false, to be presented there when `present` is true; answered as
+    /// `screen.cast` is.
+    pub const CAMERA_CAST: &str = "org.ligatureprotocol.control.camera.cast";
+    /// `camera.accept`: take the camera a device (`key`) offered this one.
+    pub const CAMERA_ACCEPT: &str = "org.ligatureprotocol.control.camera.accept";
+    /// `camera.decline`: leave the camera a device (`key`) offered this one.
+    pub const CAMERA_DECLINE: &str = "org.ligatureprotocol.control.camera.decline";
+    /// `camera.stop`: end the camera shares with a device (`key`), or every
+    /// one this device runs.
+    pub const CAMERA_STOP: &str = "org.ligatureprotocol.control.camera.stop";
+    /// `camera.status`: what this device shares, shows and presents.
+    pub const CAMERA_STATUS: &str = "org.ligatureprotocol.control.camera.status";
+    /// Event: the camera share started, with what the sharer settled on.
+    pub const CAMERA_STARTED: &str = "org.ligatureprotocol.control.camera.started";
+    /// Event: one chunk of one frame of a camera, in order.
+    pub const CAMERA_FRAME: &str = "org.ligatureprotocol.control.camera.frame";
+    /// Event: one packet of a camera's microphone.
+    pub const CAMERA_AUDIO: &str = "org.ligatureprotocol.control.camera.audio";
 }
 
 /// A request from `lpctl`.
@@ -198,6 +230,14 @@ pub struct Request {
     /// (no by default); `screen.cast`: whether it is offered (yes by default).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio: Option<bool>,
+    /// `camera.start`, `camera.present`, `camera.cast`: the camera's id, or
+    /// the first one when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub camera: Option<String>,
+    /// `camera.cast`: ask the receiver to present the camera to its programs
+    /// rather than show it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub present: Option<bool>,
     /// `screen.start`: the widest picture wanted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub width: Option<u32>,
@@ -998,7 +1038,10 @@ pub async fn handle(
             return Some(handle_input(daemon, state, request).await);
         }
         t if t.starts_with(types::PREFIX) && t.contains(".screen.") => {
-            return handle_screen(daemon, request, out).await;
+            return handle_screen(daemon, crate::screen::Family::Screen, request, out).await;
+        }
+        t if t.starts_with(types::PREFIX) && t.contains(".camera.") => {
+            return handle_screen(daemon, crate::screen::Family::Camera, request, out).await;
         }
         other => Ok(Response::error(
             id,
@@ -1011,24 +1054,59 @@ pub async fn handle(
     })
 }
 
-/// Handles a `screen.*` request (milestones 8 and 9). A start, an accept
-/// and a cast are answered by a task that sends `screen.started`,
-/// `screen.frame` and `screen.audio` events and the response when the share
-/// ends; a client that goes away ends the share.
+/// Handles a `screen.*` request (milestones 8 and 9) or a `camera.*` one
+/// (milestone 10), which is the same share under the camera's names. A
+/// start, an accept, a present and a cast are answered by a task that sends
+/// the `started`, `frame` and `audio` events and the response when the share
+/// ends; a client that goes away ends a share it watches.
 async fn handle_screen(
     daemon: &Arc<Daemon>,
+    family: crate::screen::Family,
     request: Request,
     out: tokio::sync::mpsc::Sender<Outgoing>,
 ) -> Option<Response> {
+    use crate::screen::Family;
     use lp_core::screen::{Start, StopReason};
     let id = request.id;
-    let Some(screen) = daemon.screen_sync() else {
+    let sync = match family {
+        Family::Screen => daemon.screen_sync(),
+        Family::Camera => daemon.camera_sync(),
+    };
+    let Some(screen) = sync else {
         return Some(Response::error(
             id,
-            ErrorBody::new("not-found", "no screen capability on this daemon"),
+            ErrorBody::new(
+                "not-found",
+                format!("no {} capability on this daemon", family.noun()),
+            ),
         ));
     };
     let bad = |message: &str| Some(Response::error(id, ErrorBody::new("bad-request", message)));
+    // The source a request names: a display or a window of a screen, a
+    // camera of the camera family.
+    let source_id = match family {
+        Family::Screen => request.display.clone(),
+        Family::Camera => request.camera.clone(),
+    };
+    let start = |audio: bool| Start {
+        display: source_id.clone(),
+        window: match family {
+            Family::Screen => request.window.clone(),
+            Family::Camera => None,
+        },
+        formats: request.formats.clone().unwrap_or_default(),
+        width: request.width.unwrap_or(1920),
+        height: request.height.unwrap_or(1080),
+        frame_rate: request.frame_rate.unwrap_or(match family {
+            Family::Screen => crate::screen::VIEW_RATE,
+            Family::Camera => 30,
+        }),
+        audio: if audio {
+            screen.params().audio_decodes
+        } else {
+            Vec::new()
+        },
+    };
     let result: Result<Response, Error> = match request.request_type.as_str() {
         types::SCREEN_DISPLAYS => match request.key {
             Some(peer) => screen.sources(&peer).await.and_then(|listed| {
@@ -1051,69 +1129,90 @@ async fn handle_screen(
                 )
             }
         },
-        types::SCREEN_START => {
-            let Some(peer) = request.key else {
-                return bad("screen.start needs a key");
-            };
-            let start = Start {
-                display: request.display.clone(),
-                window: request.window.clone(),
-                formats: request.formats.clone().unwrap_or_default(),
-                width: request.width.unwrap_or(1920),
-                height: request.height.unwrap_or(1080),
-                frame_rate: request.frame_rate.unwrap_or(crate::screen::VIEW_RATE),
-                audio: if request.audio == Some(true) {
-                    screen.params().audio_decodes
-                } else {
-                    Vec::new()
+        types::CAMERA_LIST => match request.key {
+            Some(peer) => screen
+                .cameras(&peer)
+                .await
+                .and_then(|cameras| Response::ok(id, &CameraList { cameras })),
+            None => Response::ok(
+                id,
+                &CameraList {
+                    cameras: screen.local_cameras(),
                 },
+            ),
+        },
+        types::SCREEN_START | types::CAMERA_START => {
+            let Some(peer) = request.key else {
+                return bad("start needs a key");
             };
-            match screen.watch(&peer, start).await {
+            match screen
+                .watch(&peer, start(request.audio == Some(true)))
+                .await
+            {
                 Ok(watching) => {
-                    stream_share(id, watching, out);
+                    stream_share(id, family, watching, out);
                     return None;
                 }
                 Err(e) => Err(e),
             }
         }
-        types::SCREEN_ACCEPT => {
+        types::CAMERA_PRESENT => {
             let Some(peer) = request.key else {
-                return bad("screen.accept needs a key");
+                return bad("camera.present needs a key");
+            };
+            match screen
+                .present(&peer, start(request.audio != Some(false)))
+                .await
+            {
+                Ok(presenting) => {
+                    stream_ended(id, family, presenting.started, presenting.ended, out);
+                    return None;
+                }
+                Err(e) => Err(e),
+            }
+        }
+        types::SCREEN_ACCEPT | types::CAMERA_ACCEPT => {
+            let Some(peer) = request.key else {
+                return bad("accept needs a key");
             };
             match screen.accept(&peer, request.audio != Some(false)).await {
                 Ok(watching) => {
-                    stream_share(id, watching, out);
+                    stream_share(id, family, watching, out);
                     return None;
                 }
                 Err(e) => Err(e),
             }
         }
-        types::SCREEN_DECLINE => match request.key {
+        types::SCREEN_DECLINE | types::CAMERA_DECLINE => match request.key {
             Some(peer) => screen
                 .decline(&peer)
                 .and_then(|()| Response::ok(id, &Empty {})),
-            None => return bad("screen.decline needs a key"),
+            None => return bad("decline needs a key"),
         },
-        types::SCREEN_CAST => {
+        types::SCREEN_CAST | types::CAMERA_CAST => {
             let Some(peer) = request.key else {
-                return bad("screen.cast needs a key");
+                return bad("cast needs a key");
             };
             let source = crate::screen::CastSource {
-                display: request.display.clone(),
-                window: request.window.clone(),
+                display: source_id.clone(),
+                window: match family {
+                    Family::Screen => request.window.clone(),
+                    Family::Camera => None,
+                },
+                present: family == Family::Camera && request.present == Some(true),
             };
             match screen
                 .cast(&peer, source, request.audio != Some(false))
                 .await
             {
                 Ok(casting) => {
-                    stream_cast(id, casting, out);
+                    stream_ended(id, family, casting.started, casting.ended, out);
                     return None;
                 }
                 Err(e) => Err(e),
             }
         }
-        types::SCREEN_STOP => {
+        types::SCREEN_STOP | types::CAMERA_STOP => {
             let stopped = match request.key {
                 Some(peer) => screen.stop_with(&peer, StopReason::Sharer),
                 None => screen.stop_sharing(),
@@ -1127,7 +1226,7 @@ async fn handle_screen(
                 ))
             }
         }
-        types::SCREEN_STATUS => Response::ok(id, &screen.status()),
+        types::SCREEN_STATUS | types::CAMERA_STATUS => Response::ok(id, &screen.status()),
         other => Ok(Response::error(
             id,
             ErrorBody::new("unknown-type", format!("unknown request type {other}")),
@@ -1139,21 +1238,24 @@ async fn handle_screen(
     })
 }
 
-/// A `screen.*` event for request `id`: `started`, one `frame` chunk or one
-/// `audio` packet.
+/// A `screen.*` or `camera.*` event for request `id`: `started`, one `frame`
+/// chunk or one `audio` packet.
 fn screen_event(
     id: u64,
+    family: crate::screen::Family,
     started: Option<lp_core::screen::Started>,
     frame: Option<lp_core::screen::Frame>,
     audio: Option<lp_core::screen::Audio>,
 ) -> Event {
+    use crate::screen::Family;
     Event {
-        event_type: TypeName::new(if frame.is_some() {
-            types::SCREEN_FRAME
-        } else if audio.is_some() {
-            types::SCREEN_AUDIO
-        } else {
-            types::SCREEN_STARTED
+        event_type: TypeName::new(match (family, frame.is_some(), audio.is_some()) {
+            (Family::Screen, true, _) => types::SCREEN_FRAME,
+            (Family::Screen, false, true) => types::SCREEN_AUDIO,
+            (Family::Screen, false, false) => types::SCREEN_STARTED,
+            (Family::Camera, true, _) => types::CAMERA_FRAME,
+            (Family::Camera, false, true) => types::CAMERA_AUDIO,
+            (Family::Camera, false, false) => types::CAMERA_STARTED,
         }),
         id,
         offer: None,
@@ -1165,15 +1267,23 @@ fn screen_event(
     }
 }
 
-/// Sends `screen.started` once the receiver took the cast, then the
-/// response with why it ended; a client that goes away does not end the
-/// cast, which the caster's own indicator or `lpctl screen stop` does.
-fn stream_cast(id: u64, casting: crate::screen::Casting, out: tokio::sync::mpsc::Sender<Outgoing>) {
+/// For a cast and for a presented camera, whose frames stay in the daemon:
+/// sends `started` once the share runs, then the response with why it ended.
+/// A client that goes away does not end the share, which `stop` or the
+/// sharer's own indicator does.
+fn stream_ended(
+    id: u64,
+    family: crate::screen::Family,
+    started: lp_core::screen::Started,
+    ended: tokio::sync::oneshot::Receiver<lp_core::screen::StopReason>,
+    out: tokio::sync::mpsc::Sender<Outgoing>,
+) {
     tokio::spawn(async move {
         if out
             .send(Outgoing::event(screen_event(
                 id,
-                Some(casting.started),
+                family,
+                Some(started),
                 None,
                 None,
             )))
@@ -1182,10 +1292,7 @@ fn stream_cast(id: u64, casting: crate::screen::Casting, out: tokio::sync::mpsc:
         {
             return;
         }
-        let reason = casting
-            .ended
-            .await
-            .unwrap_or(lp_core::screen::StopReason::Error);
+        let reason = ended.await.unwrap_or(lp_core::screen::StopReason::Error);
         let response = Response::ok(id, &ScreenStopped { reason })
             .unwrap_or_else(|e| Response::error(id, ErrorBody::from_error(&e)));
         let _ = out.send(Outgoing::Response(response)).await;
@@ -1197,6 +1304,7 @@ fn stream_cast(id: u64, casting: crate::screen::Casting, out: tokio::sync::mpsc:
 /// ended; a client that stops reading ends it.
 fn stream_share(
     id: u64,
+    family: crate::screen::Family,
     mut watching: crate::screen::Watching,
     out: tokio::sync::mpsc::Sender<Outgoing>,
 ) {
@@ -1204,7 +1312,7 @@ fn stream_share(
     tokio::spawn(async move {
         let event = |started: Option<lp_core::screen::Started>,
                      frame: Option<lp_core::screen::Frame>| {
-            screen_event(id, started, frame, None)
+            screen_event(id, family, started, frame, None)
         };
         if out
             .send(Outgoing::event(event(Some(watching.started.clone()), None)))
@@ -1249,7 +1357,13 @@ fn stream_share(
                         bytes: lp_core::wire::Bytes(bytes),
                     };
                     if out
-                        .send(Outgoing::event(screen_event(id, None, None, Some(packet))))
+                        .send(Outgoing::event(screen_event(
+                            id,
+                            family,
+                            None,
+                            None,
+                            Some(packet),
+                        )))
                         .await
                         .is_err()
                     {
@@ -1276,6 +1390,13 @@ pub struct ScreenDisplays {
     /// The device's windows, where its platform lets it pick one by id.
     #[serde(default)]
     pub windows: Vec<lp_core::screen::Window>,
+}
+
+/// The `camera.list` result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CameraList {
+    /// The device's cameras, the first being the one shared by default.
+    pub cameras: Vec<lp_core::camera::Camera>,
 }
 
 /// The `screen.start` response, once the share has ended.

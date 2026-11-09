@@ -27,6 +27,11 @@ pub const FAKE_INPUT_ENV: &str = "LIGATURE_FAKE_INPUT";
 /// viewer params that take anything (milestone 8), so `lpctl screen` can be
 /// driven without a platform backend.
 pub const FAKE_SCREEN_ENV: &str = "LIGATURE_FAKE_SCREEN";
+/// Set to `1` to attach a camera that generates synthetic frames and sound,
+/// viewer params that take anything and a presenter that only counts
+/// (milestone 10), so `lpctl camera` can be driven without a platform
+/// backend.
+pub const FAKE_CAMERA_ENV: &str = "LIGATURE_FAKE_CAMERA";
 
 /// The platform's notification backend, if this platform has one; icons it
 /// writes for the platform go under `locations`.
@@ -164,6 +169,26 @@ pub async fn run(
             }),
         );
         receive_casts_in_lpview(&screen, &locations);
+    }
+    if std::env::var_os(FAKE_CAMERA_ENV).is_some_and(|v| v == "1") {
+        tracing::warn!("using the synthetic camera ({FAKE_CAMERA_ENV}=1)");
+        let camera = daemon.attach_camera(
+            Some(crate::screen::FakeCapture::generating_camera()),
+            Some(lp_core::screen::ScreenParams {
+                views: true,
+                audio_decodes: vec![
+                    lp_core::screen::AudioFormat::OPUS_STEREO,
+                    lp_core::screen::AudioFormat::OPUS_MONO,
+                ],
+                ..lp_core::screen::ScreenParams::default()
+            }),
+            Some(crate::screen::FakePresenter::new()),
+        );
+        if let Some(launcher) =
+            crate::screen::lpview_launcher_for(&locations, crate::screen::Family::Camera)
+        {
+            camera.set_on_offer(launcher);
+        }
     }
     #[cfg(target_os = "linux")]
     if std::env::var_os(FAKE_SCREEN_ENV).is_none() {

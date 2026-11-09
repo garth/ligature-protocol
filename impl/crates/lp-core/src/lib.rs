@@ -6,6 +6,7 @@
 //!
 //! See `docs/spec/00-overview.md` for the layering these modules correspond to.
 
+pub mod camera;
 pub mod capability;
 pub mod device;
 pub mod envelope;

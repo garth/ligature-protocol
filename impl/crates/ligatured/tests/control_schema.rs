@@ -60,6 +60,14 @@ fn control_messages_validate() {
         types::SCREEN_DECLINE,
         types::SCREEN_STOP,
         types::SCREEN_STATUS,
+        types::CAMERA_LIST,
+        types::CAMERA_START,
+        types::CAMERA_PRESENT,
+        types::CAMERA_CAST,
+        types::CAMERA_ACCEPT,
+        types::CAMERA_DECLINE,
+        types::CAMERA_STOP,
+        types::CAMERA_STATUS,
     ] {
         let mut r = Request::new(t, 7);
         r.name = Some("Alice".to_owned());
@@ -70,6 +78,8 @@ fn control_messages_validate() {
         r.width = Some(1280);
         r.frame_rate = Some(30);
         r.audio = Some(true);
+        r.camera = Some("0".to_owned());
+        r.present = Some(true);
         check(&v, &r);
     }
     check(&v, &Response::ok(1, &Empty {}).unwrap());
@@ -125,7 +135,7 @@ fn control_messages_validate() {
     check(
         &v,
         &Event {
-            event_type: TypeName::new(types::SCREEN_AUDIO),
+            event_type: TypeName::new(types::CAMERA_AUDIO),
             id: 1,
             offer: None,
             code: None,

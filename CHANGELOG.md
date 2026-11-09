@@ -30,6 +30,11 @@ release workflow publishes the section as the release notes with the installers.
   shows casts, a cast offered to the phone opens the watch screen or a notification, a
   watched share plays its sound with a Mute, and the phone's own sound goes with its screen
   once the recording permission Android puts it behind is allowed (LP-202).
+- The camera family, the screen family under its own names (milestone 10): `cameras` lists a
+  device's cameras, a camera is watched or cast with the device's microphone, and a device
+  that says `presents` shows a camera it is sent to its own programs as a camera. In the
+  daemon one sync runs both families; `lpctl camera` lists, presents, casts and stops, and
+  `lpview <device> --camera` watches one (LP-205, LP-206).
 
 ## [0.2.0-alpha] - 2026-11-08
 

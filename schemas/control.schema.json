@@ -51,6 +51,14 @@
         "org.ligatureprotocol.control.screen.decline",
         "org.ligatureprotocol.control.screen.stop",
         "org.ligatureprotocol.control.screen.status",
+        "org.ligatureprotocol.control.camera.list",
+        "org.ligatureprotocol.control.camera.start",
+        "org.ligatureprotocol.control.camera.present",
+        "org.ligatureprotocol.control.camera.cast",
+        "org.ligatureprotocol.control.camera.accept",
+        "org.ligatureprotocol.control.camera.decline",
+        "org.ligatureprotocol.control.camera.stop",
+        "org.ligatureprotocol.control.camera.status",
         "org.ligatureprotocol.control.input.drive",
         "org.ligatureprotocol.control.input.send",
         "org.ligatureprotocol.control.permissions",
@@ -65,7 +73,10 @@
         "org.ligatureprotocol.control.files.progress",
         "org.ligatureprotocol.control.screen.started",
         "org.ligatureprotocol.control.screen.frame",
-        "org.ligatureprotocol.control.screen.audio"
+        "org.ligatureprotocol.control.screen.audio",
+        "org.ligatureprotocol.control.camera.started",
+        "org.ligatureprotocol.control.camera.frame",
+        "org.ligatureprotocol.control.camera.audio"
       ]
     },
     "request": {
@@ -165,7 +176,15 @@
         },
         "audio": {
           "type": "boolean",
-          "description": "screen.start, screen.accept: whether the share's sound is wanted (no by default); screen.cast: whether it is offered (yes by default)."
+          "description": "screen.start, screen.accept: whether the share's sound is wanted (no by default); screen.cast: whether it is offered (yes by default). The camera requests take it the same way, camera.present wanting the microphone by default."
+        },
+        "camera": {
+          "type": "string",
+          "description": "camera.start, camera.present, camera.cast: the camera's id, or the first one when absent."
+        },
+        "present": {
+          "type": "boolean",
+          "description": "camera.cast: ask the receiver to present the camera to its programs rather than show it."
         },
         "width": {
           "type": "integer",
@@ -291,7 +310,7 @@
         },
         "started": {
           "type": "object",
-          "description": "screen.started: what the sharer settled on, the started message of capability.screen.schema.json without its type; exactly one of display and window names the source.",
+          "description": "screen.started, camera.started: what the sharer settled on, the started message of capability.screen.schema.json without its type; exactly one of display and window names the source, a camera's id standing as the display.",
           "required": [
             "format",
             "width",

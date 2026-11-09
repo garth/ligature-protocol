@@ -158,7 +158,7 @@ impl<'de> Deserialize<'de> for Format {
 
 /// The formats of a list, unknown ones passed over rather than failing the
 /// message.
-fn known_formats<'de, D: serde::Deserializer<'de>>(
+pub(crate) fn known_formats<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Vec<Format>, D::Error> {
     let values = Vec::<ciborium::Value>::deserialize(deserializer)?;
@@ -279,7 +279,7 @@ impl<'de> Deserialize<'de> for AudioFormat {
 
 /// The audio formats of a list, unknown ones passed over; an absent list is
 /// empty.
-fn known_audio_formats<'de, D: serde::Deserializer<'de>>(
+pub(crate) fn known_audio_formats<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Vec<AudioFormat>, D::Error> {
     let values = Option::<Vec<ciborium::Value>>::deserialize(deserializer)?;
@@ -308,6 +308,9 @@ pub struct ScreenParams {
     /// The audio formats it can decode and play as a viewer; empty when it
     /// plays none.
     pub audio_decodes: Vec<AudioFormat>,
+    /// The camera family alone (section 3i): the device presents a camera it
+    /// is sent to its platform's programs as a camera device.
+    pub presents: bool,
     /// The widest picture it takes as a viewer.
     pub max_width: u32,
     /// The tallest picture it takes as a viewer.
@@ -326,6 +329,7 @@ impl Default for ScreenParams {
             decodes: vec![Format::H264],
             audio_encodes: Vec::new(),
             audio_decodes: Vec::new(),
+            presents: false,
             max_width: 1920,
             max_height: 1080,
             max_frame_rate: 30,
@@ -338,7 +342,15 @@ impl ScreenParams {
     /// Missing fields take the schema's defaults.
     #[must_use]
     pub fn from_descriptor(descriptor: &Descriptor) -> Option<Self> {
-        if descriptor.capability_type.as_str() != SCREEN_TYPE {
+        Self::from_descriptor_of(descriptor, SCREEN_TYPE)
+    }
+
+    /// Reads the params of a descriptor of the family `type_name`, the screen
+    /// family's or one with its shapes (the camera's); `None` if the
+    /// descriptor is another family's.
+    #[must_use]
+    pub fn from_descriptor_of(descriptor: &Descriptor, type_name: &str) -> Option<Self> {
+        if descriptor.capability_type.as_str() != type_name {
             return None;
         }
         let mut params = Self::default();
@@ -349,6 +361,7 @@ impl ScreenParams {
                     (Some("shares"), ciborium::Value::Bool(b)) => params.shares = *b,
                     (Some("views"), ciborium::Value::Bool(b)) => params.views = *b,
                     (Some("receives"), ciborium::Value::Bool(b)) => params.receives = *b,
+                    (Some("presents"), ciborium::Value::Bool(b)) => params.presents = *b,
                     (Some("encodes"), ciborium::Value::Array(items)) => {
                         params.encodes = Format::known(items);
                     }
@@ -394,12 +407,19 @@ impl ScreenParams {
 /// the binding standing in for the principal (ADR 0040).
 #[must_use]
 pub fn screen_descriptor(params: &ScreenParams) -> Descriptor {
+    descriptor_of(SCREEN_TYPE, params)
+}
+
+/// The descriptor of the family `type_name` with the screen family's params.
+#[must_use]
+pub fn descriptor_of(type_name: &str, params: &ScreenParams) -> Descriptor {
     use ciborium::Value;
-    let mut d = Descriptor::new(SCREEN_TYPE, Scope::Device);
+    let mut d = Descriptor::new(type_name, Scope::Device);
     d.params = Some(Value::Map(vec![
         (Value::Text("shares".into()), Value::Bool(params.shares)),
         (Value::Text("views".into()), Value::Bool(params.views)),
         (Value::Text("receives".into()), Value::Bool(params.receives)),
+        (Value::Text("presents".into()), Value::Bool(params.presents)),
         (
             Value::Text("encodes".into()),
             Value::Array(params.encodes.iter().map(|f| f.to_value()).collect()),
@@ -503,7 +523,7 @@ pub struct Window {
     pub scale: Option<f64>,
 }
 
-/// What kind of thing a cast shares.
+/// What kind of thing a share's source is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SourceKind {
@@ -511,6 +531,8 @@ pub enum SourceKind {
     Display,
     /// One window, never driven.
     Window,
+    /// A camera: the camera family's only kind (section 3i), never driven.
+    Camera,
 }
 
 impl fmt::Display for SourceKind {
@@ -518,6 +540,7 @@ impl fmt::Display for SourceKind {
         f.write_str(match self {
             Self::Display => "display",
             Self::Window => "window",
+            Self::Camera => "camera",
         })
     }
 }
@@ -644,6 +667,10 @@ pub struct Offer {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub audio: Vec<AudioFormat>,
+    /// The camera family alone: the caster asks for the camera to be
+    /// presented to the receiver's programs rather than shown.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub present: bool,
 }
 
 /// `started`: what the sharer settled on. Exactly one of `display` and
@@ -862,6 +889,7 @@ mod tests {
             decodes: vec![Format::H264],
             audio_encodes: vec![AudioFormat::OPUS_STEREO],
             audio_decodes: vec![AudioFormat::OPUS_STEREO, AudioFormat::OPUS_MONO],
+            presents: false,
             max_width: 1280,
             max_height: 720,
             max_frame_rate: 60,
@@ -1004,6 +1032,7 @@ mod tests {
                 formats: vec![Format::H264],
                 max_frame_rate: 60,
                 audio: vec![AudioFormat::OPUS_STEREO],
+                present: false,
             }),
             ScreenMessage::Start(Start {
                 display: None,

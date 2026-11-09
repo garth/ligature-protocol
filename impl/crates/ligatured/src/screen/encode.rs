@@ -41,6 +41,9 @@ const CAP_FACTOR: u64 = 4;
 /// instead moves the quantiser from frame to frame and redraws the text with
 /// new artifacts.
 pub const X264_QP: &str = "18";
+/// The constant rate factor x264 codes a camera's picture at (milestone 10
+/// decision 3): its default, good for a face and a room, under the rate cap.
+pub const X264_CAMERA_CRF: &str = "23";
 /// The most frames between keyframes, as a safety net: keyframes come at
 /// the start of an encoder and when one is asked for ([`LiveEncoder`]).
 pub const KEYFRAME_BACKSTOP: u32 = 10_000;
@@ -102,6 +105,7 @@ pub fn encoder_args(encoder: Encoder, input: &RawInput, settings: &Settings) -> 
     let rate = settings.frame_rate.max(1);
     let rate_s = rate.to_string();
     let br = bit_rate(settings.width, settings.height, rate);
+    let camera = settings.kind == lp_core::screen::SourceKind::Camera;
     let mut args: Vec<String> = ["-hide_banner", "-loglevel", "error", "-nostdin"]
         .iter()
         .map(|s| (*s).to_owned())
@@ -173,8 +177,11 @@ pub fn encoder_args(encoder: Encoder, input: &RawInput, settings: &Settings) -> 
                 "superfast",
                 "-tune",
                 "zerolatency",
-                "-qp",
-                X264_QP,
+                // A screen holds its quantiser, so what did not change is
+                // copied; a camera's picture changes everywhere all the
+                // time, so it is coded to a quality under a rate cap.
+                if camera { "-crf" } else { "-qp" },
+                if camera { X264_CAMERA_CRF } else { X264_QP },
                 "-pix_fmt",
                 match settings.format.chroma {
                     Chroma::Yuv420 => "yuv420p",
@@ -188,12 +195,15 @@ pub fn encoder_args(encoder: Encoder, input: &RawInput, settings: &Settings) -> 
         ),
     }
     // The hardware encoders aim for a rate under a cap; x264 holds its
-    // quantiser instead, which a cap would move.
+    // quantiser for a screen instead, which a cap would move, and takes the
+    // cap alone for a camera.
+    let cap = (br * CAP_FACTOR).to_string();
     if encoder != Encoder::X264 {
-        let cap = (br * CAP_FACTOR).to_string();
         args.extend(
             ["-b:v", &br.to_string(), "-maxrate", &cap, "-bufsize", &cap].map(str::to_owned),
         );
+    } else if camera {
+        args.extend(["-maxrate", &cap, "-bufsize", &cap].map(str::to_owned));
     }
     let gop = KEYFRAME_BACKSTOP.to_string();
     args.extend(
@@ -750,6 +760,67 @@ impl LiveEncoder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Milestone 10 decision 3: a camera's picture is coded to a quality
+    /// under a rate cap, a screen's at a constant quantiser with none.
+    #[test]
+    fn a_camera_is_coded_to_a_rate_and_a_screen_to_a_quantiser() {
+        let input = RawInput {
+            width: 1280,
+            height: 720,
+            pix_fmt: "bgr0".to_owned(),
+        };
+        let settings = |kind| Settings {
+            display: "0".to_owned(),
+            kind,
+            format: Format::H264,
+            audio: None,
+            width: 1280,
+            height: 720,
+            frame_rate: 30,
+            viewer: String::new(),
+            cast: false,
+        };
+        let camera = encoder_args(
+            Encoder::X264,
+            &input,
+            &settings(lp_core::screen::SourceKind::Camera),
+        )
+        .join(" ");
+        assert!(camera.contains("-crf 23"), "{camera}");
+        assert!(!camera.contains("-qp "), "{camera}");
+        let cap = bit_rate(1280, 720, 30) * CAP_FACTOR;
+        assert!(
+            camera.contains(&format!("-maxrate {cap} -bufsize {cap}")),
+            "{camera}"
+        );
+        assert!(
+            !camera.contains("-b:v"),
+            "x264 takes the cap alone: {camera}"
+        );
+        let screen = encoder_args(
+            Encoder::X264,
+            &input,
+            &settings(lp_core::screen::SourceKind::Display),
+        )
+        .join(" ");
+        assert!(
+            screen.contains("-qp 18") && !screen.contains("-crf"),
+            "{screen}"
+        );
+        assert!(!screen.contains("-maxrate"), "{screen}");
+        // The hardware encoders aim at a rate either way.
+        let hardware = encoder_args(
+            Encoder::Vaapi,
+            &input,
+            &settings(lp_core::screen::SourceKind::Camera),
+        )
+        .join(" ");
+        assert!(
+            hardware.contains("-b:v") && hardware.contains("-maxrate"),
+            "{hardware}"
+        );
+    }
 
     const AUD: [u8; 6] = [0, 0, 0, 1, 0x09, 0xf0];
     const SPS: [u8; 7] = [0, 0, 0, 1, 0x67, 1, 2];

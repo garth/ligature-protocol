@@ -83,6 +83,9 @@ pub struct Daemon {
     files: Mutex<Option<Arc<crate::files_sync::FilesSync>>>,
     input: Mutex<Option<Arc<crate::input::InputSync>>>,
     screen: Mutex<Option<Arc<crate::screen::ScreenSync>>>,
+    /// The camera family (milestone 10): the screen sync run under the
+    /// camera's names.
+    camera: Mutex<Option<Arc<crate::screen::ScreenSync>>>,
     ceremonies: Arc<std::sync::atomic::AtomicUsize>,
 }
 
@@ -219,6 +222,7 @@ impl Daemon {
             files: Mutex::new(None),
             input: Mutex::new(None),
             screen: Mutex::new(None),
+            camera: Mutex::new(None),
             ceremonies: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         });
         crate::gossip::register(&daemon);
@@ -678,6 +682,9 @@ impl Daemon {
         if let Some(sync) = self.screen_sync() {
             sync.detach(peer);
         }
+        if let Some(sync) = self.camera_sync() {
+            sync.detach(peer);
+        }
     }
 
     /// Starts carrying notifications through the given backend. Called once
@@ -758,6 +765,38 @@ impl Daemon {
     #[must_use]
     pub fn screen_sync(&self) -> Option<Arc<crate::screen::ScreenSync>> {
         self.screen
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Starts the camera family (milestone 10): a capture if this platform
+    /// shares a camera, viewer params if it shows one, and a presenter if it
+    /// can present one to its programs. Called once at startup.
+    pub fn attach_camera(
+        self: &Arc<Self>,
+        capture: Option<Arc<dyn crate::screen::Capture>>,
+        viewer: Option<lp_core::screen::ScreenParams>,
+        presenter: Option<Arc<dyn crate::screen::Presenter>>,
+    ) -> Arc<crate::screen::ScreenSync> {
+        let sync = crate::screen::ScreenSync::start_family(
+            self.clone(),
+            crate::screen::Family::Camera,
+            capture,
+            viewer,
+            presenter,
+        );
+        *self
+            .camera
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(sync.clone());
+        sync
+    }
+
+    /// The camera synchroniser, if the camera family is attached.
+    #[must_use]
+    pub fn camera_sync(&self) -> Option<Arc<crate::screen::ScreenSync>> {
+        self.camera
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()

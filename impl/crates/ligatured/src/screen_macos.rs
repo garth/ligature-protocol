@@ -196,6 +196,8 @@ impl Capture for MacScreen {
         let target = match settings.kind {
             SourceKind::Display => sck::Target::Display(id),
             SourceKind::Window => sck::Target::Window(id),
+            // A camera is the camera family's, never ScreenCaptureKit's.
+            SourceKind::Camera => return Err(RefuseReason::NoDisplay),
         };
         if !sck::screen_access() {
             sck::request_screen_access();
@@ -381,7 +383,7 @@ impl Capture for MacScreen {
             control,
             region: match settings.kind {
                 SourceKind::Display => self.region(&settings.display),
-                SourceKind::Window => None,
+                SourceKind::Window | SourceKind::Camera => None,
             },
         })
     }

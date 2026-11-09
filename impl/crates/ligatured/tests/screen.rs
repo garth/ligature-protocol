@@ -611,6 +611,7 @@ async fn a_cast_is_offered_taken_and_runs_with_sound() {
                 CastSource {
                     display: None,
                     window: Some("w-1".to_owned()),
+                    ..CastSource::default()
                 },
                 true,
             )
@@ -745,6 +746,7 @@ async fn a_cast_is_offered_taken_and_runs_with_sound() {
                 CastSource {
                     display: None,
                     window: Some(String::new()),
+                    ..CastSource::default()
                 },
                 false,
             )
@@ -777,6 +779,7 @@ async fn a_cast_is_offered_taken_and_runs_with_sound() {
             CastSource {
                 display: None,
                 window: Some("nope".to_owned()),
+                ..CastSource::default()
             },
             true,
         )

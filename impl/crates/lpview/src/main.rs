@@ -62,6 +62,11 @@ struct Options {
     /// Picture only: ask for no sound, and play none that is offered.
     #[arg(long)]
     mute: bool,
+    /// Watch one of the device's cameras, with its microphone, instead of
+    /// its screen: the camera with this id from `lpctl camera list`, or its
+    /// first one when no id is given. A camera is watched, never driven.
+    #[arg(long, num_args = 0..=1, default_missing_value = "", conflicts_with_all = ["display", "window", "actual_size"])]
+    camera: Option<String>,
     /// The widest picture wanted.
     #[arg(long, default_value_t = 1920)]
     width: u32,
@@ -220,6 +225,7 @@ struct OptionsForNet {
     window: Option<String>,
     receive: bool,
     mute: bool,
+    camera: Option<String>,
     width: u32,
     height: u32,
     rate: u32,
@@ -235,6 +241,7 @@ impl From<&Options> for OptionsForNet {
             window: o.window.clone(),
             receive: o.receive,
             mute: o.mute,
+            camera: o.camera.clone(),
             width: o.width,
             height: o.height,
             rate: o.rate,
@@ -641,7 +648,12 @@ async fn network(
         .iter()
         .find(|p| p.peer == peer)
         .and_then(|p| p.capabilities.iter().find_map(InputParams::from_descriptor));
-    if let Some(why) = watch_only(input) {
+    let camera = options.camera.is_some();
+    if camera {
+        let _ = proxy.send_event(UserEvent::WatchOnly(
+            "a camera is watched, not driven".to_owned(),
+        ));
+    } else if let Some(why) = watch_only(input) {
         let _ = proxy.send_event(UserEvent::WatchOnly(why.to_owned()));
     }
 
@@ -700,8 +712,28 @@ async fn network(
 
     // A cast offered to this device: take it, and the share runs as a watch.
     if options.receive {
-        let mut req = Request::new(types::SCREEN_ACCEPT, 0);
+        let mut req = Request::new(
+            if camera {
+                types::CAMERA_ACCEPT
+            } else {
+                types::SCREEN_ACCEPT
+            },
+            0,
+        );
         req.key = Some(peer);
+        req.audio = Some(!options.mute);
+        return run_share(req, watch, proxy, picture, decoder_slot, driver).await;
+    }
+
+    // A camera: the one named, or the device's first, with its microphone.
+    if let Some(id) = &options.camera {
+        let mut req = Request::new(types::CAMERA_START, 0);
+        req.key = Some(peer);
+        req.camera = Some(id.clone()).filter(|id| !id.is_empty());
+        req.width = Some(options.width);
+        req.height = Some(options.height);
+        req.formats = options.formats.clone();
+        req.frame_rate = Some(options.rate.min(30));
         req.audio = Some(!options.mute);
         return run_share(req, watch, proxy, picture, decoder_slot, driver).await;
     }

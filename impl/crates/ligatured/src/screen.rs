@@ -25,6 +25,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use lp_core::camera::{
+    CAMERA_TYPE, Camera, CameraMessage, Cameras, camera_descriptor, camera_params,
+};
 use lp_core::input::Region;
 use lp_core::screen::{
     Audio, AudioFormat, CHUNK_BYTES, Display, Displays, Format, Frame, Offer, RefuseReason,
@@ -58,6 +61,81 @@ const MAX_FRAME_RATE: u32 = 60;
 const QUEUED_FRAMES: usize = 8;
 /// The smallest cap on a reassembled frame, for a tiny picture.
 const MIN_FRAME_CAP: usize = 1 << 20;
+
+/// Which capability family a sync runs: the screen's, or the camera's, which
+/// is the screen family under its own type names (chapter 05 section 3i).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Family {
+    /// Displays and windows.
+    Screen,
+    /// Cameras, with the microphone.
+    Camera,
+}
+
+impl Family {
+    /// The capability type, which is the purpose of the family's streams.
+    #[must_use]
+    pub const fn type_name(self) -> &'static str {
+        match self {
+            Self::Screen => SCREEN_TYPE,
+            Self::Camera => CAMERA_TYPE,
+        }
+    }
+
+    /// What the family's source is called in messages to people.
+    #[must_use]
+    pub const fn noun(self) -> &'static str {
+        match self {
+            Self::Screen => "screen",
+            Self::Camera => "camera",
+        }
+    }
+
+    fn descriptor(self, params: &ScreenParams) -> lp_core::capability::Descriptor {
+        match self {
+            Self::Screen => screen_descriptor(params),
+            Self::Camera => camera_descriptor(params),
+        }
+    }
+
+    fn params_of(self, descriptor: &lp_core::capability::Descriptor) -> Option<ScreenParams> {
+        match self {
+            Self::Screen => ScreenParams::from_descriptor(descriptor),
+            Self::Camera => camera_params(descriptor),
+        }
+    }
+}
+
+/// A received camera shown to this device's other programs as a camera
+/// device, and its sound as a microphone: the platform's side of `presents`
+/// (milestone 10 decision 5).
+pub trait Presenter: Send + Sync {
+    /// Whether a camera can be presented right now.
+    fn available(&self) -> bool;
+    /// Starts presenting the share `started` from the device named `from`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Io`] when the platform's device cannot be made.
+    fn start(&self, from: &str, started: &Started) -> Result<Box<dyn Presented>, Error>;
+}
+
+/// A camera being presented; dropping it takes the device away again.
+pub trait Presented: Send {
+    /// One whole encoded frame. False once the device is gone.
+    fn frame(&mut self, key: bool, bytes: &[u8]) -> bool;
+    /// One packet of the microphone's sound. False once it is gone.
+    fn audio(&mut self, bytes: &[u8]) -> bool;
+}
+
+/// A share this device presents: what `present` returns.
+#[derive(Debug)]
+pub struct Presenting {
+    /// What the sharer settled on.
+    pub started: Started,
+    /// Why the share ended, when it does.
+    pub ended: oneshot::Receiver<StopReason>,
+}
 
 /// One encoded frame from the platform's encoder.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -128,7 +206,8 @@ pub struct Settings {
 impl Settings {
     fn started(&self) -> Started {
         let (display, window) = match self.kind {
-            SourceKind::Display => (Some(self.display.clone()), None),
+            // A camera is a display by another name to the shared machine.
+            SourceKind::Display | SourceKind::Camera => (Some(self.display.clone()), None),
             SourceKind::Window => (None, Some(self.display.clone())),
         };
         Started {
@@ -165,6 +244,12 @@ pub trait Capture: Send + Sync {
     /// The windows this device can share by id, where its platform lets it
     /// pick one without a picker; empty elsewhere.
     fn windows(&self) -> Vec<Window> {
+        Vec::new()
+    }
+    /// The cameras this device can share, for a capture of the camera
+    /// family: the first is the one a `start` without an id shares. A screen
+    /// capture has none.
+    fn cameras(&self) -> Vec<Camera> {
         Vec::new()
     }
     /// Lets the platform's own picker choose a source of `kind` for a cast,
@@ -256,6 +341,9 @@ pub struct CastSource {
     pub display: Option<String>,
     /// A window's id, instead.
     pub window: Option<String>,
+    /// For a camera: ask the receiver to present it to its programs rather
+    /// than show it.
+    pub present: bool,
 }
 
 /// What is told when a cast is offered to this device: the caster and its
@@ -312,6 +400,10 @@ pub struct WatchingStatus {
     /// Whether the sharer started it, as a cast this device received.
     #[serde(default)]
     pub cast: bool,
+    /// Whether this device presents it to its programs, a camera, rather
+    /// than showing it.
+    #[serde(default)]
+    pub presented: bool,
 }
 
 /// What `lpctl screen status` shows.
@@ -324,6 +416,10 @@ pub struct ScreenStatus {
     /// What this device advertises: it shows casts offered to it.
     #[serde(default)]
     pub receives: bool,
+    /// What this device advertises, of cameras: it presents one it is sent
+    /// to its programs.
+    #[serde(default)]
+    pub presents: bool,
     /// The shares this device runs.
     pub sharing: Vec<Sharing>,
     /// The shares this device watches.
@@ -350,6 +446,7 @@ struct WatchingState {
     frames: u64,
     audio: u64,
     cast: bool,
+    presented: bool,
     /// A stop from outside the viewer: `lpctl screen stop`.
     stop: mpsc::UnboundedSender<ShareControl>,
 }
@@ -374,6 +471,11 @@ struct PendingOffer {
 /// The screen synchroniser for one daemon.
 pub struct ScreenSync {
     daemon: Arc<Daemon>,
+    /// The family this sync runs.
+    family: Family,
+    /// What presents a received camera to this device's programs, if
+    /// anything does.
+    presenter: Option<Arc<dyn Presenter>>,
     capture: Option<Arc<dyn Capture>>,
     /// What this device takes as a viewer, if it views at all.
     viewer: Option<ScreenParams>,
@@ -404,8 +506,23 @@ impl ScreenSync {
         capture: Option<Arc<dyn Capture>>,
         viewer: Option<ScreenParams>,
     ) -> Arc<Self> {
+        Self::start_family(daemon, Family::Screen, capture, viewer, None)
+    }
+
+    /// Starts `family` for `daemon`: the screen's, or the camera's with a
+    /// capture that lists cameras and, where the platform can, a presenter.
+    #[must_use]
+    pub fn start_family(
+        daemon: Arc<Daemon>,
+        family: Family,
+        capture: Option<Arc<dyn Capture>>,
+        viewer: Option<ScreenParams>,
+        presenter: Option<Arc<dyn Presenter>>,
+    ) -> Arc<Self> {
         let this = Arc::new(Self {
             daemon: daemon.clone(),
+            family,
+            presenter,
             capture,
             viewer,
             on_offer: Mutex::new(None),
@@ -414,7 +531,9 @@ impl ScreenSync {
             pending: Mutex::new(HashMap::new()),
             offered: tokio::sync::Mutex::new(None),
         });
-        daemon.manager().on_stream(SCREEN_TYPE, this.handler());
+        daemon
+            .manager()
+            .on_stream(family.type_name(), this.handler());
         let advertise = this.clone();
         tokio::spawn(async move {
             loop {
@@ -439,6 +558,9 @@ impl ScreenSync {
         let mut params = self.viewer.clone().unwrap_or_default();
         params.views = self.viewer.is_some();
         params.receives = params.views && lock(&self.on_offer).is_some();
+        params.presents = params.views
+            && self.family == Family::Camera
+            && self.presenter.as_ref().is_some_and(|p| p.available());
         match self.capture.as_ref().map(|c| c.params()) {
             Some(capture) => {
                 params.shares = capture.shares;
@@ -461,18 +583,23 @@ impl ScreenSync {
         if offered.as_ref() == Some(&params) {
             return;
         }
-        self.daemon.registry().withdraw(SCREEN_TYPE).await;
+        self.daemon
+            .registry()
+            .withdraw(self.family.type_name())
+            .await;
         if params.offers_anything() {
             self.daemon
                 .registry()
-                .offer(screen_descriptor(&params))
+                .offer(self.family.descriptor(&params))
                 .await;
         }
         tracing::info!(
+            family = self.family.noun(),
             shares = params.shares,
             views = params.views,
             receives = params.receives,
-            "screen capability advertised"
+            presents = params.presents,
+            "capability advertised"
         );
         *offered = Some(params);
     }
@@ -485,6 +612,7 @@ impl ScreenSync {
             shares: params.shares,
             views: params.views,
             receives: params.receives,
+            presents: params.presents,
             sharing: lock(&self.sharing)
                 .values()
                 .map(|s| Sharing {
@@ -504,6 +632,7 @@ impl ScreenSync {
                     frames: w.frames,
                     audio: w.audio,
                     cast: w.cast,
+                    presented: w.presented,
                 })
                 .collect(),
             offered: lock(&self.pending)
@@ -557,10 +686,9 @@ impl ScreenSync {
     pub async fn sources(&self, peer: &PublicKey) -> Result<Displays, Error> {
         self.sharer_params(peer)?;
         let mut stream = self.open(peer).await?;
-        stream
-            .send(&ScreenMessage::Displays(Displays::default()))
+        self.send(&mut stream, ScreenMessage::Displays(Displays::default()))
             .await?;
-        let answer = tokio::time::timeout(Duration::from_secs(10), stream.recv::<ScreenMessage>())
+        let answer = tokio::time::timeout(Duration::from_secs(10), self.recv(&mut stream))
             .await
             .map_err(|_| Error::Transport(format!("{peer} did not list its displays")))??;
         stream.finish();
@@ -632,7 +760,8 @@ impl ScreenSync {
             ..start
         };
         let mut stream = self.open(peer).await?;
-        stream.send(&ScreenMessage::Start(start.clone())).await?;
+        self.send(&mut stream, ScreenMessage::Start(start.clone()))
+            .await?;
         let started = self.await_started(peer, &mut stream, &start, None).await?;
         Ok(self.watching(peer, started, stream, false))
     }
@@ -647,7 +776,7 @@ impl ScreenSync {
         start: &Start,
         offered: Option<&Source>,
     ) -> Result<Started, Error> {
-        let answer = tokio::time::timeout(START_TIMEOUT, stream.recv::<ScreenMessage>())
+        let answer = tokio::time::timeout(START_TIMEOUT, self.recv(stream))
             .await
             .map_err(|_| Error::Transport(format!("{peer} did not answer start")))??;
         let started = match answer {
@@ -685,6 +814,19 @@ impl ScreenSync {
         stream: FramedStream,
         cast: bool,
     ) -> Watching {
+        self.watching_as(peer, started, stream, cast, false)
+    }
+
+    /// As [`Self::watching`], saying whether the share is presented to this
+    /// device's programs rather than handed to a viewer.
+    fn watching_as(
+        self: &Arc<Self>,
+        peer: &PublicKey,
+        started: Started,
+        stream: FramedStream,
+        cast: bool,
+        presented: bool,
+    ) -> Watching {
         let (frames_tx, frames) = mpsc::channel(QUEUED_FRAMES);
         let (control, control_rx) = mpsc::unbounded_channel();
         let key = (*peer, started.source_id().to_owned());
@@ -696,6 +838,7 @@ impl ScreenSync {
                 frames: 0,
                 audio: 0,
                 cast,
+                presented,
                 stop: control.clone(),
             },
         );
@@ -730,13 +873,29 @@ impl ScreenSync {
         let Some(capture) = self.capture.clone() else {
             return Err(Error::Io("this device does not share".to_owned()));
         };
-        let receiver = self.receiver_params(peer)?;
+        // A camera to be presented needs a device that presents; anything
+        // else, one that shows casts.
+        let receiver = if source.present {
+            self.peer_params(peer)?
+        } else {
+            self.receiver_params(peer)?
+        };
         let params = capture.params();
         if !params.shares {
-            return Err(Error::Io(
-                "this device does not share its screen right now".to_owned(),
-            ));
+            return Err(Error::Io(format!(
+                "this device does not share its {} right now",
+                self.family.noun()
+            )));
         }
+        if source.present && !(receiver.views && receiver.presents) {
+            return Err(Error::Refused(format!(
+                "{} does not present a camera to its programs; cast without presenting to show \
+                 it there",
+                self.name(peer)
+            )));
+        }
+        let own = self.displays_of(&capture);
+        let whole = self.source_kind();
         let (chosen, kind) = match (&source.window, &source.display) {
             // An empty window id: the platform's picker chooses.
             (Some(id), _) if id.is_empty() => {
@@ -759,19 +918,17 @@ impl ScreenSync {
                 SourceKind::Window,
             ),
             (None, Some(id)) => (
-                capture
-                    .displays()
-                    .iter()
+                own.iter()
                     .find(|d| &d.id == id)
-                    .map(Source::display)
-                    .ok_or_else(|| Error::Io(format!("no display {id}")))?,
-                SourceKind::Display,
+                    .map(|d| source_of(d, whole))
+                    .ok_or_else(|| Error::Io(format!("no {whole} {id}")))?,
+                whole,
             ),
             (None, None) => (
-                primary(&capture.displays())
-                    .map(Source::display)
-                    .ok_or_else(|| Error::Io("no display to cast".to_owned()))?,
-                SourceKind::Display,
+                primary(&own)
+                    .map(|d| source_of(d, whole))
+                    .ok_or_else(|| Error::Io(format!("no {whole} to cast")))?,
+                whole,
             ),
         };
         if lock(&self.sharing).contains_key(&chosen.id) {
@@ -786,6 +943,7 @@ impl ScreenSync {
             } else {
                 Vec::new()
             },
+            present: source.present,
         };
         if !offer.formats.iter().any(|f| receiver.decodes.contains(f)) {
             return Err(Error::Chain(
@@ -797,13 +955,10 @@ impl ScreenSync {
             .device_display_name(peer)
             .unwrap_or_else(|| peer.fingerprint());
         let mut stream = self.open(peer).await?;
-        stream.send(&ScreenMessage::Offer(offer)).await?;
-        let answer = tokio::time::timeout(
-            OFFER_TIMEOUT + START_TIMEOUT,
-            stream.recv::<ScreenMessage>(),
-        )
-        .await
-        .map_err(|_| Error::Transport(format!("{name} did not answer the offer")))??;
+        self.send(&mut stream, ScreenMessage::Offer(offer)).await?;
+        let answer = tokio::time::timeout(OFFER_TIMEOUT + START_TIMEOUT, self.recv(&mut stream))
+            .await
+            .map_err(|_| Error::Transport(format!("{name} did not answer the offer")))??;
         let start = match answer {
             Some(ScreenMessage::Start(start)) => start,
             Some(ScreenMessage::Refused(Refused { reason })) => {
@@ -824,7 +979,7 @@ impl ScreenSync {
         {
             Ok(started) => started,
             Err(reason) => {
-                refuse(&mut stream, reason).await;
+                self.refuse(&mut stream, reason).await;
                 return Err(Error::Refused(format!(
                     "the cast to {name} could not start: {reason}"
                 )));
@@ -922,15 +1077,16 @@ impl ScreenSync {
             .manager()
             .peer(peer)
             .ok_or_else(|| Error::Transport(format!("{peer} is not connected")))?;
-        open_on(&conn, SCREEN_TYPE).await
+        open_on(&conn, self.family.type_name()).await
     }
 
     fn sharer_params(&self, peer: &PublicKey) -> Result<ScreenParams, Error> {
         let params = self.peer_params(peer)?;
         if !params.shares {
             return Err(Error::Refused(format!(
-                "{} does not share its screen right now",
-                self.name(peer)
+                "{} does not share its {} right now",
+                self.name(peer),
+                self.family.noun()
             )));
         }
         Ok(params)
@@ -960,12 +1116,13 @@ impl ScreenSync {
             .and_then(|caps| {
                 caps.capabilities
                     .iter()
-                    .find_map(ScreenParams::from_descriptor)
+                    .find_map(|d| self.family.params_of(d))
             })
             .ok_or_else(|| {
                 Error::Refused(format!(
-                    "{} offers no screen: it is not connected, or shares and shows none",
-                    self.name(peer)
+                    "{} offers no {noun}: it is not connected, or shares and shows none",
+                    self.name(peer),
+                    noun = self.family.noun()
                 ))
             })
     }
@@ -1003,7 +1160,7 @@ impl ScreenSync {
         let mut waiting_key = false;
         let reason = loop {
             tokio::select! {
-                incoming = stream.recv::<ScreenMessage>() => {
+                incoming = self.recv(&mut stream) => {
                     tracing::trace!(peer = %key.0, ?incoming, "from the sharer");
                     match incoming {
                         Ok(Some(ScreenMessage::Frame(frame))) => {
@@ -1028,13 +1185,13 @@ impl ScreenSync {
                                     // The viewer is behind: drop until a keyframe arrives
                                     // and the queue has room, asking for one now.
                                     waiting_key = true;
-                                    if stream.send(&ScreenMessage::Keyframe).await.is_err() {
+                                    if self.send(&mut stream, ScreenMessage::Keyframe).await.is_err() {
                                         break StopReason::Error;
                                     }
                                 }
                                 Err(mpsc::error::TrySendError::Closed(_)) => {
                                     // The viewer went away: tell the sharer.
-                                    let _ = stream.send(&ScreenMessage::Stop(Stop { reason: StopReason::Viewer })).await;
+                                    let _ = self.send(&mut stream, ScreenMessage::Stop(Stop { reason: StopReason::Viewer })).await;
                                     stream.finish();
                                     break StopReason::Viewer;
                                 }
@@ -1051,7 +1208,7 @@ impl ScreenSync {
                             match sent {
                                 Ok(()) | Err(mpsc::error::TrySendError::Full(_)) => {}
                                 Err(mpsc::error::TrySendError::Closed(_)) => {
-                                    let _ = stream.send(&ScreenMessage::Stop(Stop { reason: StopReason::Viewer })).await;
+                                    let _ = self.send(&mut stream, ScreenMessage::Stop(Stop { reason: StopReason::Viewer })).await;
                                     stream.finish();
                                     break StopReason::Viewer;
                                 }
@@ -1067,12 +1224,12 @@ impl ScreenSync {
                 wanted = control.recv() => {
                     match wanted {
                         Some(ShareControl::Keyframe) => {
-                            if stream.send(&ScreenMessage::Keyframe).await.is_err() {
+                            if self.send(&mut stream, ScreenMessage::Keyframe).await.is_err() {
                                 break StopReason::Error;
                             }
                         }
                         Some(ShareControl::Stop) | None => {
-                            let _ = stream.send(&ScreenMessage::Stop(Stop { reason: StopReason::Viewer })).await;
+                            let _ = self.send(&mut stream, ScreenMessage::Stop(Stop { reason: StopReason::Viewer })).await;
                             stream.finish();
                             break StopReason::Viewer;
                         }
@@ -1094,7 +1251,7 @@ impl ScreenSync {
             return;
         }
         // The first message says what the stream is for.
-        let first = match stream.recv::<ScreenMessage>().await {
+        let first = match self.recv(&mut stream).await {
             Ok(Some(m)) => m,
             _ => return,
         };
@@ -1108,13 +1265,24 @@ impl ScreenSync {
                     stream.reset(lp_core::frame::REFUSED_CODE);
                     return;
                 };
-                let windows = capture.windows();
-                let _ = stream
-                    .send(&ScreenMessage::Displays(Displays {
-                        displays: Some(capture.displays()),
-                        windows: (!windows.is_empty()).then_some(windows),
-                    }))
-                    .await;
+                let _ = match self.family {
+                    Family::Screen => {
+                        let windows = capture.windows();
+                        stream
+                            .send(&ScreenMessage::Displays(Displays {
+                                displays: Some(capture.displays()),
+                                windows: (!windows.is_empty()).then_some(windows),
+                            }))
+                            .await
+                    }
+                    Family::Camera => {
+                        stream
+                            .send(&CameraMessage::Cameras(Cameras {
+                                cameras: Some(capture.cameras()),
+                            }))
+                            .await
+                    }
+                };
                 stream.finish();
                 return;
             }
@@ -1129,25 +1297,27 @@ impl ScreenSync {
             stream.reset(lp_core::frame::REFUSED_CODE);
             return;
         };
+        let own = self.displays_of(&capture);
+        let whole = self.source_kind();
         let (chosen, kind) = match (&start.window, &start.display) {
             (Some(id), _) => match capture.windows().iter().find(|w| &w.id == id) {
                 Some(w) => (Source::window(w), SourceKind::Window),
                 None => {
-                    refuse(&mut stream, RefuseReason::NoDisplay).await;
+                    self.refuse(&mut stream, RefuseReason::NoDisplay).await;
                     return;
                 }
             },
-            (None, Some(id)) => match capture.displays().iter().find(|d| &d.id == id) {
-                Some(d) => (Source::display(d), SourceKind::Display),
+            (None, Some(id)) => match own.iter().find(|d| &d.id == id) {
+                Some(d) => (source_of(d, whole), whole),
                 None => {
-                    refuse(&mut stream, RefuseReason::NoDisplay).await;
+                    self.refuse(&mut stream, RefuseReason::NoDisplay).await;
                     return;
                 }
             },
-            (None, None) => match primary(&capture.displays()) {
-                Some(d) => (Source::display(d), SourceKind::Display),
+            (None, None) => match primary(&own) {
+                Some(d) => (source_of(d, whole), whole),
                 None => {
-                    refuse(&mut stream, RefuseReason::NoDisplay).await;
+                    self.refuse(&mut stream, RefuseReason::NoDisplay).await;
                     return;
                 }
             },
@@ -1158,7 +1328,7 @@ impl ScreenSync {
         {
             Ok(started) => started,
             Err(reason) => {
-                refuse(&mut stream, reason).await;
+                self.refuse(&mut stream, reason).await;
                 return;
             }
         };
@@ -1171,7 +1341,7 @@ impl ScreenSync {
     /// then watches as for a share this device asked for.
     async fn receive(self: Arc<Self>, peer: PublicKey, mut stream: FramedStream, offer: Offer) {
         let Some(viewer) = self.viewer.clone() else {
-            refuse(&mut stream, RefuseReason::NoDecoder).await;
+            self.refuse(&mut stream, RefuseReason::NoDecoder).await;
             return;
         };
         let formats: Vec<Format> = viewer
@@ -1181,13 +1351,30 @@ impl ScreenSync {
             .filter(|f| offer.formats.contains(f))
             .collect();
         if formats.is_empty() {
-            refuse(&mut stream, RefuseReason::NoDecoder).await;
+            self.refuse(&mut stream, RefuseReason::NoDecoder).await;
+            return;
+        }
+        // A camera the caster asks to have presented goes straight to the
+        // presenter, where this device has one: nobody is asked, as for any
+        // push between one person's devices, and nothing opens a window.
+        if offer.present
+            && let Some(presenter) = self.presenter.clone().filter(|p| p.available())
+        {
+            let start = self.answer_to(&offer, &viewer, formats, true);
+            match self.take_offer(&peer, stream, &offer, start, true).await {
+                Ok(watching) => {
+                    if let Err(e) = self.pump(&peer, watching, &presenter) {
+                        tracing::warn!(%peer, %e, "the offered camera could not be presented");
+                    }
+                }
+                Err(e) => tracing::info!(%peer, %e, "the offered camera did not start"),
+            }
             return;
         }
         let on_offer = lock(&self.on_offer).clone();
         let Some(on_offer) = on_offer else {
             tracing::info!(%peer, "a cast was offered but nothing here shows one");
-            refuse(&mut stream, RefuseReason::Declined).await;
+            self.refuse(&mut stream, RefuseReason::Declined).await;
             return;
         };
         let (decide_tx, decide) = oneshot::channel();
@@ -1202,7 +1389,7 @@ impl ScreenSync {
             }
         };
         if busy {
-            refuse(&mut stream, RefuseReason::Busy).await;
+            self.refuse(&mut stream, RefuseReason::Busy).await;
             return;
         }
         tracing::info!(%peer, source = %offer.source.id, kind = %offer.source.kind, "a cast is offered");
@@ -1213,11 +1400,25 @@ impl ScreenSync {
             Ok(Ok(Decision::Accept { audio, reply })) => (audio, reply),
             Ok(Ok(Decision::Decline)) | Ok(Err(_)) | Err(_) => {
                 tracing::info!(%peer, "the cast was declined");
-                refuse(&mut stream, RefuseReason::Declined).await;
+                self.refuse(&mut stream, RefuseReason::Declined).await;
                 return;
             }
         };
-        let start = Start {
+        let start = self.answer_to(&offer, &viewer, formats, audio);
+        let _ = reply.send(self.take_offer(&peer, stream, &offer, start, false).await);
+    }
+
+    /// The `start` that takes `offer`: what this device decodes of it, no
+    /// larger than the source or the viewer's bounds, no faster than either
+    /// side's, and the sound it decodes of what is offered when wanted.
+    fn answer_to(
+        &self,
+        offer: &Offer,
+        viewer: &ScreenParams,
+        formats: Vec<Format>,
+        audio: bool,
+    ) -> Start {
+        Start {
             display: None,
             window: None,
             formats,
@@ -1234,22 +1435,194 @@ impl ScreenSync {
             } else {
                 Vec::new()
             },
-        };
-        if let Err(e) = stream.send(&ScreenMessage::Start(start.clone())).await {
-            let _ = reply.send(Err(e));
-            return;
         }
-        let started = match self
-            .await_started(&peer, &mut stream, &start, Some(&offer.source))
-            .await
-        {
-            Ok(started) => started,
+    }
+
+    /// Answers `offer` with `start` and, once the caster's `started` checks
+    /// out, records the share and starts its stream task.
+    async fn take_offer(
+        self: &Arc<Self>,
+        peer: &PublicKey,
+        mut stream: FramedStream,
+        offer: &Offer,
+        start: Start,
+        presented: bool,
+    ) -> Result<Watching, Error> {
+        self.send(&mut stream, ScreenMessage::Start(start.clone()))
+            .await?;
+        let started = self
+            .await_started(peer, &mut stream, &start, Some(&offer.source))
+            .await?;
+        Ok(self.watching_as(peer, started, stream, true, presented))
+    }
+
+    /// Hands a share's frames and sound to the presenter until it ends;
+    /// returns a channel that says why it ended.
+    fn pump(
+        &self,
+        peer: &PublicKey,
+        watching: Watching,
+        presenter: &Arc<dyn Presenter>,
+    ) -> Result<Presenting, Error> {
+        let Watching {
+            started,
+            mut frames,
+            control,
+        } = watching;
+        let mut presented = match presenter.start(&self.name(peer), &started) {
+            Ok(p) => p,
             Err(e) => {
-                let _ = reply.send(Err(e));
-                return;
+                let _ = control.send(ShareControl::Stop);
+                return Err(e);
             }
         };
-        let _ = reply.send(Ok(self.watching(&peer, started, stream, true)));
+        let (ended_tx, ended) = oneshot::channel();
+        let peer = *peer;
+        tokio::spawn(async move {
+            let reason = loop {
+                match frames.recv().await {
+                    Some(Viewed::Frame { key, bytes, .. }) => {
+                        if !presented.frame(key, &bytes) {
+                            let _ = control.send(ShareControl::Stop);
+                        }
+                    }
+                    Some(Viewed::Audio { bytes, .. }) => {
+                        let _ = presented.audio(&bytes);
+                    }
+                    Some(Viewed::Stopped(reason)) => break reason,
+                    None => break StopReason::Error,
+                }
+            };
+            drop(presented);
+            tracing::info!(%peer, %reason, "stopped presenting");
+            let _ = ended_tx.send(reason);
+        });
+        Ok(Presenting { started, ended })
+    }
+
+    /// Watches a camera of `peer` as [`Self::watch`] does and presents it to
+    /// this device's programs instead of handing it to a viewer.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::watch`], and [`Error::Io`] when this device presents
+    /// nothing or the platform's device cannot be made.
+    pub async fn present(
+        self: &Arc<Self>,
+        peer: &PublicKey,
+        start: Start,
+    ) -> Result<Presenting, Error> {
+        let presenter = self
+            .presenter
+            .clone()
+            .filter(|p| p.available())
+            .ok_or_else(|| {
+                Error::Io("this device cannot present a camera to its programs".to_owned())
+            })?;
+        let watching = self.watch(peer, start).await?;
+        if let Some(w) =
+            lock(&self.watching).get_mut(&(*peer, watching.started.source_id().to_owned()))
+        {
+            w.presented = true;
+        }
+        self.pump(peer, watching, &presenter)
+    }
+
+    /// The sources a `start` or a cast chooses among: the displays, or for
+    /// the camera family the cameras, the first standing as the primary.
+    fn displays_of(&self, capture: &Arc<dyn Capture>) -> Vec<Display> {
+        match self.family {
+            Family::Screen => capture.displays(),
+            Family::Camera => capture
+                .cameras()
+                .into_iter()
+                .enumerate()
+                .map(|(i, c)| Display {
+                    id: c.id,
+                    name: c.name,
+                    width: c.width,
+                    height: c.height,
+                    primary: i == 0,
+                    scale: None,
+                })
+                .collect(),
+        }
+    }
+
+    /// The kind of a whole source of this family.
+    const fn source_kind(&self) -> SourceKind {
+        match self.family {
+            Family::Screen => SourceKind::Display,
+            Family::Camera => SourceKind::Camera,
+        }
+    }
+
+    /// Asks `peer` what cameras it has (the camera family).
+    ///
+    /// # Errors
+    ///
+    /// As [`ScreenSync::displays`].
+    pub async fn cameras(&self, peer: &PublicKey) -> Result<Vec<Camera>, Error> {
+        self.sharer_params(peer)?;
+        let mut stream = self.open(peer).await?;
+        stream
+            .send(&CameraMessage::Cameras(Cameras::default()))
+            .await?;
+        let answer = tokio::time::timeout(Duration::from_secs(10), stream.recv::<CameraMessage>())
+            .await
+            .map_err(|_| Error::Transport(format!("{peer} did not list its cameras")))??;
+        stream.finish();
+        match answer {
+            Some(CameraMessage::Cameras(Cameras {
+                cameras: Some(list),
+            })) => Ok(list),
+            other => Err(Error::Transport(format!(
+                "{peer} answered cameras with {other:?}"
+            ))),
+        }
+    }
+
+    /// This device's own cameras: what a cast from here may name.
+    #[must_use]
+    pub fn local_cameras(&self) -> Vec<Camera> {
+        self.capture
+            .as_ref()
+            .map(|c| c.cameras())
+            .unwrap_or_default()
+    }
+
+    /// The family this sync runs.
+    #[must_use]
+    pub const fn family(&self) -> Family {
+        self.family
+    }
+
+    /// Sends `message` under this family's type names.
+    async fn send(&self, stream: &mut FramedStream, message: ScreenMessage) -> Result<(), Error> {
+        match self.family {
+            Family::Screen => stream.send(&message).await,
+            Family::Camera => stream.send(&CameraMessage::from_screen(message)).await,
+        }
+    }
+
+    /// Receives the next message, in the screen family's shapes whichever
+    /// family's names it came under.
+    async fn recv(&self, stream: &mut FramedStream) -> Result<Option<ScreenMessage>, Error> {
+        match self.family {
+            Family::Screen => stream.recv::<ScreenMessage>().await,
+            Family::Camera => Ok(stream
+                .recv::<CameraMessage>()
+                .await?
+                .map(CameraMessage::into_screen)),
+        }
+    }
+
+    /// Answers a `start` or an `offer` with `refused` and ends the stream.
+    async fn refuse(&self, stream: &mut FramedStream, reason: RefuseReason) {
+        let _ = self
+            .send(stream, ScreenMessage::Refused(Refused { reason }))
+            .await;
+        stream.finish();
     }
 
     /// Picks the formats and the size for `start` on `chosen`, and starts
@@ -1344,23 +1717,23 @@ impl ScreenSync {
         };
         if busy {
             let _ = share.control.send(ShareControl::Stop);
-            refuse(&mut stream, RefuseReason::Busy).await;
+            self.refuse(&mut stream, RefuseReason::Busy).await;
             return StopReason::Error;
         }
-        crate::grants::record_implicit_for(&self.daemon, peer, SCREEN_TYPE);
+        crate::grants::record_implicit_for(&self.daemon, peer, self.family.type_name());
         // A display's place on the screen maps the viewer's positions; a
         // window has none and is never driven.
         let region = match settings.kind {
             SourceKind::Display => share
                 .region
                 .or_else(|| self.capture.as_ref().and_then(|c| c.region(&id))),
-            SourceKind::Window => None,
+            SourceKind::Window | SourceKind::Camera => None,
         };
         if let (Some(region), Some(input)) = (region, self.daemon.input_sync()) {
             input.set_region(peer, Some(region));
         }
-        if stream
-            .send(&ScreenMessage::Started(settings.started()))
+        if self
+            .send(&mut stream, ScreenMessage::Started(settings.started()))
             .await
             .is_err()
         {
@@ -1418,7 +1791,7 @@ impl ScreenSync {
                     for packet in packets {
                         let at = if packet.at == 0 { now() } else { packet.at };
                         let message = ScreenMessage::Audio(Audio { seq: audio_seq, at, bytes: lp_core::wire::Bytes(packet.bytes) });
-                        if stream.send(&message).await.is_err() {
+                        if self.send(&mut stream, message).await.is_err() {
                             failed = true;
                             break;
                         }
@@ -1438,7 +1811,7 @@ impl ScreenSync {
                     for frame in send {
                         let at = if frame.at == 0 { now() } else { frame.at };
                         for chunk in chunk_frame(seq, at, frame.key, &frame.bytes) {
-                            if stream.send(&ScreenMessage::Frame(chunk)).await.is_err() {
+                            if self.send(&mut stream, ScreenMessage::Frame(chunk)).await.is_err() {
                                 failed = true;
                                 break;
                             }
@@ -1462,7 +1835,7 @@ impl ScreenSync {
                         break reason;
                     }
                 }
-                incoming = stream.recv::<ScreenMessage>() => {
+                incoming = self.recv(&mut stream) => {
                     match incoming {
                         Ok(Some(ScreenMessage::Keyframe)) => {
                             let _ = share.control.send(ShareControl::Keyframe);
@@ -1481,7 +1854,9 @@ impl ScreenSync {
         };
         let _ = share.control.send(ShareControl::Stop);
         if !matches!(reason, StopReason::Viewer) {
-            let _ = stream.send(&ScreenMessage::Stop(Stop { reason })).await;
+            let _ = self
+                .send(&mut stream, ScreenMessage::Stop(Stop { reason }))
+                .await;
         }
         stream.finish();
         reason
@@ -1535,12 +1910,12 @@ fn primary(displays: &[Display]) -> Option<&Display> {
         .or_else(|| displays.first())
 }
 
-/// Answers a `start` or an `offer` with `refused` and ends the stream.
-async fn refuse(stream: &mut FramedStream, reason: RefuseReason) {
-    let _ = stream
-        .send(&ScreenMessage::Refused(Refused { reason }))
-        .await;
-    stream.finish();
+/// A display, or a camera standing as one, as a share's source of `kind`.
+fn source_of(display: &Display, kind: SourceKind) -> Source {
+    Source {
+        kind,
+        ..Source::display(display)
+    }
 }
 
 /// Whether ffmpeg decodes H.264 on this machine, which is what `lpview`
@@ -1606,6 +1981,16 @@ pub fn lpview_beside(exe: &std::path::Path) -> Option<std::path::PathBuf> {
 /// the daemon, so the device does not advertise `receives`.
 #[must_use]
 pub fn lpview_launcher(locations: &lp_core::paths::Locations) -> Option<OnOffer> {
+    lpview_launcher_for(locations, Family::Screen)
+}
+
+/// [`lpview_launcher`] for a cast of `family`: a camera's opens `lpview
+/// --receive --camera`.
+#[must_use]
+pub fn lpview_launcher_for(
+    locations: &lp_core::paths::Locations,
+    family: Family,
+) -> Option<OnOffer> {
     let lpview = lpview_beside(&std::env::current_exe().ok()?)?;
     let (data_dir, runtime_dir) = (locations.data_dir.clone(), locations.runtime_dir.clone());
     tracing::info!(lpview = %lpview.display(), "casts offered to this device open in lpview");
@@ -1615,8 +2000,12 @@ pub fn lpview_launcher(locations: &lp_core::paths::Locations) -> Option<OnOffer>
             .name
             .clone()
             .unwrap_or_else(|| offer.source.id.clone());
-        match std::process::Command::new(&lpview)
-            .arg("--receive")
+        let mut command = std::process::Command::new(&lpview);
+        command.arg("--receive");
+        if family == Family::Camera {
+            command.arg("--camera");
+        }
+        match command
             .arg("--data-dir")
             .arg(&data_dir)
             .arg("--runtime-dir")
@@ -1646,6 +2035,7 @@ pub struct FakeCapture {
     audio_encodes: Mutex<Vec<AudioFormat>>,
     displays: Vec<Display>,
     windows: Vec<Window>,
+    cameras: Vec<Camera>,
     /// The settings of the last share started, for tests.
     last: Mutex<Option<Settings>>,
     /// Running shares by display or window: where emitted frames go, until
@@ -1671,6 +2061,32 @@ impl FakeCapture {
     #[must_use]
     pub fn with_windows(displays: Vec<Display>, windows: Vec<Window>) -> Arc<Self> {
         Arc::new(Self::with(displays, windows, false))
+    }
+
+    /// A capture of `cameras`, for the camera family, that produces frames
+    /// only when the test emits them.
+    #[must_use]
+    pub fn of_cameras(cameras: Vec<Camera>) -> Arc<Self> {
+        let mut this = Self::with(Vec::new(), Vec::new(), false);
+        this.cameras = cameras;
+        Arc::new(this)
+    }
+
+    /// A capture of one 1280 by 720 camera that generates synthetic frames
+    /// and sound at the agreed rate: what `LIGATURE_FAKE_CAMERA=1` attaches.
+    #[must_use]
+    pub fn generating_camera() -> Arc<Self> {
+        let mut this = Self::with(Vec::new(), Vec::new(), true);
+        this.cameras = vec![Camera {
+            id: "fake-camera".to_owned(),
+            name: Some("Fake camera".to_owned()),
+            facing: lp_core::camera::Facing::External,
+            width: 1280,
+            height: 720,
+            frame_rates: vec![30],
+        }];
+        *lock(&this.audio_encodes) = vec![AudioFormat::OPUS_MONO];
+        Arc::new(this)
     }
 
     /// A capture of one 1920 by 1080 display that generates synthetic frames
@@ -1703,6 +2119,7 @@ impl FakeCapture {
             }),
             displays,
             windows,
+            cameras: Vec::new(),
             last: Mutex::new(None),
             running: Arc::new(Mutex::new(HashMap::new())),
             keyframe_requests: Arc::new(Mutex::new(0)),
@@ -1797,6 +2214,10 @@ impl Capture for FakeCapture {
 
     fn windows(&self) -> Vec<Window> {
         self.windows.clone()
+    }
+
+    fn cameras(&self) -> Vec<Camera> {
+        self.cameras.clone()
     }
 
     /// The fake's picker chooses its first window.
@@ -1901,6 +2322,99 @@ impl Capture for FakeCapture {
     }
 }
 
+/// An in-memory presenter for tests and `LIGATURE_FAKE_CAMERA=1`: it counts
+/// what it is given and remembers what it was started with.
+#[derive(Debug, Default)]
+pub struct FakePresenter {
+    unavailable: Mutex<bool>,
+    started: Mutex<Vec<(String, Started)>>,
+    frames: Arc<Mutex<u64>>,
+    audio: Arc<Mutex<u64>>,
+    running: Arc<Mutex<u32>>,
+}
+
+impl FakePresenter {
+    /// A presenter that can present.
+    #[must_use]
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+
+    /// Makes presenting unavailable, as a platform without the device would.
+    pub fn set_available(&self, available: bool) {
+        *lock(&self.unavailable) = !available;
+    }
+
+    /// Every share presented so far: the device it came from, and its
+    /// settings.
+    #[must_use]
+    pub fn started(&self) -> Vec<(String, Started)> {
+        lock(&self.started).clone()
+    }
+
+    /// Frames given to it, over every share.
+    #[must_use]
+    pub fn frames(&self) -> u64 {
+        *lock(&self.frames)
+    }
+
+    /// Packets of sound given to it, over every share.
+    #[must_use]
+    pub fn audio(&self) -> u64 {
+        *lock(&self.audio)
+    }
+
+    /// How many shares it presents now.
+    #[must_use]
+    pub fn running(&self) -> u32 {
+        *lock(&self.running)
+    }
+}
+
+struct FakePresented {
+    frames: Arc<Mutex<u64>>,
+    audio: Arc<Mutex<u64>>,
+    running: Arc<Mutex<u32>>,
+}
+
+impl Presented for FakePresented {
+    fn frame(&mut self, _key: bool, _bytes: &[u8]) -> bool {
+        *lock(&self.frames) += 1;
+        true
+    }
+
+    fn audio(&mut self, _bytes: &[u8]) -> bool {
+        *lock(&self.audio) += 1;
+        true
+    }
+}
+
+impl Drop for FakePresented {
+    fn drop(&mut self) {
+        let mut running = lock(&self.running);
+        *running = running.saturating_sub(1);
+    }
+}
+
+impl Presenter for FakePresenter {
+    fn available(&self) -> bool {
+        !*lock(&self.unavailable)
+    }
+
+    fn start(&self, from: &str, started: &Started) -> Result<Box<dyn Presented>, Error> {
+        if !self.available() {
+            return Err(Error::Io("no camera device to present through".to_owned()));
+        }
+        lock(&self.started).push((from.to_owned(), started.clone()));
+        *lock(&self.running) += 1;
+        Ok(Box::new(FakePresented {
+            frames: self.frames.clone(),
+            audio: self.audio.clone(),
+            running: self.running.clone(),
+        }))
+    }
+}
+
 /// Whether what the sharer settled on is within what the viewer asked for
 /// (LP-186): a picture at least one pixel and no larger, a rate no faster, a
 /// format from the offer, a sound format from the offer or none, and the
@@ -1938,7 +2452,9 @@ fn check_started(
         return Err("a source name that is empty or too long");
     }
     if let Some(source) = offered {
-        if id != source.id || started.kind() != source.kind {
+        // A camera is named as a display is; only a window is named apart.
+        let offered_window = source.kind == SourceKind::Window;
+        if id != source.id || started.window.is_some() != offered_window {
             return Err("a source other than the one offered");
         }
     } else if let Some(asked) = &start.window {
@@ -2199,6 +2715,14 @@ mod tests {
             Ok(())
         );
         assert!(check_started(&answer, &settled(), Some(&offered)).is_err());
+        // A camera offered is started under the display's name.
+        let camera = Source {
+            kind: SourceKind::Camera,
+            id: "1".to_owned(),
+            ..offered.clone()
+        };
+        assert_eq!(check_started(&answer, &settled(), Some(&camera)), Ok(()));
+        assert!(check_started(&answer, &window_started, Some(&camera)).is_err());
         assert!(check_started(&answer, &window_started, None).is_err());
     }
 

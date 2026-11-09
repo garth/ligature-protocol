@@ -121,7 +121,7 @@ that, and keeps the fragile kind for the one test that wants a camera that stall
 **Presented as a PipeWire camera node, and on a loopback device where there is one.** The
 plan left the choice between the kernel's `v4l2loopback` and a PipeWire node open. The node
 is the default sink, since it needs nothing installed and no privilege: ffmpeg decodes the
-share into raw 4:2:0 pictures and `gst-launch-1.0 fdsrc ! rawvideoparse ! queue ! pipewiresink
+share into raw pictures and `gst-launch-1.0 fdsrc ! rawvideoparse ! queue ! pipewiresink
 mode=provide` offers them as a node of the class `Video/Source` with the role `Camera`,
 named `ligature_camera.<device>` and described "Ligature camera (*device*)". That is what
 the Camera portal counts as a camera and what browsers that read cameras through PipeWire
@@ -131,6 +131,20 @@ Where a `v4l2loopback` device exists, a second ffmpeg writes the same share to t
 one, for the programs that read V4L2 alone; the daemon cannot name that device, which is
 named when the module is loaded. `presents` is advertised when either can be made. A node
 whose name starts `ligature_camera.` is never listed as a camera to share.
+
+**The node's pictures are packed 4:2:2, each in one block of memory.** The node first
+offered the decoder's own planar 4:2:0 (I420). The owner picked it in Firefox 158 on
+2026-11-09: Firefox listed it, linked to it, agreed the format, and showed nothing.
+`pipewiresink` gives a planar picture as a block of memory for each plane, which its port
+says as `blocks: 3`, and the capture code the browsers share (libwebrtc's PipeWire
+capturer) reads the first block of a buffer and no other, then drops a picture whose length
+is not the whole picture's. A small reader that reads the same way got the brightness plane
+alone from an I420 node, no whole picture in thirty, and thirty of thirty from a YUY2 node.
+So ffmpeg decodes to `yuyv422` for the node (`NODE_PIXELS`), the form webcams have always
+given and every program that reads one takes, at two bytes a pixel in place of one and a
+half. GStreamer's own `pipewiresrc` reads either, which is why the live test had not
+noticed; it now asserts that the presented camera's port says one block while it is read.
+The loopback device keeps planar 4:2:0, which V4L2 holds in one buffer.
 
 **The microphone is a loopback pair.** A source that GStreamer offers is read cleanly by a
 PipeWire client and badly through PulseAudio's interface, which is what browsers record

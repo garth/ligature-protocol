@@ -100,6 +100,28 @@ fn nodes(class: &str) -> Vec<String> {
         .collect()
 }
 
+/// How many blocks of memory a picture of the node `name` comes in, by what
+/// its port tells PipeWire once a reader has agreed a format with it.
+fn blocks(name: &str) -> Option<u64> {
+    let out = Command::new("pw-dump").output().expect("pw-dump runs");
+    let objects: serde_json::Value = serde_json::from_slice(&out.stdout).expect("pw-dump's JSON");
+    let objects = objects.as_array()?;
+    let node = objects.iter().find_map(|o| {
+        let props = o.get("info")?.get("props")?;
+        (props.get("node.name")?.as_str()? == name).then(|| o.get("id")?.as_u64())?
+    })?;
+    objects.iter().find_map(|o| {
+        let info = o.get("info")?;
+        (info.get("props")?.get("node.id")?.as_u64()? == node).then(|| {
+            info.get("params")?
+                .get("Buffers")?
+                .get(0)?
+                .get("blocks")?
+                .as_u64()
+        })?
+    })
+}
+
 /// A GStreamer pipeline run as a helper.
 fn gst(pipeline: &[&str], properties: &str) -> Child {
     Command::new("gst-launch-1.0")
@@ -133,15 +155,15 @@ fn test_camera(name: &str) -> Vec<Child> {
         .args(["-f", "lavfi", "-i", "color=black:s=1280x720:r=30"])
         .args(["-f", "lavfi", "-i", "color=white:s=120x120:r=30"])
         .args(["-filter_complex", "[0][1]overlay=x='mod(240*t,1160)':y=300"])
-        .args(["-pix_fmt", "yuv420p", "-f", "rawvideo", "pipe:1"])
+        .args(["-pix_fmt", "yuyv422", "-f", "rawvideo", "pipe:1"])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
         .expect("ffmpeg starts");
     let node = Command::new("gst-launch-1.0")
-        .args(["-q", "fdsrc", "fd=0", "blocksize=1382400", "!"])
-        .args(["rawvideoparse", "format=i420", "width=1280", "height=720"])
+        .args(["-q", "fdsrc", "fd=0", "blocksize=1843200", "!"])
+        .args(["rawvideoparse", "format=yuy2", "width=1280", "height=720"])
         .args(["framerate=30/1", "!", "queue", "leaky=downstream"])
         .args([
             "max-size-buffers=2",
@@ -359,6 +381,9 @@ async fn pair(camera: &str, microphone: &str) -> Pair {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "needs PipeWire, GStreamer, ffmpeg and a notification server; makes test nodes in the session's PipeWire"]
 async fn a_test_camera_and_microphone_are_shared_and_presented_as_nodes_that_read_back() {
+    // What the owner's own daemon presents at this moment is not this
+    // test's to read or to wait for.
+    let already = [nodes("Video/Source"), nodes("Audio/Source")].concat();
     let pid = std::process::id();
     let camera = format!("lp_live_test_camera_{pid}");
     let microphone = format!("lp_live_test_microphone_{pid}");
@@ -446,8 +471,11 @@ async fn a_test_camera_and_microphone_are_shared_and_presented_as_nodes_that_rea
     assert_eq!(presenting.started.audio, Some(AudioFormat::OPUS_MONO));
     // Named for the sharing device, which these two daemons know by its
     // key alone.
-    let presented =
-        |class: &str, prefix: &str| nodes(class).into_iter().find(|n| n.starts_with(prefix));
+    let presented = |class: &str, prefix: &str| {
+        nodes(class)
+            .into_iter()
+            .find(|n| n.starts_with(prefix) && !already.contains(n))
+    };
     until("the presented nodes exist", 10, || {
         presented("Video/Source", PRESENTED_CAMERA).is_some()
             && presented("Audio/Source", PRESENTED_MICROPHONE).is_some()
@@ -462,12 +490,30 @@ async fn a_test_camera_and_microphone_are_shared_and_presented_as_nodes_that_rea
 
     // The camera reads back: the pictures the test camera shows, moving.
     let frame = 1280 * 720 * 4;
-    let pictures = read_back(
-        &presented_camera,
-        45,
-        "! videoconvert ! video/x-raw,format=BGRx ! fdsink fd=1 sync=false",
-    )
-    .await;
+    // While it is read its port says how a picture comes. A browser reads
+    // the first block of a picture and no other, so the picture is whole in
+    // one: with a block for each plane Firefox showed nothing.
+    let (pictures, layout) = tokio::join!(
+        read_back(
+            &presented_camera,
+            45,
+            "! videoconvert ! video/x-raw,format=BGRx ! fdsink fd=1 sync=false",
+        ),
+        async {
+            for _ in 0..100 {
+                if let Some(layout) = blocks(&presented_camera) {
+                    return Some(layout);
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            None
+        }
+    );
+    assert_eq!(
+        layout,
+        Some(1),
+        "the presented camera's pictures come in one block"
+    );
     let count = pictures.len() / frame;
     println!("read back {count} pictures of the presented camera");
     assert!(count >= 30, "only {count} pictures read back");

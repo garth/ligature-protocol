@@ -799,10 +799,25 @@ pub fn microphone_label(from: &str) -> String {
     format!("Ligature microphone ({})", plain(from))
 }
 
-/// The ffmpeg that decodes the share's H.264 from its stdin into raw 4:2:0
-/// pictures of the share's size, each as it comes, to `output`.
+/// The form a presented PipeWire camera's pictures take, as ffmpeg names it:
+/// packed 4:2:2, which every program that reads a webcam takes. Its picture
+/// is one block of memory. A planar form such as I420 leaves `pipewiresink`
+/// as a block for each plane, and the capture code the browsers share
+/// (libwebrtc's) reads the first block alone and drops a picture that is not
+/// whole in it: Firefox listed such a camera, linked to it and showed nothing.
+pub const NODE_PIXELS: &str = "yuyv422";
+
+/// The same form as GStreamer names it.
+const NODE_FORMAT: &str = "yuy2";
+
+/// The form a loopback device's pictures take: V4L2 holds a planar picture in
+/// one buffer, so this is the decoder's own.
+pub const LOOPBACK_PIXELS: &str = "yuv420p";
+
+/// The ffmpeg that decodes the share's H.264 from its stdin into raw pictures
+/// of the share's size in the form `pixels`, each as it comes, to `output`.
 #[must_use]
-pub fn decode_args(started: &Started, output: &[&str]) -> Vec<String> {
+pub fn decode_args(started: &Started, pixels: &str, output: &[&str]) -> Vec<String> {
     let mut args: Vec<String> = [
         "-hide_banner",
         "-loglevel",
@@ -822,21 +837,21 @@ pub fn decode_args(started: &Started, output: &[&str]) -> Vec<String> {
     .map(str::to_owned)
     .to_vec();
     args.push(format!("scale={}:{}", started.width, started.height));
-    args.extend(["-pix_fmt", "yuv420p", "-fps_mode", "passthrough"].map(str::to_owned));
+    args.extend(["-pix_fmt", pixels, "-fps_mode", "passthrough"].map(str::to_owned));
     args.extend(output.iter().map(|s| (*s).to_owned()));
     args
 }
 
-/// The GStreamer pipeline that offers the raw pictures on its stdin as a
-/// PipeWire camera node. The queue drops a picture rather than hold the
+/// The GStreamer pipeline that offers the raw pictures on its stdin, in the
+/// form [`NODE_PIXELS`], as a PipeWire camera node. The queue drops a picture rather than hold the
 /// decoder back when a reader is slow, and `sync=false` passes each on as it
 /// comes.
 #[must_use]
 pub fn camera_node_args(from: &str, started: &Started) -> Vec<String> {
-    let frame = u64::from(started.width) * u64::from(started.height) * 3 / 2;
+    let frame = u64::from(started.width) * u64::from(started.height) * 2;
     let mut args: Vec<String> = format!(
         "-q fdsrc fd=0 blocksize={frame} \
-         ! rawvideoparse format=i420 width={} height={} framerate={}/1 \
+         ! rawvideoparse format={NODE_FORMAT} width={} height={} framerate={}/1 \
          ! queue leaky=downstream max-size-buffers=2 max-size-bytes=0 max-size-time=0 \
          ! pipewiresink mode=provide sync=false",
         started.width,
@@ -1271,7 +1286,11 @@ impl Presenter for LinuxPresenter {
         if probe.node {
             match Sink::start(
                 "the PipeWire camera",
-                ffmpeg(decode_args(started, &["-f", "rawvideo", "pipe:1"])),
+                ffmpeg(decode_args(
+                    started,
+                    NODE_PIXELS,
+                    &["-f", "rawvideo", "pipe:1"],
+                )),
                 Some(gst(camera_node_args(from, started))),
                 &presented.processes,
             ) {
@@ -1283,7 +1302,11 @@ impl Presenter for LinuxPresenter {
             let device = device.display().to_string();
             match Sink::start(
                 "the loopback device",
-                ffmpeg(decode_args(started, &["-f", "v4l2", &device])),
+                ffmpeg(decode_args(
+                    started,
+                    LOOPBACK_PIXELS,
+                    &["-f", "v4l2", &device],
+                )),
                 None,
                 &presented.processes,
             ) {
@@ -1534,7 +1557,8 @@ mod tests {
 
         let node = camera_node_args("Pixel 8 Pro", &started());
         let joined = node.join(" ");
-        assert!(joined.starts_with("-q fdsrc fd=0 blocksize=1382400 ! rawvideoparse format=i420 width=1280 height=720 framerate=30/1"));
+        // A packed picture, two bytes a pixel, so it is one block of memory.
+        assert!(joined.starts_with("-q fdsrc fd=0 blocksize=1843200 ! rawvideoparse format=yuy2 width=1280 height=720 framerate=30/1"));
         assert!(joined.contains("! queue leaky=downstream max-size-buffers=2"));
         assert!(joined.contains("! pipewiresink mode=provide sync=false"));
         assert_eq!(
@@ -1548,14 +1572,15 @@ mod tests {
         // What is presented here is never listed as a camera to share.
         assert!("ligature_camera.pixel_8_pro".starts_with(PRESENTED_CAMERA));
 
-        let decode = decode_args(&started(), &["-f", "rawvideo", "pipe:1"]).join(" ");
+        let decode = decode_args(&started(), NODE_PIXELS, &["-f", "rawvideo", "pipe:1"]).join(" ");
         assert!(
             decode.contains("-flags low_delay -probesize 32 -analyzeduration 0 -f h264 -i pipe:0")
         );
         assert!(decode.ends_with(
-            "-vf scale=1280:720 -pix_fmt yuv420p -fps_mode passthrough -f rawvideo pipe:1"
+            "-vf scale=1280:720 -pix_fmt yuyv422 -fps_mode passthrough -f rawvideo pipe:1"
         ));
-        let loopback = decode_args(&started(), &["-f", "v4l2", "/dev/video10"]).join(" ");
+        let loopback =
+            decode_args(&started(), LOOPBACK_PIXELS, &["-f", "v4l2", "/dev/video10"]).join(" ");
         assert!(loopback.ends_with("-pix_fmt yuv420p -fps_mode passthrough -f v4l2 /dev/video10"));
 
         // The sound: an output played into, and the microphone at its other

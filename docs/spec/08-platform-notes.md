@@ -104,7 +104,10 @@ cannot show it does not start.
 
 A received camera is presented as a PipeWire node of that class with the role `Camera`,
 offered by GStreamer's `pipewiresink` from pictures ffmpeg decodes: that is what the Camera
-portal counts as a camera and what a program that finds cameras through PipeWire lists. A
+portal counts as a camera and what a program that finds cameras through PipeWire lists. Its
+pictures are packed 4:2:2 (YUY2), each in one block of memory: `pipewiresink` gives a planar
+picture a block for each plane, and the browsers' capture code reads the first block alone,
+so a planar camera is listed by a browser and shows nothing. A
 program that reads V4L2 alone needs the out-of-tree `v4l2loopback` module, to whose first
 device the daemon also writes when it is loaded. The camera's sound is a `pw-loopback` pair,
 an output the daemon plays into and a source at its other end, which programs list among the

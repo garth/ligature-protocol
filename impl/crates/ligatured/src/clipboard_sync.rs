@@ -118,6 +118,7 @@ pub struct ClipboardSync {
     senders: Mutex<HashMap<PublicKey, mpsc::Sender<ClipboardMessage>>>,
     sent: Mutex<u64>,
     applied: Mutex<u64>,
+    answered: Mutex<u64>,
 }
 
 impl std::fmt::Debug for ClipboardSync {
@@ -156,6 +157,7 @@ impl ClipboardSync {
             senders: Mutex::new(HashMap::new()),
             sent: Mutex::new(0),
             applied: Mutex::new(0),
+            answered: Mutex::new(0),
         });
         daemon.manager().on_stream(CLIPBOARD_TYPE, this.handler());
         // Subscribe before anything else runs, so a copy made right after
@@ -182,6 +184,15 @@ impl ClipboardSync {
     #[must_use]
     pub fn counters(&self) -> (u64, u64) {
         (*lock(&self.sent), *lock(&self.applied))
+    }
+
+    /// How many `get` messages were answered, with a value or an empty set,
+    /// for tests: each peer asks once on connecting, a moment after its
+    /// manifest is seen, and a test that counts sets waits for those answers
+    /// before it copies, or a late one carries the copy a second time.
+    #[must_use]
+    pub fn gets_answered(&self) -> u64 {
+        *lock(&self.answered)
     }
 
     /// The params this device advertises.
@@ -709,6 +720,7 @@ impl ClipboardSync {
             if counts {
                 *lock(&self.sent) += 1;
             }
+            *lock(&self.answered) += 1;
             tracing::debug!(%peer, "clipboard get answered");
         }
     }

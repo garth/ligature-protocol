@@ -184,6 +184,14 @@ async fn join(
         })
     })
     .await;
+    // Each device asks every other for its value a moment after seeing its
+    // manifest. Those first gets are answered, with nothing, before a test
+    // copies: one that came after a copy would be answered with the value
+    // just pushed, and counted as a set of its own (LP-212).
+    until("the first gets answered all round", || {
+        out.iter().all(|d| d.sync.gets_answered() >= (n - 1) as u64)
+    })
+    .await;
     out
 }
 

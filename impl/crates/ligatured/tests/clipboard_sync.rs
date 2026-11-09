@@ -107,9 +107,12 @@ async fn a_copy_on_one_device_appears_on_the_other_and_back() {
         a.registry().peers_offering(CLIPBOARD_TYPE) == vec![b_key]
     })
     .await;
-    // Each asked the other for its value on connecting; let those empty
-    // answers settle so the counters below see only the copies.
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    // Each asked the other for its value on connecting; those empty
+    // answers come first, so the counters below see only the copies.
+    until("each answered the other's first get", || {
+        sync_a.gets_answered() >= 1 && sync_b.gets_answered() >= 1
+    })
+    .await;
 
     // A copies: B gets it.
     clip_a.user_copies("one");

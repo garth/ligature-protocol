@@ -340,7 +340,7 @@ const AUDIO_BUFFER_LIST_ALIGNED: u32 = 1;
 
 /// The sound buffer's samples, interleaved: `None` for a buffer that is not
 /// 32-bit float linear PCM, which ScreenCaptureKit's always is.
-fn copy_samples(sample: &CMSampleBuffer) -> Option<Vec<f32>> {
+pub(crate) fn copy_samples(sample: &CMSampleBuffer) -> Option<Vec<f32>> {
     // SAFETY: the sample is the framework's for the duration of the call; the
     // buffer list is sized as the framework asks, the block buffer it retains
     // is released here, and every read stays within the buffers it names.
@@ -433,7 +433,7 @@ fn copy_samples(sample: &CMSampleBuffer) -> Option<Vec<f32>> {
 
 /// The frame's pixels, packed: `None` for a sample with no picture (an idle
 /// frame, when nothing on the display changed) or another pixel format.
-fn copy_pixels(sample: &CMSampleBuffer) -> Option<(Vec<u8>, u32, u32)> {
+pub(crate) fn copy_pixels(sample: &CMSampleBuffer) -> Option<(Vec<u8>, u32, u32)> {
     // SAFETY: the sample is the framework's for the duration of the call; its
     // pixel buffer is locked read-only while the rows are copied out and
     // unlocked after, and the copy stays within the buffer's rows.

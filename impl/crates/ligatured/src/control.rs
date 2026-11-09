@@ -1507,7 +1507,7 @@ async fn handle_input(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PermissionState {
     /// Its name on the command line (`accessibility`, `input-monitoring`,
-    /// `screen-recording`).
+    /// `screen-recording`, `camera`, `microphone`).
     pub name: String,
     /// Its name in System Settings.
     pub label: String,

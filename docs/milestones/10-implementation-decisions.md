@@ -132,3 +132,50 @@ shares, views, receives and presents; the built-in camera was never started by t
 Not run: this machine's own camera and microphone in a share, a browser or a call picking
 the presented camera and microphone, the V4L2 fallback and the loopback device (this machine
 has neither a plain V4L2 camera nor the module), whose commands are tested as text alone.
+
+## LP-208: macOS, AVFoundation's cameras and no presenter
+
+**A capture session with two delegates.** `lp_macos::camera` lists the cameras
+(`AVCaptureDevice`, by unique id, with the name macOS shows, the position as the facing, and
+the active format's size and rates), the system's default first, and captures one through an
+`AVCaptureSession`: the camera's input and a video data output asked for BGRA, and the
+default microphone's input and an audio data output when sound is wanted. The two outputs'
+delegate protocols name the same method, so each has a small class of its own, both on one
+serial queue. The cameras are listed with the older `devicesWithMediaType:`, deprecated for
+the discovery session: that session takes device types, and the type for external cameras
+is a constant macOS has only from 14, which a program that runs on 11 cannot read. The
+sample buffers are copied out by the functions the screen's capture already has.
+
+**Nothing is scaled or resampled on the way in.** The pictures come at the size the
+session's default preset gives the camera and the sound in the microphone's own rate and
+channels, and the daemon is told both. The encoder fits the picture: for a camera its
+filter is `scale` with the shape kept and `pad`, so a 4:3 camera in a 16:9 share has black
+at its sides, on every platform; a 640 by 480 picture into 1280 by 720 was run through
+x264 and VA-API here. The Opus encoder starts with the first buffer of sound, which says
+the rate and channels it resamples from (`Sound::start_pcm_from`). A pacer thread writes
+the newest picture at the agreed rate, starts the encoder again if the camera changes its
+size, and ends the share with `error` when the camera has sent nothing for six seconds,
+which is how an unplugged camera is noticed.
+
+**Camera and Microphone are asked for in a dialog, and need no restart.** `Ligature.app`'s
+`Info.plist` gained `NSCameraUsageDescription` and `NSMicrophoneUsageDescription`, without
+which macOS ends a process that opens either, and a bundle signed with a Developer ID gets
+the two entitlements the hardened runtime wants. The first share of a camera shows macOS's
+dialog and waits up to 30 seconds for the answer: allowed, it goes on; refused, it is
+refused for `consent`. A refused or missing microphone leaves the camera silent.
+`Permission` gained `Camera` and `Microphone`, which `lpctl permissions` lists and opens
+and `reset` forgets, but they are apart from the three a grant of which takes a new
+process (`Permission::RESTARTING`): the daemon neither waits for them nor restarts on
+them, and the report says "it applies at once" where the others say the daemon restarts.
+A camera refused in System Settings is not advertised; one never asked for is.
+
+**No presenter.** The Mac's camera family is attached with a capture and a viewer and no
+presenter, so it never says `presents`: a camera offered to macOS's programs is a Core
+Media I/O extension, which macOS loads only from an application signed with a Developer ID
+and notarised by Apple. That is Apple's rule for the Mac, not a limit of the protocol, and
+the platform notes say so.
+
+**What was checked.** The crate and the daemon type-check and pass clippy for
+`aarch64-apple-darwin` on Linux, which proves the calls exist with these types and nothing
+about how they behave. None of it has run on a Mac: the listing, the dialogs, the pictures,
+the microphone's format and the indicator are for the owner's run.

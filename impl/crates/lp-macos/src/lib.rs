@@ -35,3 +35,8 @@ pub mod input;
 /// permission.
 #[cfg(target_os = "macos")]
 pub mod screen;
+
+/// AVFoundation's capture devices: the cameras listed, one captured as
+/// frames with the microphone, and the Camera and Microphone permissions.
+#[cfg(target_os = "macos")]
+pub mod camera;

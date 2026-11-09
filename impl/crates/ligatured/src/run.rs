@@ -217,6 +217,22 @@ pub async fn run(
         }
     }
     #[cfg(target_os = "macos")]
+    if std::env::var_os(FAKE_SCREEN_ENV).is_none() && std::env::var_os(FAKE_CAMERA_ENV).is_none() {
+        // AVFoundation's cameras and the microphone into ffmpeg's encoders,
+        // shown in lpview; no presenter, since macOS loads a camera for its
+        // programs only from a notarised application (LP-208).
+        let camera = daemon.attach_camera(
+            Some(crate::camera_macos::MacCamera::start()),
+            crate::screen::viewer_params(),
+            None,
+        );
+        if let Some(launcher) =
+            crate::screen::lpview_launcher_for(&locations, crate::screen::Family::Camera)
+        {
+            camera.set_on_offer(launcher);
+        }
+    }
+    #[cfg(target_os = "macos")]
     if std::env::var_os(FAKE_SCREEN_ENV).is_none() {
         // ScreenCaptureKit into ffmpeg's VideoToolbox encoder (LP-150), and
         // lpview where ffmpeg decodes.

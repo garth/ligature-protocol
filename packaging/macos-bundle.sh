@@ -8,9 +8,12 @@
 # the user has allowed once, so the daemon runs from this bundle: the
 # permission prompt and every notification carry the name Ligature. The bundle
 # has no Dock icon (LSUIElement) and holds the same binary, so nothing else
-# changes. It is signed ad hoc unless LIGATURE_CODESIGN_IDENTITY names a
-# Developer ID identity, which also turns on the hardened runtime that
-# notarisation needs; notarising is a separate step.
+# changes. Its Info.plist says why it wants the camera and the microphone
+# (LP-208): macOS ends a process that opens either without those words. It is
+# signed ad hoc unless LIGATURE_CODESIGN_IDENTITY names a Developer ID
+# identity, which also turns on the hardened runtime that notarisation needs,
+# with the entitlements the runtime wants for the camera and the microphone;
+# notarising is a separate step.
 set -eu
 
 bin_dir=$1
@@ -52,6 +55,10 @@ cat > "$app/Contents/Info.plist" <<EOF
   <string>11.0</string>
   <key>LSUIElement</key>
   <true/>
+  <key>NSCameraUsageDescription</key>
+  <string>Ligature shows this Mac's camera on your other devices when one of them asks to watch it or you cast it.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Ligature sends this Mac's microphone with a camera you share with your other devices.</string>
   <key>NSHumanReadableCopyright</key>
   <string>Ligature Protocol $full, Apache-2.0</string>
 </dict>
@@ -62,7 +69,22 @@ plutil -lint -s "$app/Contents/Info.plist"
 if [ "$identity" = "-" ]; then
     codesign --force --sign - --identifier "$bundle_id" "$app"
 else
-    codesign --force --sign "$identity" --identifier "$bundle_id" --options runtime --timestamp "$app"
+    entitlements=$(mktemp)
+    cat > "$entitlements" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.device.camera</key>
+  <true/>
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+</dict>
+</plist>
+EOF
+    codesign --force --sign "$identity" --identifier "$bundle_id" --options runtime --timestamp \
+        --entitlements "$entitlements" "$app"
+    rm -f "$entitlements"
 fi
 codesign --verify --strict "$app"
 echo "$app"

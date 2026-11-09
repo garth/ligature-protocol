@@ -218,6 +218,15 @@ pub fn record_args(source: &str, format: AudioFormat) -> Vec<String> {
 /// the daemon the samples itself.
 #[must_use]
 pub fn pcm_args(format: AudioFormat) -> Vec<String> {
+    pcm_args_from(48_000, format.channels, format)
+}
+
+/// [`pcm_args`] for samples that come at `rate` in `channels` channels, as a
+/// microphone's do: ffmpeg brings them to 48 kHz and the format's channels.
+#[must_use]
+pub fn pcm_args_from(rate: u32, channels: u8, format: AudioFormat) -> Vec<String> {
+    let rate = rate.to_string();
+    let source_channels = channels.to_string();
     let channels = format.channels.to_string();
     [
         "-hide_banner",
@@ -227,9 +236,9 @@ pub fn pcm_args(format: AudioFormat) -> Vec<String> {
         "-f",
         "f32le",
         "-ar",
-        "48000",
+        &rate,
         "-ac",
-        &channels,
+        &source_channels,
         "-i",
         "pipe:0",
         "-ac",
@@ -363,8 +372,24 @@ impl Sound {
         format: AudioFormat,
         frames: mpsc::UnboundedSender<Captured>,
     ) -> std::io::Result<(Self, std::process::ChildStdin)> {
+        Self::start_pcm_from(48_000, format.channels, format, frames)
+    }
+
+    /// As [`Sound::start_pcm`], for samples that come at `rate` in
+    /// `channels` channels: a microphone's own format, which the platform
+    /// says with its first buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns the error when ffmpeg cannot be started.
+    pub fn start_pcm_from(
+        rate: u32,
+        channels: u8,
+        format: AudioFormat,
+        frames: mpsc::UnboundedSender<Captured>,
+    ) -> std::io::Result<(Self, std::process::ChildStdin)> {
         let child = Command::new("ffmpeg")
-            .args(pcm_args(format))
+            .args(pcm_args_from(rate, channels, format))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -373,7 +398,7 @@ impl Sound {
         let stdin = stdin.ok_or_else(|| {
             std::io::Error::new(std::io::ErrorKind::BrokenPipe, "no stdin to ffmpeg")
         })?;
-        tracing::info!(%format, "sound encoder started for the platform's samples");
+        tracing::info!(%format, rate, channels, "sound encoder started for the platform's samples");
         Ok((sound, stdin))
     }
 
@@ -463,6 +488,10 @@ mod tests {
         assert!(pcm.contains("-f f32le -ar 48000 -ac 2 -i pipe:0"));
         assert!(pcm.contains("-c:a libopus -b:a 128000 -frame_duration 20"));
         assert!(pcm.ends_with("-f ogg pipe:1"));
+        // A microphone's own format in, the agreed format out.
+        let microphone = pcm_args_from(44_100, 2, AudioFormat::OPUS_MONO).join(" ");
+        assert!(microphone.contains("-f f32le -ar 44100 -ac 2 -i pipe:0 -ac 1 -ar 48000"));
+        assert!(microphone.contains("-c:a libopus -b:a 64000"));
     }
 
     #[test]

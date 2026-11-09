@@ -3,6 +3,8 @@
 
 #[cfg(target_os = "linux")]
 pub mod camera_linux;
+#[cfg(target_os = "macos")]
+pub mod camera_macos;
 pub mod capabilities;
 pub mod ceremony;
 pub mod clipboard;

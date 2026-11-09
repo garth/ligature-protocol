@@ -119,6 +119,8 @@ objc2-core-audio-types = { version = "0.3", default-features = false, features =
 objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFBase"] }
 objc2-core-video = { version = "0.3", default-features = false, features = ["std", "objc2", "CVBase", "CVBuffer", "CVImageBuffer", "CVPixelBuffer", "CVReturn"] }
 dispatch2 = { version = "0.3", default-features = false, features = ["std", "block2", "objc2"] }
+# AVFoundation's capture devices and session for the Mac's cameras and microphone (LP-208).
+objc2-av-foundation = { version = "0.3", default-features = false, features = ["std", "bitflags", "block2", "dispatch2", "objc2-core-media", "AVCaptureAudioDataOutput", "AVCaptureDevice", "AVCaptureInput", "AVCaptureOutputBase", "AVCaptureSession", "AVCaptureVideoDataOutput", "AVMediaFormat"] }
 
 # The Android library (milestone 2, LP-77). MPL-2.0; see deny.toml.
 uniffi = { version = "0.32", default-features = false }

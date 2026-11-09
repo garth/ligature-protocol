@@ -40,6 +40,11 @@ release workflow publishes the section as the release notes with the installers.
   as a microphone, "Ligature microphone (*device*)", and on a `v4l2loopback` device where
   one exists. A share reads the camera and the microphone it started with and never another
   in their place, and shows the sharing notification for its life (LP-207).
+- A Mac shares its cameras, with the default microphone, through AVFoundation. macOS asks
+  for the Camera and the Microphone the first time, in its own dialogs; `lpctl permissions`
+  lists both, and neither needs the daemon restarted. A Mac shows a camera it is sent and
+  does not present one to its programs, which Apple allows only to notarised applications
+  (LP-208).
 
 ## [0.2.0-alpha] - 2026-11-08
 

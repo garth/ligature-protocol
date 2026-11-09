@@ -130,7 +130,17 @@ pub fn encoder_args(encoder: Encoder, input: &RawInput, settings: &Settings) -> 
         ]
         .map(str::to_owned),
     );
-    let scale = format!("scale={}:{}", settings.width, settings.height);
+    // A screen is captured at the share's size already. A camera's pictures
+    // come at the size the platform gives it, so their shape is kept inside
+    // the agreed picture, the spare area black.
+    let (w, h) = (settings.width, settings.height);
+    let scale = if camera {
+        format!(
+            "scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2"
+        )
+    } else {
+        format!("scale={w}:{h}")
+    };
     match encoder {
         Encoder::Vaapi => args.extend(
             [
@@ -798,6 +808,14 @@ mod tests {
             !camera.contains("-b:v"),
             "x264 takes the cap alone: {camera}"
         );
+        // A camera's shape is kept within the picture; a screen comes at the
+        // picture's size.
+        assert!(
+            camera.contains(
+                "-vf scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2 -c:v"
+            ),
+            "{camera}"
+        );
         let screen = encoder_args(
             Encoder::X264,
             &input,
@@ -809,6 +827,7 @@ mod tests {
             "{screen}"
         );
         assert!(!screen.contains("-maxrate"), "{screen}");
+        assert!(screen.contains("-vf scale=1280:720 -c:v"), "{screen}");
         // The hardware encoders aim at a rate either way.
         let hardware = encoder_args(
             Encoder::Vaapi,

@@ -137,12 +137,14 @@ enum Command {
 /// `lpctl permissions` actions (macOS).
 #[derive(Debug, Subcommand)]
 enum PermissionsAction {
-    /// Forget Ligature's Accessibility, Input Monitoring and Screen Recording
-    /// permissions and restart the daemon, so macOS asks for them again.
+    /// Forget Ligature's Accessibility, Input Monitoring, Screen Recording,
+    /// Camera and Microphone permissions and restart the daemon, so macOS
+    /// asks for them again.
     Reset,
     /// Open a permission's page in System Settings, where it is turned on.
     Open {
-        /// accessibility, input-monitoring or screen-recording.
+        /// accessibility, input-monitoring, screen-recording, camera or
+        /// microphone.
         permission: String,
     },
 }
@@ -438,9 +440,16 @@ async fn main() {
 /// also the launchd agent's label.
 const MAC_BUNDLE: &str = "org.ligatureprotocol.ligatured";
 
-/// The `tccutil` services behind the three permissions (`PostEvent` is the
-/// posting half of Accessibility).
-const TCC_SERVICES: [&str; 4] = ["Accessibility", "PostEvent", "ListenEvent", "ScreenCapture"];
+/// The `tccutil` services behind the permissions (`PostEvent` is the posting
+/// half of Accessibility).
+const TCC_SERVICES: [&str; 6] = [
+    "Accessibility",
+    "PostEvent",
+    "ListenEvent",
+    "ScreenCapture",
+    "Camera",
+    "Microphone",
+];
 
 /// The System Settings page where a permission is turned on.
 fn settings_url(permission: Permission) -> &'static str {
@@ -453,6 +462,12 @@ fn settings_url(permission: Permission) -> &'static str {
         }
         Permission::ScreenRecording => {
             "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+        }
+        Permission::Camera => {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"
+        }
+        Permission::Microphone => {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
         }
     }
 }
@@ -484,23 +499,29 @@ fn system(program: &str, args: &[&str]) -> Result<String, Error> {
 }
 
 /// `lpctl permissions reset`: macOS forgets the answers, and the restarted
-/// daemon asks for Accessibility and Input Monitoring at once and for Screen
-/// Recording at the first share.
+/// daemon asks for Accessibility and Input Monitoring at once, for Screen
+/// Recording at the first share of the screen, and for the Camera and the
+/// Microphone at the first share of a camera.
 fn permissions_reset() -> Result<(), Error> {
     mac_only()?;
     for service in TCC_SERVICES {
         system("tccutil", &["reset", service, MAC_BUNDLE])?;
     }
-    println!("reset Accessibility, Input Monitoring and Screen Recording for Ligature");
+    println!(
+        "reset Accessibility, Input Monitoring, Screen Recording, Camera and Microphone for \
+         Ligature"
+    );
     let uid = system("id", &["-u"])?;
     system(
         "launchctl",
         &["kickstart", "-k", &format!("gui/{uid}/{MAC_BUNDLE}")],
     )?;
     println!(
-        "restarted the daemon: macOS asks for Accessibility and Input Monitoring now, and for \
-         Screen Recording when a device first watches this screen. Once each is allowed the \
-         daemon restarts by itself to use it; lpctl permissions shows where things stand."
+        "restarted the daemon: macOS asks for Accessibility and Input Monitoring now, for \
+         Screen Recording when a device first watches this screen, and for the Camera and the \
+         Microphone when one first watches a camera. Once one of the first three is allowed the \
+         daemon restarts by itself to use it; the Camera and the Microphone apply at once. \
+         lpctl permissions shows where things stand."
     );
     Ok(())
 }
@@ -530,11 +551,17 @@ fn permissions_report(held: &Permissions) -> String {
     let mut steps: Vec<(String, String)> = missing
         .iter()
         .map(|p| {
+            // A grant of the camera or the microphone is in force at once;
+            // the others take a new process.
+            let then = if Permission::from_name(&p.name).is_none_or(Permission::restarts) {
+                "the daemon restarts by itself once it is"
+            } else {
+                "it applies at once"
+            };
             (
                 format!("lpctl permissions open {}", p.name),
                 format!(
-                    "opens the {} page in System Settings, where it is turned on; the daemon \
-                     restarts by itself once it is",
+                    "opens the {} page in System Settings, where it is turned on; {then}",
                     p.label
                 ),
             )
@@ -542,7 +569,7 @@ fn permissions_report(held: &Permissions) -> String {
         .collect();
     steps.push((
         "lpctl permissions reset".to_owned(),
-        "forgets all three and restarts the daemon, so macOS asks again".to_owned(),
+        "forgets them all and restarts the daemon, so macOS asks again".to_owned(),
     ));
     let steps: Vec<(&str, &str)> = steps
         .iter()
@@ -752,7 +779,8 @@ async fn permissions_open(locations: &Locations, name: &str) -> Result<(), Error
     mac_only()?;
     let permission = Permission::from_name(name).ok_or_else(|| {
         Error::Refused(format!(
-            "no permission {name}; use accessibility, input-monitoring or screen-recording"
+            "no permission {name}; use accessibility, input-monitoring, screen-recording, \
+             camera or microphone"
         ))
     })?;
     // macOS lists Ligature on the page only once the daemon has asked for the
@@ -2020,6 +2048,7 @@ mod tests {
                 state("accessibility", "Accessibility", true),
                 state("input-monitoring", "Input Monitoring", false),
                 state("screen-recording", "Screen Recording", false),
+                state("camera", "Camera", false),
             ],
         };
         let report = permissions_report(&held);
@@ -2042,6 +2071,20 @@ mod tests {
         );
         assert!(report.contains("lpctl permissions reset"), "{report}");
         assert!(report.contains("restarts by itself"), "{report}");
+        // The camera needs no restart, and the report says so.
+        let camera = report
+            .lines()
+            .find(|l| l.contains("lpctl permissions open camera"))
+            .expect("the camera's step");
+        assert!(camera.ends_with("it applies at once"), "{camera}");
+        let screen = report
+            .lines()
+            .find(|l| l.contains("lpctl permissions open screen-recording"))
+            .expect("the screen's step");
+        assert!(
+            screen.ends_with("restarts by itself once it is"),
+            "{screen}"
+        );
 
         let all = Permissions {
             permissions: vec![state("accessibility", "Accessibility", true)],

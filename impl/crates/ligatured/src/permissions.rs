@@ -1,6 +1,7 @@
 //! The permissions macOS asks the user for (LP-169): Accessibility to be
 //! driven, Input Monitoring to drive others, Screen Recording to share the
-//! screen. Other platforms need none of them.
+//! screen, and the Camera and the Microphone to share a camera (LP-208).
+//! Other platforms need none of them.
 //!
 //! macOS answers the preflight checks for a process from what was granted
 //! when it started, and an Input Monitoring or Screen Recording grant takes
@@ -8,7 +9,9 @@
 //! daemon asks a short-lived copy of itself (`ligatured permissions`, which
 //! prints [`Access::line`]) what a new process would see, and when one it
 //! lacked has been granted it stops, for launchd's `KeepAlive` to start it
-//! again with the grant in force.
+//! again with the grant in force. The Camera and the Microphone are asked
+//! for in a dialog at the first share of a camera and apply to the running
+//! process at once, so they are shown and never waited for.
 
 use std::time::Duration;
 
@@ -22,15 +25,35 @@ pub enum Permission {
     InputMonitoring,
     /// Screen Recording: capturing the screen, so other devices can watch it.
     ScreenRecording,
+    /// Camera: capturing a camera, so other devices can watch or use it.
+    Camera,
+    /// Microphone: a shared camera carries this device's microphone.
+    Microphone,
 }
 
 impl Permission {
     /// Every permission, in the order they are shown.
-    pub const ALL: [Self; 3] = [
+    pub const ALL: [Self; 5] = [
+        Self::Accessibility,
+        Self::InputMonitoring,
+        Self::ScreenRecording,
+        Self::Camera,
+        Self::Microphone,
+    ];
+
+    /// The permissions a grant of which takes effect only in a new process:
+    /// what the daemon waits for and restarts on.
+    pub const RESTARTING: [Self; 3] = [
         Self::Accessibility,
         Self::InputMonitoring,
         Self::ScreenRecording,
     ];
+
+    /// Whether a grant of it takes effect only in a new process.
+    #[must_use]
+    pub fn restarts(self) -> bool {
+        Self::RESTARTING.contains(&self)
+    }
 
     /// The name on the command line and in [`Access::line`].
     #[must_use]
@@ -39,6 +62,8 @@ impl Permission {
             Self::Accessibility => "accessibility",
             Self::InputMonitoring => "input-monitoring",
             Self::ScreenRecording => "screen-recording",
+            Self::Camera => "camera",
+            Self::Microphone => "microphone",
         }
     }
 
@@ -49,6 +74,8 @@ impl Permission {
             Self::Accessibility => "Accessibility",
             Self::InputMonitoring => "Input Monitoring",
             Self::ScreenRecording => "Screen Recording",
+            Self::Camera => "Camera",
+            Self::Microphone => "Microphone",
         }
     }
 
@@ -59,6 +86,8 @@ impl Permission {
             Self::Accessibility => "your other devices drive this one",
             Self::InputMonitoring => "this device's keyboard and mouse drive your others",
             Self::ScreenRecording => "your other devices watch this screen",
+            Self::Camera => "your other devices watch and use this device's cameras",
+            Self::Microphone => "a camera you share carries this device's microphone",
         }
     }
 
@@ -78,6 +107,10 @@ pub struct Access {
     pub input_monitoring: bool,
     /// Screen Recording.
     pub screen_recording: bool,
+    /// Camera.
+    pub camera: bool,
+    /// Microphone.
+    pub microphone: bool,
 }
 
 impl Access {
@@ -88,13 +121,16 @@ impl Access {
             Permission::Accessibility => self.accessibility,
             Permission::InputMonitoring => self.input_monitoring,
             Permission::ScreenRecording => self.screen_recording,
+            Permission::Camera => self.camera,
+            Permission::Microphone => self.microphone,
         }
     }
 
-    /// Whether every permission is held, so there is nothing to wait for.
+    /// Whether every permission that needs a new process is held, so there
+    /// is nothing to wait for.
     #[must_use]
     pub fn complete(&self) -> bool {
-        Permission::ALL.into_iter().all(|p| self.holds(p))
+        Permission::RESTARTING.into_iter().all(|p| self.holds(p))
     }
 
     /// One line naming each permission with 1 or 0, as `ligatured
@@ -108,10 +144,12 @@ impl Access {
             .join(" ")
     }
 
-    /// Reads [`Access::line`]; `None` unless every permission is named.
+    /// Reads [`Access::line`]; `None` unless every permission that needs a
+    /// new process is named. The Camera and the Microphone read as not held
+    /// when the line leaves them out.
     #[must_use]
     pub fn parse(line: &str) -> Option<Self> {
-        let mut seen = [None; 3];
+        let mut seen = [None; 5];
         for pair in line.split_whitespace() {
             let (name, value) = pair.split_once('=')?;
             let held = match value {
@@ -127,15 +165,18 @@ impl Access {
             accessibility: seen[0]?,
             input_monitoring: seen[1]?,
             screen_recording: seen[2]?,
+            camera: seen[3].unwrap_or(false),
+            microphone: seen[4].unwrap_or(false),
         })
     }
 
     /// The permissions missing here and held in `now`: what a restart would
     /// bring into force. A withdrawal is not among them; the input capture
-    /// already follows that live.
+    /// already follows that live. Nor are the Camera and the Microphone,
+    /// which need no restart.
     #[must_use]
     pub fn newly_granted(&self, now: &Self) -> Vec<Permission> {
-        Permission::ALL
+        Permission::RESTARTING
             .into_iter()
             .filter(|&p| !self.holds(p) && now.holds(p))
             .collect()
@@ -161,12 +202,14 @@ pub fn at_start() -> Access {
         accessibility: lp_macos::input::post_access(),
         input_monitoring: lp_macos::input::listen_access(),
         screen_recording: lp_macos::screen::screen_access(),
+        camera: lp_macos::camera::camera_access() == lp_macos::camera::Access::Allowed,
+        microphone: lp_macos::camera::microphone_access() == lp_macos::camera::Access::Allowed,
     }
 }
 
 /// What this process holds right now: Accessibility and Input Monitoring
-/// follow System Settings live; Screen Recording is as at start, and a grant
-/// of it restarts the daemon.
+/// follow System Settings live, as the Camera and the Microphone do; Screen
+/// Recording is as at start, and a grant of it restarts the daemon.
 #[cfg(target_os = "macos")]
 #[must_use]
 pub fn current() -> Access {
@@ -174,6 +217,8 @@ pub fn current() -> Access {
         accessibility: lp_macos::input::accessibility_live(),
         input_monitoring: lp_macos::input::listen_access_live(),
         screen_recording: lp_macos::screen::screen_access(),
+        camera: lp_macos::camera::camera_access() == lp_macos::camera::Access::Allowed,
+        microphone: lp_macos::camera::microphone_access() == lp_macos::camera::Access::Allowed,
     }
 }
 
@@ -223,6 +268,9 @@ pub fn request(permission: Permission) {
                 lp_macos::screen::request_screen_access();
             }
         }
+        // macOS's dialog the first time; nothing once it was answered.
+        Permission::Camera => lp_macos::camera::request_camera_access(),
+        Permission::Microphone => lp_macos::camera::request_microphone_access(),
     }
 }
 
@@ -244,6 +292,8 @@ mod tests {
         accessibility: false,
         input_monitoring: false,
         screen_recording: false,
+        camera: false,
+        microphone: false,
     };
 
     #[test]
@@ -252,10 +302,12 @@ mod tests {
             accessibility: true,
             input_monitoring: false,
             screen_recording: true,
+            camera: true,
+            microphone: false,
         };
         assert_eq!(
             a.line(),
-            "accessibility=1 input-monitoring=0 screen-recording=1"
+            "accessibility=1 input-monitoring=0 screen-recording=1 camera=1 microphone=0"
         );
         assert_eq!(Access::parse(&a.line()), Some(a));
         assert_eq!(Access::parse(&format!("{}\n", a.line())), Some(a));
@@ -274,13 +326,27 @@ mod tests {
 
     #[test]
     fn a_name_the_line_does_not_know_is_passed_over() {
-        let read = Access::parse("accessibility=1 input-monitoring=1 screen-recording=0 camera=1");
+        let read =
+            Access::parse("accessibility=1 input-monitoring=1 screen-recording=0 location=1");
         assert_eq!(
             read,
             Some(Access {
                 accessibility: true,
                 input_monitoring: true,
                 screen_recording: false,
+                ..NONE
+            })
+        );
+        // The camera and the microphone are read when they are there.
+        let read = Access::parse(
+            "accessibility=0 input-monitoring=0 screen-recording=0 camera=1 microphone=1",
+        );
+        assert_eq!(
+            read,
+            Some(Access {
+                camera: true,
+                microphone: true,
+                ..NONE
             })
         );
     }
@@ -289,13 +355,14 @@ mod tests {
     fn only_what_was_missing_and_is_now_held_restarts() {
         let start = Access {
             accessibility: true,
-            input_monitoring: false,
-            screen_recording: false,
+            ..NONE
         };
         let now = Access {
-            accessibility: false,
             input_monitoring: true,
-            screen_recording: false,
+            // Granted in macOS's dialog: in force already, no restart.
+            camera: true,
+            microphone: true,
+            ..NONE
         };
         assert_eq!(start.newly_granted(&now), vec![Permission::InputMonitoring]);
         assert!(start.newly_granted(&start).is_empty());
@@ -304,13 +371,25 @@ mod tests {
 
     #[test]
     fn nothing_is_waited_for_once_all_are_held() {
+        // The camera and the microphone are not waited for.
         let all = Access {
             accessibility: true,
             input_monitoring: true,
             screen_recording: true,
+            ..NONE
         };
         assert!(all.complete());
         assert!(!NONE.complete());
+        assert!(
+            !Access {
+                camera: true,
+                microphone: true,
+                ..NONE
+            }
+            .complete()
+        );
+        assert!(Permission::ScreenRecording.restarts());
+        assert!(!Permission::Camera.restarts() && !Permission::Microphone.restarts());
     }
 
     #[test]
@@ -331,6 +410,7 @@ mod tests {
         for p in Permission::ALL {
             assert_eq!(Permission::from_name(p.name()), Some(p));
         }
-        assert_eq!(Permission::from_name("camera"), None);
+        assert_eq!(Permission::from_name("camera"), Some(Permission::Camera));
+        assert_eq!(Permission::from_name("location"), None);
     }
 }

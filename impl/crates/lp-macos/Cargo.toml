@@ -1,6 +1,6 @@
 [package]
 name = "lp-macos"
-description = "Ligature Protocol: the macOS pasteboard, user notification centre, Quartz input and screen capture behind a safe API, for the daemon"
+description = "Ligature Protocol: the macOS pasteboard, user notification centre, Quartz input, screen capture and cameras behind a safe API, for the daemon"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -20,6 +20,7 @@ objc2-core-audio-types.workspace = true
 objc2-core-foundation.workspace = true
 objc2-core-video.workspace = true
 dispatch2.workspace = true
+objc2-av-foundation.workspace = true
 
 # Not the workspace lints: the pasteboard's lazy data provider and the
 # notification centre's delegate are Objective-C classes, whose initialisation

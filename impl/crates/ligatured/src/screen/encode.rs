@@ -805,7 +805,9 @@ mod tests {
         };
         let settings = Settings {
             display: "1".to_owned(),
+            kind: lp_core::screen::SourceKind::Display,
             format: Format::H264,
+            audio: None,
             width: 1280,
             height: 720,
             frame_rate: 30,
@@ -824,7 +826,9 @@ mod tests {
         };
         let settings = Settings {
             display: "1".to_owned(),
+            kind: lp_core::screen::SourceKind::Display,
             format: Format::H264,
+            audio: None,
             width: 1440,
             height: 900,
             frame_rate: 30,
@@ -860,7 +864,9 @@ mod tests {
         };
         let settings = Settings {
             display: "1".to_owned(),
+            kind: lp_core::screen::SourceKind::Display,
             format: Format::H264_444,
+            audio: None,
             width: w,
             height: h,
             frame_rate: 30,
@@ -935,7 +941,9 @@ mod tests {
         };
         let settings = Settings {
             display: "1".to_owned(),
+            kind: lp_core::screen::SourceKind::Display,
             format: Format::H264,
+            audio: None,
             width: w,
             height: h,
             frame_rate: 30,
@@ -954,6 +962,7 @@ mod tests {
             while keys.len() < n && Instant::now() < deadline {
                 match rx.try_recv() {
                     Ok(Captured::Frame(f)) => keys.push(f.key),
+                    Ok(Captured::Audio(_)) => {}
                     Ok(Captured::Ended(r)) => panic!("the share ended: {r:?}"),
                     Err(_) => std::thread::sleep(Duration::from_millis(5)),
                 }
@@ -962,6 +971,7 @@ mod tests {
             while let Ok(c) = rx.try_recv() {
                 match c {
                     Captured::Frame(f) => keys.push(f.key),
+                    Captured::Audio(_) => {}
                     Captured::Ended(r) => panic!("the share ended: {r:?}"),
                 }
             }

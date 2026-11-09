@@ -98,10 +98,21 @@ pub mod types {
     pub const INPUT_SEND: &str = "org.ligatureprotocol.control.input.send";
     /// `screen.displays`: list a device's displays (`key`).
     pub const SCREEN_DISPLAYS: &str = "org.ligatureprotocol.control.screen.displays";
-    /// `screen.start`: watch a device's display (`key`, `display`, `width`,
-    /// `height`, `frameRate`); answered by `screen.started` and `screen.frame`
-    /// events and, when the share ends, the response.
+    /// `screen.start`: watch a device's display or window (`key`, `display`
+    /// or `window`, `width`, `height`, `frameRate`, `audio` for its sound);
+    /// answered by `screen.started`, `screen.frame` and `screen.audio` events
+    /// and, when the share ends, the response.
     pub const SCREEN_START: &str = "org.ligatureprotocol.control.screen.start";
+    /// `screen.cast`: cast a display or a window of this device (`display` or
+    /// `window`, the primary display when neither) to a device (`key`), with
+    /// its sound unless `audio` is false; answered by `screen.started` once
+    /// the receiver took it and, when the cast ends, the response.
+    pub const SCREEN_CAST: &str = "org.ligatureprotocol.control.screen.cast";
+    /// `screen.accept`: take the cast a device (`key`) offered this one, with
+    /// its sound unless `audio` is false; answered as `screen.start` is.
+    pub const SCREEN_ACCEPT: &str = "org.ligatureprotocol.control.screen.accept";
+    /// `screen.decline`: leave the cast a device (`key`) offered this one.
+    pub const SCREEN_DECLINE: &str = "org.ligatureprotocol.control.screen.decline";
     /// `screen.stop`: end the shares with a device (`key`), or every share this
     /// device runs.
     pub const SCREEN_STOP: &str = "org.ligatureprotocol.control.screen.stop";
@@ -116,6 +127,8 @@ pub mod types {
     pub const SCREEN_STARTED: &str = "org.ligatureprotocol.control.screen.started";
     /// Event: one chunk of one frame, in order.
     pub const SCREEN_FRAME: &str = "org.ligatureprotocol.control.screen.frame";
+    /// Event: one packet of the share's sound.
+    pub const SCREEN_AUDIO: &str = "org.ligatureprotocol.control.screen.audio";
 }
 
 /// A request from `lpctl`.
@@ -173,9 +186,17 @@ pub struct Request {
     /// `input.layout.set`, `input.layout.unset`: the edge.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub edge: Option<String>,
-    /// `screen.start`: the display, or the primary one when absent.
+    /// `screen.start`, `screen.cast`: the display, or the primary one when
+    /// neither it nor `window` is given.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display: Option<String>,
+    /// `screen.start`, `screen.cast`: a window, instead of a display.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<String>,
+    /// `screen.start`, `screen.accept`: whether the share's sound is wanted
+    /// (no by default); `screen.cast`: whether it is offered (yes by default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio: Option<bool>,
     /// `screen.start`: the widest picture wanted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub width: Option<u32>,
@@ -330,6 +351,9 @@ pub struct Event {
     /// `screen.frame`: one chunk of one frame.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frame: Option<lp_core::screen::Frame>,
+    /// `screen.audio`: one packet of sound.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio: Option<lp_core::screen::Audio>,
 }
 
 /// Writes one frame to an async writer.
@@ -694,10 +718,19 @@ pub struct ConnectionState {
 /// Something to write to the client.
 #[derive(Debug)]
 pub enum Outgoing {
-    /// An event for an open request.
-    Event(Event),
+    /// An event for an open request, boxed since an event carries a frame
+    /// chunk or a packet of sound and a response does not.
+    Event(Box<Event>),
     /// A request's response.
     Response(Response),
+}
+
+impl Outgoing {
+    /// An event for an open request.
+    #[must_use]
+    pub fn event(event: Event) -> Self {
+        Self::Event(Box::new(event))
+    }
 }
 
 async fn connection(daemon: Arc<Daemon>, stream: UnixStream) -> Result<(), Error> {
@@ -977,9 +1010,10 @@ pub async fn handle(
     })
 }
 
-/// Handles a `screen.*` request (milestone 8). A start is answered by a task
-/// that sends `screen.started` and `screen.frame` events and the response
-/// when the share ends; a client that goes away ends the share.
+/// Handles a `screen.*` request (milestones 8 and 9). A start, an accept
+/// and a cast are answered by a task that sends `screen.started`,
+/// `screen.frame` and `screen.audio` events and the response when the share
+/// ends; a client that goes away ends the share.
 async fn handle_screen(
     daemon: &Arc<Daemon>,
     request: Request,
@@ -996,10 +1030,15 @@ async fn handle_screen(
     let bad = |message: &str| Some(Response::error(id, ErrorBody::new("bad-request", message)));
     let result: Result<Response, Error> = match request.request_type.as_str() {
         types::SCREEN_DISPLAYS => match request.key {
-            Some(peer) => screen
-                .displays(&peer)
-                .await
-                .and_then(|displays| Response::ok(id, &ScreenDisplays { displays })),
+            Some(peer) => screen.sources(&peer).await.and_then(|listed| {
+                Response::ok(
+                    id,
+                    &ScreenDisplays {
+                        displays: listed.displays.unwrap_or_default(),
+                        windows: listed.windows.unwrap_or_default(),
+                    },
+                )
+            }),
             None => return bad("screen.displays needs a key"),
         },
         types::SCREEN_START => {
@@ -1008,14 +1047,57 @@ async fn handle_screen(
             };
             let start = Start {
                 display: request.display.clone(),
+                window: request.window.clone(),
                 formats: request.formats.clone().unwrap_or_default(),
                 width: request.width.unwrap_or(1920),
                 height: request.height.unwrap_or(1080),
                 frame_rate: request.frame_rate.unwrap_or(crate::screen::VIEW_RATE),
+                audio: if request.audio == Some(true) {
+                    screen.params().audio_decodes
+                } else {
+                    Vec::new()
+                },
             };
             match screen.watch(&peer, start).await {
                 Ok(watching) => {
                     stream_share(id, watching, out);
+                    return None;
+                }
+                Err(e) => Err(e),
+            }
+        }
+        types::SCREEN_ACCEPT => {
+            let Some(peer) = request.key else {
+                return bad("screen.accept needs a key");
+            };
+            match screen.accept(&peer, request.audio != Some(false)).await {
+                Ok(watching) => {
+                    stream_share(id, watching, out);
+                    return None;
+                }
+                Err(e) => Err(e),
+            }
+        }
+        types::SCREEN_DECLINE => match request.key {
+            Some(peer) => screen
+                .decline(&peer)
+                .and_then(|()| Response::ok(id, &Empty {})),
+            None => return bad("screen.decline needs a key"),
+        },
+        types::SCREEN_CAST => {
+            let Some(peer) = request.key else {
+                return bad("screen.cast needs a key");
+            };
+            let source = crate::screen::CastSource {
+                display: request.display.clone(),
+                window: request.window.clone(),
+            };
+            match screen
+                .cast(&peer, source, request.audio != Some(false))
+                .await
+            {
+                Ok(casting) => {
+                    stream_cast(id, casting, out);
                     return None;
                 }
                 Err(e) => Err(e),
@@ -1047,8 +1129,62 @@ async fn handle_screen(
     })
 }
 
-/// Sends `screen.started`, then a `screen.frame` event per chunk, then the
-/// response with why the share ended; a client that stops reading ends it.
+/// A `screen.*` event for request `id`: `started`, one `frame` chunk or one
+/// `audio` packet.
+fn screen_event(
+    id: u64,
+    started: Option<lp_core::screen::Started>,
+    frame: Option<lp_core::screen::Frame>,
+    audio: Option<lp_core::screen::Audio>,
+) -> Event {
+    Event {
+        event_type: TypeName::new(if frame.is_some() {
+            types::SCREEN_FRAME
+        } else if audio.is_some() {
+            types::SCREEN_AUDIO
+        } else {
+            types::SCREEN_STARTED
+        }),
+        id,
+        offer: None,
+        code: None,
+        progress: None,
+        started,
+        frame,
+        audio,
+    }
+}
+
+/// Sends `screen.started` once the receiver took the cast, then the
+/// response with why it ended; a client that goes away does not end the
+/// cast, which the caster's own indicator or `lpctl screen stop` does.
+fn stream_cast(id: u64, casting: crate::screen::Casting, out: tokio::sync::mpsc::Sender<Outgoing>) {
+    tokio::spawn(async move {
+        if out
+            .send(Outgoing::event(screen_event(
+                id,
+                Some(casting.started),
+                None,
+                None,
+            )))
+            .await
+            .is_err()
+        {
+            return;
+        }
+        let reason = casting
+            .ended
+            .await
+            .unwrap_or(lp_core::screen::StopReason::Error);
+        let response = Response::ok(id, &ScreenStopped { reason })
+            .unwrap_or_else(|e| Response::error(id, ErrorBody::from_error(&e)));
+        let _ = out.send(Outgoing::Response(response)).await;
+    });
+}
+
+/// Sends `screen.started`, then a `screen.frame` event per chunk and a
+/// `screen.audio` event per packet, then the response with why the share
+/// ended; a client that stops reading ends it.
 fn stream_share(
     id: u64,
     mut watching: crate::screen::Watching,
@@ -1057,21 +1193,11 @@ fn stream_share(
     use lp_core::screen::chunk_frame;
     tokio::spawn(async move {
         let event = |started: Option<lp_core::screen::Started>,
-                     frame: Option<lp_core::screen::Frame>| Event {
-            event_type: TypeName::new(if frame.is_some() {
-                types::SCREEN_FRAME
-            } else {
-                types::SCREEN_STARTED
-            }),
-            id,
-            offer: None,
-            code: None,
-            progress: None,
-            started,
-            frame,
+                     frame: Option<lp_core::screen::Frame>| {
+            screen_event(id, started, frame, None)
         };
         if out
-            .send(Outgoing::Event(event(Some(watching.started.clone()), None)))
+            .send(Outgoing::event(event(Some(watching.started.clone()), None)))
             .await
             .is_err()
         {
@@ -1097,13 +1223,28 @@ fn stream_share(
                 } => {
                     for chunk in chunk_frame(seq, at, key, &bytes) {
                         if out
-                            .send(Outgoing::Event(event(None, Some(chunk))))
+                            .send(Outgoing::event(event(None, Some(chunk))))
                             .await
                             .is_err()
                         {
                             let _ = watching.control.send(crate::screen::ShareControl::Stop);
                             return;
                         }
+                    }
+                }
+                crate::screen::Viewed::Audio { seq, at, bytes } => {
+                    let packet = lp_core::screen::Audio {
+                        seq,
+                        at,
+                        bytes: lp_core::wire::Bytes(bytes),
+                    };
+                    if out
+                        .send(Outgoing::event(screen_event(id, None, None, Some(packet))))
+                        .await
+                        .is_err()
+                    {
+                        let _ = watching.control.send(crate::screen::ShareControl::Stop);
+                        return;
                     }
                 }
                 crate::screen::Viewed::Stopped(reason) => {
@@ -1122,6 +1263,9 @@ fn stream_share(
 pub struct ScreenDisplays {
     /// The device's displays.
     pub displays: Vec<lp_core::screen::Display>,
+    /// The device's windows, where its platform lets it pick one by id.
+    #[serde(default)]
+    pub windows: Vec<lp_core::screen::Window>,
 }
 
 /// The `screen.start` response, once the share has ended.
@@ -1415,8 +1559,9 @@ fn stream_progress(
                 progress: Some(progress),
                 started: None,
                 frame: None,
+                audio: None,
             };
-            if out.send(Outgoing::Event(event)).await.is_err() {
+            if out.send(Outgoing::event(event)).await.is_err() {
                 // The client went away: the transfer carries on unwatched.
                 return;
             }

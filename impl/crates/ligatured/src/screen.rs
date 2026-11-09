@@ -2,16 +2,24 @@
 //! chapter 05 section 3h; milestone 8 (LP-148).
 //!
 //! The sharer's platform is behind the [`Capture`] trait: it lists displays
-//! and starts a share, which delivers encoded frames on a channel until it
-//! ends. The viewer's side is a sink the daemon hands to whoever asked to
-//! watch (`lpview` over the control socket, the phone through its node): the
-//! reassembled frames and the end of the share, with a handle to ask for a
-//! keyframe or to stop. The [`ScreenSync`] negotiates `start`, chunks frames
-//! within the message bound, drops rather than queues when the stream holds
-//! it back (and asks the encoder for a keyframe once it has dropped), answers
-//! `keyframe`, and ends a share on every path: the viewer's `stop`, the
-//! sharer's, the platform's withdrawn consent, a failed capture, the stream's
-//! end and the connection's.
+//! and windows and starts a share, which delivers encoded frames, and sound
+//! when asked, on a channel until it ends. The viewer's side is a sink the
+//! daemon hands to whoever asked to watch (`lpview` over the control socket,
+//! the phone through its node): the reassembled frames, the packets of sound
+//! and the end of the share, with a handle to ask for a keyframe or to stop.
+//! The [`ScreenSync`] negotiates `start`, chunks frames within the message
+//! bound, drops rather than queues when the stream holds it back (and asks
+//! the encoder for a keyframe once it has dropped), answers `keyframe`, and
+//! ends a share on every path: the viewer's `stop`, the sharer's, the
+//! platform's withdrawn consent, a failed capture, the stream's end and the
+//! connection's.
+//!
+//! Milestone 9 (LP-199) adds the cast: the sharer opens the stream with an
+//! `offer` and the receiver answers `start`, from which point a cast and a
+//! watch are the same share. An offer waits for whoever shows pictures on
+//! the receiving device (`lpview`, started by the daemon; the app on the
+//! phone) to accept or decline it, and sound rides on the share's stream as
+//! `audio` messages between the frame chunks, never dropped.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -19,16 +27,16 @@ use std::time::{Duration, Instant};
 
 use lp_core::input::Region;
 use lp_core::screen::{
-    CHUNK_BYTES, Display, Displays, Format, Frame, RefuseReason, Refused, SCREEN_TYPE,
-    ScreenMessage, ScreenParams, Start, Started, Stop, StopReason, chunk_frame, fit,
-    screen_descriptor,
+    Audio, AudioFormat, CHUNK_BYTES, Display, Displays, Format, Frame, Offer, RefuseReason,
+    Refused, SCREEN_TYPE, ScreenMessage, ScreenParams, Source, SourceKind, Start, Started, Stop,
+    StopReason, Window, chunk_frame, fit, screen_descriptor,
 };
 use lp_core::{Error, PublicKey};
 use lp_identity::trust::Recognition;
 use lp_transport::manager::{StreamHandler, open_on};
 use lp_transport::stream::FramedStream;
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::daemon::Daemon;
 
@@ -39,6 +47,9 @@ const ADVERTISE_POLL: Duration = Duration::from_secs(1);
 /// How long the viewer waits for `started` or `refused`, which may wait on
 /// the sharer's consent dialog.
 const START_TIMEOUT: Duration = Duration::from_secs(60);
+/// How long an offer waits for someone at the receiver to take it before it
+/// is refused as declined.
+const OFFER_TIMEOUT: Duration = Duration::from_secs(60);
 /// The fastest frame rate a sharer agrees to.
 const MAX_FRAME_RATE: u32 = 60;
 /// Whole frames waiting for the viewer before the oldest are dropped.
@@ -57,11 +68,23 @@ pub struct EncodedFrame {
     pub bytes: Vec<u8>,
 }
 
+/// One packet of sound from the platform's encoder: 20 ms of Opus.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AudioPacket {
+    /// When its first sample was captured, microseconds since the share
+    /// started.
+    pub at: u64,
+    /// The packet.
+    pub bytes: Vec<u8>,
+}
+
 /// What a running capture delivers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Captured {
     /// A frame.
     Frame(EncodedFrame),
+    /// A packet of sound, when the share's settings asked for it.
+    Audio(AudioPacket),
     /// The capture ended on its own: consent withdrawn, or a failure.
     Ended(StopReason),
 }
@@ -78,10 +101,15 @@ pub enum ShareControl {
 /// The settings a share runs with.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
-    /// The display.
+    /// The display's id, or the window's when `kind` says so.
     pub display: String,
+    /// Whether `display` names a display or a window.
+    pub kind: SourceKind,
     /// The format picked from the viewer's offer (ADR 0044).
     pub format: Format,
+    /// The audio format picked, when sound was agreed: the capture then
+    /// delivers [`Captured::Audio`] packets beside the frames.
+    pub audio: Option<AudioFormat>,
     /// The picture's width.
     pub width: u32,
     /// The picture's height.
@@ -94,9 +122,15 @@ pub struct Settings {
 
 impl Settings {
     fn started(&self) -> Started {
+        let (display, window) = match self.kind {
+            SourceKind::Display => (Some(self.display.clone()), None),
+            SourceKind::Window => (None, Some(self.display.clone())),
+        };
         Started {
-            display: self.display.clone(),
+            display,
+            window,
             format: self.format,
+            audio: self.audio,
             width: self.width,
             height: self.height,
             frame_rate: self.frame_rate,
@@ -115,21 +149,28 @@ pub struct Share {
     pub region: Option<Region>,
 }
 
-/// The sharer's platform: displays, and a share of one.
+/// The sharer's platform: displays and windows, and a share of one.
 pub trait Capture: Send + Sync {
-    /// Whether this device shares right now and the formats it encodes;
-    /// `views`, `decodes` and the viewer bounds are the sync's, not the
-    /// capture's.
+    /// Whether this device shares right now and the picture and audio
+    /// formats it encodes; `views`, `receives`, `decodes` and the viewer
+    /// bounds are the sync's, not the capture's.
     fn params(&self) -> ScreenParams;
     /// The displays this device can share.
     fn displays(&self) -> Vec<Display>;
+    /// The windows this device can share by id, where its platform lets it
+    /// pick one without a picker; empty elsewhere.
+    fn windows(&self) -> Vec<Window> {
+        Vec::new()
+    }
     /// Where `display` lies in the whole screen, for a device with several.
     fn region(&self, _display: &str) -> Option<Region> {
         None
     }
     /// Starts a share with `settings`, which the sync has already fitted to
-    /// the display and the viewer. Blocks on the platform's consent where it
-    /// has one, so it runs off the async runtime.
+    /// the source and the viewer. Blocks on the platform's consent where it
+    /// has one, so it runs off the async runtime. A window source is fitted
+    /// into the picture keeping its aspect when it changes shape, the spare
+    /// area black.
     ///
     /// # Errors
     ///
@@ -149,6 +190,15 @@ pub enum Viewed {
         /// Whether it is a keyframe.
         key: bool,
         /// The encoded bytes.
+        bytes: Vec<u8>,
+    },
+    /// A packet of sound, in the agreed audio format.
+    Audio {
+        /// The packet's number.
+        seq: u64,
+        /// When its first sample was captured, on the frames' clock.
+        at: u64,
+        /// The packet.
         bytes: Vec<u8>,
     },
     /// The share ended.
@@ -172,6 +222,39 @@ impl std::fmt::Debug for Watching {
     }
 }
 
+/// A cast this device runs: what `cast` returns once the receiver took it.
+#[derive(Debug)]
+pub struct Casting {
+    /// What was settled on.
+    pub started: Started,
+    /// Why the cast ended, when it does.
+    pub ended: oneshot::Receiver<StopReason>,
+}
+
+/// What a device casts: a display (the primary one when neither is named)
+/// or a window of its own.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CastSource {
+    /// A display's id.
+    pub display: Option<String>,
+    /// A window's id, instead.
+    pub window: Option<String>,
+}
+
+/// What is told when a cast is offered to this device: the caster and its
+/// offer. The daemon sets one so something shows the picture (`lpview`, the
+/// phone's app), which then accepts or declines through the sync.
+pub type OnOffer = Arc<dyn Fn(PublicKey, Offer) + Send + Sync>;
+
+/// An offer this device holds, for `lpctl screen status` and the receivers.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Offered {
+    /// The caster.
+    pub peer: PublicKey,
+    /// What it offers.
+    pub offer: Offer,
+}
+
 impl std::fmt::Debug for Share {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("Share")
@@ -189,6 +272,12 @@ pub struct Sharing {
     pub frames: u64,
     /// Frames dropped because the stream held them back.
     pub dropped: u64,
+    /// Packets of sound sent.
+    #[serde(default)]
+    pub audio: u64,
+    /// Whether this device started it, as a cast.
+    #[serde(default)]
+    pub cast: bool,
 }
 
 /// A share this device watches, for `lpctl screen status`.
@@ -200,19 +289,31 @@ pub struct WatchingStatus {
     pub started: Started,
     /// Frames received whole.
     pub frames: u64,
+    /// Packets of sound received.
+    #[serde(default)]
+    pub audio: u64,
+    /// Whether the sharer started it, as a cast this device received.
+    #[serde(default)]
+    pub cast: bool,
 }
 
 /// What `lpctl screen status` shows.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScreenStatus {
     /// What this device advertises.
     pub shares: bool,
     /// What this device advertises.
     pub views: bool,
+    /// What this device advertises: it shows casts offered to it.
+    #[serde(default)]
+    pub receives: bool,
     /// The shares this device runs.
     pub sharing: Vec<Sharing>,
     /// The shares this device watches.
     pub watching: Vec<WatchingStatus>,
+    /// The casts offered to this device that nobody has taken yet.
+    #[serde(default)]
+    pub offered: Vec<Offered>,
 }
 
 struct SharingState {
@@ -220,6 +321,8 @@ struct SharingState {
     started: Started,
     frames: u64,
     dropped: u64,
+    audio: u64,
+    cast: bool,
     /// Ends the stream task from outside: a stop from the sharer's side.
     stop: mpsc::UnboundedSender<StopReason>,
 }
@@ -228,8 +331,27 @@ struct WatchingState {
     peer: PublicKey,
     started: Started,
     frames: u64,
+    audio: u64,
+    cast: bool,
     /// A stop from outside the viewer: `lpctl screen stop`.
     stop: mpsc::UnboundedSender<ShareControl>,
+}
+
+/// How whoever shows pictures on this device answered an offer.
+enum Decision {
+    /// Take it, with sound if `audio` and the offer has any; the share's
+    /// handle comes back on the channel.
+    Accept {
+        audio: bool,
+        reply: oneshot::Sender<Result<Watching, Error>>,
+    },
+    /// Leave it.
+    Decline,
+}
+
+struct PendingOffer {
+    offer: Offer,
+    decide: Option<oneshot::Sender<Decision>>,
 }
 
 /// The screen synchroniser for one daemon.
@@ -238,10 +360,15 @@ pub struct ScreenSync {
     capture: Option<Arc<dyn Capture>>,
     /// What this device takes as a viewer, if it views at all.
     viewer: Option<ScreenParams>,
-    /// Shares running, by display id.
+    /// What shows an offered cast on this device, if anything: set, the
+    /// device advertises `receives`.
+    on_offer: Mutex<Option<OnOffer>>,
+    /// Shares running, by display or window id.
     sharing: Mutex<HashMap<String, SharingState>>,
-    /// Shares watched, by sharer and display.
+    /// Shares watched, by sharer and source id.
     watching: Mutex<HashMap<(PublicKey, String), WatchingState>>,
+    /// Offers waiting for someone here to take them, by caster.
+    pending: Mutex<HashMap<PublicKey, PendingOffer>>,
     offered: tokio::sync::Mutex<Option<ScreenParams>>,
 }
 
@@ -264,8 +391,10 @@ impl ScreenSync {
             daemon: daemon.clone(),
             capture,
             viewer,
+            on_offer: Mutex::new(None),
             sharing: Mutex::new(HashMap::new()),
             watching: Mutex::new(HashMap::new()),
+            pending: Mutex::new(HashMap::new()),
             offered: tokio::sync::Mutex::new(None),
         });
         daemon.manager().on_stream(SCREEN_TYPE, this.handler());
@@ -279,19 +408,30 @@ impl ScreenSync {
         this
     }
 
+    /// Sets what shows an offered cast on this device, after which the
+    /// device advertises `receives` (within the manifest's poll). On a
+    /// desktop the daemon starts `lpview --receive`; on the phone the node
+    /// tells the app.
+    pub fn set_on_offer(&self, on_offer: OnOffer) {
+        *lock(&self.on_offer) = Some(on_offer);
+    }
+
     /// What this device advertises right now.
     #[must_use]
     pub fn params(&self) -> ScreenParams {
         let mut params = self.viewer.clone().unwrap_or_default();
         params.views = self.viewer.is_some();
+        params.receives = params.views && lock(&self.on_offer).is_some();
         match self.capture.as_ref().map(|c| c.params()) {
             Some(capture) => {
                 params.shares = capture.shares;
                 params.encodes = capture.encodes;
+                params.audio_encodes = capture.audio_encodes;
             }
             None => {
                 params.shares = false;
                 params.encodes = Vec::new();
+                params.audio_encodes = Vec::new();
             }
         }
         params
@@ -314,6 +454,7 @@ impl ScreenSync {
         tracing::info!(
             shares = params.shares,
             views = params.views,
+            receives = params.receives,
             "screen capability advertised"
         );
         *offered = Some(params);
@@ -326,6 +467,7 @@ impl ScreenSync {
         ScreenStatus {
             shares: params.shares,
             views: params.views,
+            receives: params.receives,
             sharing: lock(&self.sharing)
                 .values()
                 .map(|s| Sharing {
@@ -333,6 +475,8 @@ impl ScreenSync {
                     started: s.started.clone(),
                     frames: s.frames,
                     dropped: s.dropped,
+                    audio: s.audio,
+                    cast: s.cast,
                 })
                 .collect(),
             watching: lock(&self.watching)
@@ -341,9 +485,24 @@ impl ScreenSync {
                     peer: w.peer,
                     started: w.started.clone(),
                     frames: w.frames,
+                    audio: w.audio,
+                    cast: w.cast,
+                })
+                .collect(),
+            offered: lock(&self.pending)
+                .iter()
+                .map(|(peer, p)| Offered {
+                    peer: *peer,
+                    offer: p.offer.clone(),
                 })
                 .collect(),
         }
+    }
+
+    /// The casts offered to this device that nobody has taken yet.
+    #[must_use]
+    pub fn offers(&self) -> Vec<Offered> {
+        self.status().offered
     }
 
     /// Asks `peer` what displays it has.
@@ -353,6 +512,15 @@ impl ScreenSync {
     /// Returns [`Error::Chain`] when `peer` is not this person's device or
     /// does not share, and [`Error::Transport`] when the stream fails.
     pub async fn displays(&self, peer: &PublicKey) -> Result<Vec<Display>, Error> {
+        Ok(self.sources(peer).await?.displays.unwrap_or_default())
+    }
+
+    /// Asks `peer` what displays and windows it has.
+    ///
+    /// # Errors
+    ///
+    /// As [`ScreenSync::displays`].
+    pub async fn sources(&self, peer: &PublicKey) -> Result<Displays, Error> {
         self.sharer_params(peer)?;
         let mut stream = self.open(peer).await?;
         stream
@@ -363,9 +531,11 @@ impl ScreenSync {
             .map_err(|_| Error::Transport(format!("{peer} did not list its displays")))??;
         stream.finish();
         match answer {
-            Some(ScreenMessage::Displays(Displays {
-                displays: Some(list),
-            })) => Ok(list),
+            Some(ScreenMessage::Displays(
+                listed @ Displays {
+                    displays: Some(_), ..
+                },
+            )) => Ok(listed),
             other => Err(Error::Transport(format!(
                 "{peer} answered displays with {other:?}"
             ))),
@@ -407,8 +577,21 @@ impl ScreenSync {
                 "no picture format that this device decodes and the other encodes".to_owned(),
             ));
         }
+        // Sound, when asked for: what this device decodes, in its order, or
+        // the part the caller narrowed to, and only what the sharer encodes;
+        // a share whose sound cannot be agreed is silent rather than refused.
+        let audio: Vec<AudioFormat> = start
+            .audio
+            .iter()
+            .copied()
+            .filter(|f| viewer.audio_decodes.contains(f) && sharer.audio_encodes.contains(f))
+            .collect();
+        if !start.audio.is_empty() && audio.is_empty() {
+            tracing::debug!(%peer, "no audio format that this device decodes and the other encodes; a silent share");
+        }
         let start = Start {
             formats,
+            audio,
             width: start.width.min(viewer.max_width),
             height: start.height.min(viewer.max_height),
             frame_rate: start.frame_rate.min(viewer.max_frame_rate),
@@ -416,6 +599,20 @@ impl ScreenSync {
         };
         let mut stream = self.open(peer).await?;
         stream.send(&ScreenMessage::Start(start.clone())).await?;
+        let started = self.await_started(peer, &mut stream, &start, None).await?;
+        Ok(self.watching(peer, started, stream, false))
+    }
+
+    /// Waits for the sharer's answer to `start` and checks it against what
+    /// was asked (LP-186), or against the source `offered` when `start`
+    /// answered an offer.
+    async fn await_started(
+        &self,
+        peer: &PublicKey,
+        stream: &mut FramedStream,
+        start: &Start,
+        offered: Option<&Source>,
+    ) -> Result<Started, Error> {
         let answer = tokio::time::timeout(START_TIMEOUT, stream.recv::<ScreenMessage>())
             .await
             .map_err(|_| Error::Transport(format!("{peer} did not answer start")))??;
@@ -437,32 +634,208 @@ impl ScreenSync {
                 )));
             }
         };
-        if let Err(why) = check_started(&start, &started) {
+        if let Err(why) = check_started(start, &started, offered) {
             stream.reset(lp_core::frame::MALFORMED_CODE);
             return Err(Error::Transport(format!(
                 "{peer} answered start with what was not asked for: {why}"
             )));
         }
+        Ok(started)
+    }
+
+    /// Records a share this device watches and starts its stream task.
+    fn watching(
+        self: &Arc<Self>,
+        peer: &PublicKey,
+        started: Started,
+        stream: FramedStream,
+        cast: bool,
+    ) -> Watching {
         let (frames_tx, frames) = mpsc::channel(QUEUED_FRAMES);
         let (control, control_rx) = mpsc::unbounded_channel();
-        let key = (*peer, started.display.clone());
+        let key = (*peer, started.source_id().to_owned());
         lock(&self.watching).insert(
             key.clone(),
             WatchingState {
                 peer: *peer,
                 started: started.clone(),
                 frames: 0,
+                audio: 0,
+                cast,
                 stop: control.clone(),
             },
         );
-        tracing::info!(%peer, display = %started.display, width = started.width, height = started.height, "watching");
+        tracing::info!(%peer, source = %started.source_id(), kind = %started.kind(), width = started.width, height = started.height, audio = ?started.audio, cast, "watching");
         let this = self.clone();
         tokio::spawn(async move { this.run_watch(key, stream, frames_tx, control_rx).await });
-        Ok(Watching {
+        Watching {
             started,
             frames,
             control,
-        })
+        }
+    }
+
+    /// Casts a display or a window of this device to `peer`, which must say
+    /// it receives: opens the stream with an `offer` and waits for the
+    /// receiver to take it. With `audio`, the device's sound goes too when
+    /// both sides have a format for it. Returns once the share runs, with a
+    /// channel that says why it ended.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Chain`] when `peer` is not this person's device or
+    /// does not receive, [`Error::Io`] when this device does not share or has
+    /// no such source, [`Error::Refused`] when the receiver declined (with
+    /// the reason), and [`Error::Transport`] when the stream fails.
+    pub async fn cast(
+        self: &Arc<Self>,
+        peer: &PublicKey,
+        source: CastSource,
+        audio: bool,
+    ) -> Result<Casting, Error> {
+        let Some(capture) = self.capture.clone() else {
+            return Err(Error::Io("this device does not share".to_owned()));
+        };
+        let receiver = self.receiver_params(peer)?;
+        let params = capture.params();
+        if !params.shares {
+            return Err(Error::Io(
+                "this device does not share its screen right now".to_owned(),
+            ));
+        }
+        let (chosen, kind) = match (&source.window, &source.display) {
+            (Some(id), _) => (
+                capture
+                    .windows()
+                    .iter()
+                    .find(|w| &w.id == id)
+                    .map(Source::window)
+                    .ok_or_else(|| Error::Io(format!("no window {id}")))?,
+                SourceKind::Window,
+            ),
+            (None, Some(id)) => (
+                capture
+                    .displays()
+                    .iter()
+                    .find(|d| &d.id == id)
+                    .map(Source::display)
+                    .ok_or_else(|| Error::Io(format!("no display {id}")))?,
+                SourceKind::Display,
+            ),
+            (None, None) => (
+                primary(&capture.displays())
+                    .map(Source::display)
+                    .ok_or_else(|| Error::Io("no display to cast".to_owned()))?,
+                SourceKind::Display,
+            ),
+        };
+        if lock(&self.sharing).contains_key(&chosen.id) {
+            return Err(Error::Refused(format!("{} is already shared", chosen.id)));
+        }
+        let offer = Offer {
+            source: chosen.clone(),
+            formats: params.encodes.clone(),
+            max_frame_rate: MAX_FRAME_RATE,
+            audio: if audio {
+                params.audio_encodes.clone()
+            } else {
+                Vec::new()
+            },
+        };
+        if !offer.formats.iter().any(|f| receiver.decodes.contains(f)) {
+            return Err(Error::Chain(
+                "no picture format that this device encodes and the other decodes".to_owned(),
+            ));
+        }
+        let name = self
+            .daemon
+            .device_display_name(peer)
+            .unwrap_or_else(|| peer.fingerprint());
+        let mut stream = self.open(peer).await?;
+        stream.send(&ScreenMessage::Offer(offer)).await?;
+        let answer = tokio::time::timeout(
+            OFFER_TIMEOUT + START_TIMEOUT,
+            stream.recv::<ScreenMessage>(),
+        )
+        .await
+        .map_err(|_| Error::Transport(format!("{name} did not answer the offer")))??;
+        let start = match answer {
+            Some(ScreenMessage::Start(start)) => start,
+            Some(ScreenMessage::Refused(Refused { reason })) => {
+                return Err(Error::Refused(format!(
+                    "{name} did not take the cast: {reason}"
+                )));
+            }
+            other => {
+                stream.reset(lp_core::frame::MALFORMED_CODE);
+                return Err(Error::Transport(format!(
+                    "{peer} answered the offer with {other:?}"
+                )));
+            }
+        };
+        let (settings, share) = match self
+            .start_share(&capture, peer, &chosen, kind, &start, &mut stream)
+            .await
+        {
+            Ok(started) => started,
+            Err(reason) => {
+                refuse(&mut stream, reason).await;
+                return Err(Error::Refused(format!(
+                    "the cast to {name} could not start: {reason}"
+                )));
+            }
+        };
+        let started = settings.started();
+        let (ended_tx, ended) = oneshot::channel();
+        let this = self.clone();
+        let peer = *peer;
+        tokio::spawn(async move {
+            let reason = this.run_started(&peer, settings, share, stream, true).await;
+            let _ = ended_tx.send(reason);
+        });
+        Ok(Casting { started, ended })
+    }
+
+    /// Takes the cast `peer` offered: `start` goes back with what this
+    /// device decodes, and the share's handle is returned once it runs.
+    /// With `audio`, sound is asked for where the offer has any.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Chain`] when no offer from `peer` is waiting,
+    /// [`Error::Refused`] when the caster refused after all, and
+    /// [`Error::Transport`] when the stream fails.
+    pub async fn accept(&self, peer: &PublicKey, audio: bool) -> Result<Watching, Error> {
+        let (reply_tx, reply) = oneshot::channel();
+        self.decide(
+            peer,
+            Decision::Accept {
+                audio,
+                reply: reply_tx,
+            },
+        )?;
+        reply
+            .await
+            .map_err(|_| Error::Transport(format!("the offer from {peer} went away")))?
+    }
+
+    /// Declines the cast `peer` offered.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Chain`] when no offer from `peer` is waiting.
+    pub fn decline(&self, peer: &PublicKey) -> Result<(), Error> {
+        self.decide(peer, Decision::Decline)
+    }
+
+    fn decide(&self, peer: &PublicKey, decision: Decision) -> Result<(), Error> {
+        let decide = lock(&self.pending)
+            .get_mut(peer)
+            .and_then(|p| p.decide.take())
+            .ok_or_else(|| Error::Chain(format!("no cast offered by {peer} is waiting")))?;
+        decide
+            .send(decision)
+            .map_err(|_| Error::Chain(format!("the offer from {peer} is no longer waiting")))
     }
 
     /// Stops every share this device runs for `peer` and every share it
@@ -508,11 +881,26 @@ impl ScreenSync {
     }
 
     fn sharer_params(&self, peer: &PublicKey) -> Result<ScreenParams, Error> {
+        let params = self.peer_params(peer)?;
+        if !params.shares {
+            return Err(Error::Chain(format!("{peer} does not share its screen")));
+        }
+        Ok(params)
+    }
+
+    fn receiver_params(&self, peer: &PublicKey) -> Result<ScreenParams, Error> {
+        let params = self.peer_params(peer)?;
+        if !params.views || !params.receives {
+            return Err(Error::Chain(format!("{peer} does not take a cast")));
+        }
+        Ok(params)
+    }
+
+    fn peer_params(&self, peer: &PublicKey) -> Result<ScreenParams, Error> {
         if !self.same_person(peer) {
             return Err(Error::Chain(format!("{peer} is not one of my devices")));
         }
-        let params = self
-            .daemon
+        self.daemon
             .registry()
             .peers()
             .into_iter()
@@ -522,11 +910,7 @@ impl ScreenSync {
                     .iter()
                     .find_map(ScreenParams::from_descriptor)
             })
-            .ok_or_else(|| Error::Chain(format!("{peer} offers no screen")))?;
-        if !params.shares {
-            return Err(Error::Chain(format!("{peer} does not share its screen")));
-        }
-        Ok(params)
+            .ok_or_else(|| Error::Chain(format!("{peer} offers no screen")))
     }
 
     fn same_person(&self, peer: &PublicKey) -> bool {
@@ -555,6 +939,7 @@ impl ScreenSync {
         let reason = loop {
             tokio::select! {
                 incoming = stream.recv::<ScreenMessage>() => {
+                    tracing::trace!(peer = %key.0, ?incoming, "from the sharer");
                     match incoming {
                         Ok(Some(ScreenMessage::Frame(frame))) => {
                             let whole = match pending.push(frame) {
@@ -590,6 +975,23 @@ impl ScreenSync {
                                 }
                             }
                         }
+                        Ok(Some(ScreenMessage::Audio(Audio { seq, at, bytes }))) => {
+                            if let Some(w) = lock(&self.watching).get_mut(&key) {
+                                w.audio += 1;
+                            }
+                            // Sound is small and keeps its place by its clock; a
+                            // viewer that cannot keep up loses a packet, not the share.
+                            let sent = frames.try_send(Viewed::Audio { seq, at, bytes: bytes.0 });
+                            tracing::trace!(peer = %key.0, ok = sent.is_ok(), "audio to the viewer");
+                            match sent {
+                                Ok(()) | Err(mpsc::error::TrySendError::Full(_)) => {}
+                                Err(mpsc::error::TrySendError::Closed(_)) => {
+                                    let _ = stream.send(&ScreenMessage::Stop(Stop { reason: StopReason::Viewer })).await;
+                                    stream.finish();
+                                    break StopReason::Viewer;
+                                }
+                            }
+                        }
                         Ok(Some(ScreenMessage::Stop(Stop { reason }))) => break reason,
                         Ok(Some(other)) => {
                             tracing::debug!(?other, "unexpected message from the sharer");
@@ -615,15 +1017,12 @@ impl ScreenSync {
         };
         lock(&self.watching).remove(&key);
         let _ = frames.send(Viewed::Stopped(reason)).await;
-        tracing::info!(peer = %key.0, display = %key.1, %reason, "stopped watching");
+        tracing::info!(peer = %key.0, source = %key.1, %reason, "stopped watching");
     }
 
-    /// The sharer's side of one stream: answers `displays`, runs one share.
+    /// One incoming stream: a `displays` question or a `start` for the
+    /// sharer, an `offer` for the receiver.
     async fn serve(self: Arc<Self>, peer: PublicKey, mut stream: FramedStream) {
-        let Some(capture) = self.capture.clone() else {
-            stream.reset(lp_core::frame::REFUSED_CODE);
-            return;
-        };
         if !self.same_person(&peer) {
             tracing::warn!(%peer, "screen stream from a device that is not mine");
             stream.reset(lp_core::frame::REFUSED_CODE);
@@ -635,11 +1034,20 @@ impl ScreenSync {
             _ => return,
         };
         let start = match first {
+            ScreenMessage::Offer(offer) => {
+                self.receive(peer, stream, offer).await;
+                return;
+            }
             ScreenMessage::Displays(_) => {
-                let list = capture.displays();
+                let Some(capture) = self.capture.clone() else {
+                    stream.reset(lp_core::frame::REFUSED_CODE);
+                    return;
+                };
+                let windows = capture.windows();
                 let _ = stream
                     .send(&ScreenMessage::Displays(Displays {
-                        displays: Some(list),
+                        displays: Some(capture.displays()),
+                        windows: (!windows.is_empty()).then_some(windows),
                     }))
                     .await;
                 stream.finish();
@@ -652,79 +1060,216 @@ impl ScreenSync {
                 return;
             }
         };
-        let params = capture.params();
-        if !params.shares {
-            refuse(&mut stream, RefuseReason::Consent).await;
+        let Some(capture) = self.capture.clone() else {
+            stream.reset(lp_core::frame::REFUSED_CODE);
+            return;
+        };
+        let (chosen, kind) = match (&start.window, &start.display) {
+            (Some(id), _) => match capture.windows().iter().find(|w| &w.id == id) {
+                Some(w) => (Source::window(w), SourceKind::Window),
+                None => {
+                    refuse(&mut stream, RefuseReason::NoDisplay).await;
+                    return;
+                }
+            },
+            (None, Some(id)) => match capture.displays().iter().find(|d| &d.id == id) {
+                Some(d) => (Source::display(d), SourceKind::Display),
+                None => {
+                    refuse(&mut stream, RefuseReason::NoDisplay).await;
+                    return;
+                }
+            },
+            (None, None) => match primary(&capture.displays()) {
+                Some(d) => (Source::display(d), SourceKind::Display),
+                None => {
+                    refuse(&mut stream, RefuseReason::NoDisplay).await;
+                    return;
+                }
+            },
+        };
+        let (settings, share) = match self
+            .start_share(&capture, &peer, &chosen, kind, &start, &mut stream)
+            .await
+        {
+            Ok(started) => started,
+            Err(reason) => {
+                refuse(&mut stream, reason).await;
+                return;
+            }
+        };
+        self.run_started(&peer, settings, share, stream, false)
+            .await;
+    }
+
+    /// The receiver's side of a cast: holds `offer` until whoever shows
+    /// pictures here takes or declines it, answers `start` or `refused`, and
+    /// then watches as for a share this device asked for.
+    async fn receive(self: Arc<Self>, peer: PublicKey, mut stream: FramedStream, offer: Offer) {
+        let Some(viewer) = self.viewer.clone() else {
+            refuse(&mut stream, RefuseReason::NoDecoder).await;
+            return;
+        };
+        let formats: Vec<Format> = viewer
+            .decodes
+            .iter()
+            .copied()
+            .filter(|f| offer.formats.contains(f))
+            .collect();
+        if formats.is_empty() {
+            refuse(&mut stream, RefuseReason::NoDecoder).await;
             return;
         }
+        let on_offer = lock(&self.on_offer).clone();
+        let Some(on_offer) = on_offer else {
+            tracing::info!(%peer, "a cast was offered but nothing here shows one");
+            refuse(&mut stream, RefuseReason::Declined).await;
+            return;
+        };
+        let (decide_tx, decide) = oneshot::channel();
+        let busy = match lock(&self.pending).entry(peer) {
+            std::collections::hash_map::Entry::Occupied(_) => true,
+            std::collections::hash_map::Entry::Vacant(slot) => {
+                slot.insert(PendingOffer {
+                    offer: offer.clone(),
+                    decide: Some(decide_tx),
+                });
+                false
+            }
+        };
+        if busy {
+            refuse(&mut stream, RefuseReason::Busy).await;
+            return;
+        }
+        tracing::info!(%peer, source = %offer.source.id, kind = %offer.source.kind, "a cast is offered");
+        on_offer(peer, offer.clone());
+        let decision = tokio::time::timeout(OFFER_TIMEOUT, decide).await;
+        lock(&self.pending).remove(&peer);
+        let (audio, reply) = match decision {
+            Ok(Ok(Decision::Accept { audio, reply })) => (audio, reply),
+            Ok(Ok(Decision::Decline)) | Ok(Err(_)) | Err(_) => {
+                tracing::info!(%peer, "the cast was declined");
+                refuse(&mut stream, RefuseReason::Declined).await;
+                return;
+            }
+        };
+        let start = Start {
+            display: None,
+            window: None,
+            formats,
+            width: offer.source.width.min(viewer.max_width),
+            height: offer.source.height.min(viewer.max_height),
+            frame_rate: viewer.max_frame_rate.min(offer.max_frame_rate.max(1)),
+            audio: if audio {
+                viewer
+                    .audio_decodes
+                    .iter()
+                    .copied()
+                    .filter(|f| offer.audio.contains(f))
+                    .collect()
+            } else {
+                Vec::new()
+            },
+        };
+        if let Err(e) = stream.send(&ScreenMessage::Start(start.clone())).await {
+            let _ = reply.send(Err(e));
+            return;
+        }
+        let started = match self
+            .await_started(&peer, &mut stream, &start, Some(&offer.source))
+            .await
+        {
+            Ok(started) => started,
+            Err(e) => {
+                let _ = reply.send(Err(e));
+                return;
+            }
+        };
+        let _ = reply.send(Ok(self.watching(&peer, started, stream, true)));
+    }
+
+    /// Picks the formats and the size for `start` on `chosen`, and starts
+    /// the capture, which may block on the platform's consent dialog.
+    async fn start_share(
+        &self,
+        capture: &Arc<dyn Capture>,
+        peer: &PublicKey,
+        chosen: &Source,
+        kind: SourceKind,
+        start: &Start,
+        _stream: &mut FramedStream,
+    ) -> Result<(Settings, Share), RefuseReason> {
+        let params = capture.params();
+        if !params.shares {
+            return Err(RefuseReason::Consent);
+        }
         // The first format of the viewer's offer this device encodes now.
-        let Some(format) = start
+        let format = start
             .formats
             .iter()
             .copied()
             .find(|f| params.encodes.contains(f))
-        else {
-            refuse(&mut stream, RefuseReason::NoEncoder).await;
-            return;
-        };
-        let displays = capture.displays();
-        let display = match &start.display {
-            Some(id) => displays.iter().find(|d| &d.id == id),
-            None => displays
-                .iter()
-                .find(|d| d.primary)
-                .or_else(|| displays.first()),
-        };
-        let Some(chosen) = display.cloned() else {
-            refuse(&mut stream, RefuseReason::NoDisplay).await;
-            return;
-        };
+            .ok_or(RefuseReason::NoEncoder)?;
+        // And of its audio formats, when it asked for sound; none is silence.
+        let audio = start
+            .audio
+            .iter()
+            .copied()
+            .find(|f| params.audio_encodes.contains(f));
         if lock(&self.sharing).contains_key(&chosen.id) {
-            refuse(&mut stream, RefuseReason::Busy).await;
-            return;
+            return Err(RefuseReason::Busy);
         }
         let (width, height) = fit(chosen.width, chosen.height, start.width, start.height);
         let settings = Settings {
             display: chosen.id.clone(),
+            kind,
             format,
+            audio,
             width,
             height,
             frame_rate: start.frame_rate.clamp(1, MAX_FRAME_RATE),
             viewer: self
                 .daemon
-                .device_display_name(&peer)
+                .device_display_name(peer)
                 .unwrap_or_else(|| peer.fingerprint()),
         };
-        // The capture may block on the platform's consent dialog.
         let starting = {
             let capture = capture.clone();
             let settings = settings.clone();
             tokio::task::spawn_blocking(move || capture.start(&settings))
         };
-        let share = match starting.await {
-            Ok(Ok(share)) => share,
-            Ok(Err(reason)) => {
-                refuse(&mut stream, reason).await;
-                return;
-            }
-            Err(_) => {
-                refuse(&mut stream, RefuseReason::Consent).await;
-                return;
-            }
-        };
+        match starting.await {
+            Ok(Ok(share)) => Ok((settings, share)),
+            Ok(Err(reason)) => Err(reason),
+            Err(_) => Err(RefuseReason::Consent),
+        }
+    }
+
+    /// Records a share this device runs, sends `started`, forwards frames
+    /// and sound until it ends, and cleans up; returns why it ended.
+    async fn run_started(
+        &self,
+        peer: &PublicKey,
+        settings: Settings,
+        share: Share,
+        mut stream: FramedStream,
+        cast: bool,
+    ) -> StopReason {
+        let id = settings.display.clone();
         let (stop_tx, stop_rx) = mpsc::unbounded_channel();
         let busy = {
             let mut sharing = lock(&self.sharing);
-            if sharing.contains_key(&chosen.id) {
+            if sharing.contains_key(&id) {
                 true
             } else {
                 sharing.insert(
-                    chosen.id.clone(),
+                    id.clone(),
                     SharingState {
-                        peer,
+                        peer: *peer,
                         started: settings.started(),
                         frames: 0,
                         dropped: 0,
+                        audio: 0,
+                        cast,
                         stop: stop_tx,
                     },
                 );
@@ -734,31 +1279,37 @@ impl ScreenSync {
         if busy {
             let _ = share.control.send(ShareControl::Stop);
             refuse(&mut stream, RefuseReason::Busy).await;
-            return;
+            return StopReason::Error;
         }
-        crate::grants::record_implicit_for(&self.daemon, &peer, SCREEN_TYPE);
-        let region = share.region.or_else(|| capture.region(&chosen.id));
+        crate::grants::record_implicit_for(&self.daemon, peer, SCREEN_TYPE);
+        // A display's place on the screen maps the viewer's positions; a
+        // window has none and is never driven.
+        let region = match settings.kind {
+            SourceKind::Display => share
+                .region
+                .or_else(|| self.capture.as_ref().and_then(|c| c.region(&id))),
+            SourceKind::Window => None,
+        };
         if let (Some(region), Some(input)) = (region, self.daemon.input_sync()) {
-            input.set_region(&peer, Some(region));
+            input.set_region(peer, Some(region));
         }
         if stream
             .send(&ScreenMessage::Started(settings.started()))
             .await
             .is_err()
         {
-            lock(&self.sharing).remove(&chosen.id);
+            lock(&self.sharing).remove(&id);
             let _ = share.control.send(ShareControl::Stop);
-            return;
+            return StopReason::Error;
         }
-        tracing::info!(%peer, display = %chosen.id, width, height, rate = settings.frame_rate, "sharing");
-        let reason = self
-            .run_share(&peer, &chosen.id, stream, share, stop_rx)
-            .await;
-        lock(&self.sharing).remove(&chosen.id);
+        tracing::info!(%peer, source = %id, kind = %settings.kind, width = settings.width, height = settings.height, rate = settings.frame_rate, audio = ?settings.audio, cast, "sharing");
+        let reason = self.run_share(peer, &id, stream, share, stop_rx).await;
+        lock(&self.sharing).remove(&id);
         if let Some(input) = self.daemon.input_sync() {
-            input.set_region(&peer, None);
+            input.set_region(peer, None);
         }
-        tracing::info!(%peer, display = %chosen.id, %reason, "share ended");
+        tracing::info!(%peer, source = %id, %reason, "share ended");
+        reason
     }
 
     /// Forwards frames while the share lasts; returns why it ended.
@@ -771,40 +1322,55 @@ impl ScreenSync {
         mut stop: mpsc::UnboundedReceiver<StopReason>,
     ) -> StopReason {
         let mut seq: u64 = 0;
+        let mut audio_seq: u64 = 0;
         // After a drop, deltas are useless until a keyframe comes.
         let mut need_key = false;
         let started = Instant::now();
+        let now = || u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
         let reason = loop {
             tokio::select! {
                 captured = share.frames.recv() => {
                     let Some(captured) = captured else { break StopReason::Error };
-                    let first = match captured {
-                        Captured::Frame(f) => f,
-                        Captured::Ended(reason) => break reason,
-                    };
-                    // What piled up while the last frame was written.
-                    let mut backlog = vec![first];
+                    // What piled up while the last frame was written: the
+                    // frames are brought up to date, the sound all goes.
+                    let mut backlog = Vec::new();
+                    let mut packets = Vec::new();
                     let mut ended = None;
-                    while let Ok(next) = share.frames.try_recv() {
-                        match next {
+                    let mut next = Some(captured);
+                    while let Some(item) = next.take() {
+                        match item {
                             Captured::Frame(f) => backlog.push(f),
+                            Captured::Audio(a) => packets.push(a),
                             Captured::Ended(reason) => {
                                 ended = Some(reason);
                                 break;
                             }
                         }
+                        next = share.frames.try_recv().ok();
                     }
-                    let (send, dropped) = select_backlog(backlog, &mut need_key);
+                    let mut failed = false;
+                    for packet in packets {
+                        let at = if packet.at == 0 { now() } else { packet.at };
+                        let message = ScreenMessage::Audio(Audio { seq: audio_seq, at, bytes: lp_core::wire::Bytes(packet.bytes) });
+                        if stream.send(&message).await.is_err() {
+                            failed = true;
+                            break;
+                        }
+                        audio_seq += 1;
+                    }
+                    if failed {
+                        break StopReason::Error;
+                    }
+                    let (send, dropped) = if backlog.is_empty() {
+                        (Vec::new(), 0)
+                    } else {
+                        select_backlog(backlog, &mut need_key)
+                    };
                     if dropped > 0 && need_key {
                         let _ = share.control.send(ShareControl::Keyframe);
                     }
-                    let mut failed = false;
                     for frame in send {
-                        let at = if frame.at == 0 {
-                            u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX)
-                        } else {
-                            frame.at
-                        };
+                        let at = if frame.at == 0 { now() } else { frame.at };
                         for chunk in chunk_frame(seq, at, frame.key, &frame.bytes) {
                             if stream.send(&ScreenMessage::Frame(chunk)).await.is_err() {
                                 failed = true;
@@ -819,10 +1385,12 @@ impl ScreenSync {
                     if failed {
                         break StopReason::Error;
                     }
+                    let _ = &now;
                     let dropped = dropped as u64;
                     if let Some(s) = lock(&self.sharing).get_mut(display) {
                         s.frames = seq;
                         s.dropped += dropped;
+                        s.audio = audio_seq;
                     }
                     if let Some(reason) = ended {
                         break reason;
@@ -892,7 +1460,16 @@ fn select_backlog(backlog: Vec<EncodedFrame>, need_key: &mut bool) -> (Vec<Encod
     }
 }
 
-/// Answers `start` with `refused` and ends the stream.
+/// The display a `start` or a cast without an id shares: the primary one,
+/// else the first.
+fn primary(displays: &[Display]) -> Option<&Display> {
+    displays
+        .iter()
+        .find(|d| d.primary)
+        .or_else(|| displays.first())
+}
+
+/// Answers a `start` or an `offer` with `refused` and ends the stream.
 async fn refuse(stream: &mut FramedStream, reason: RefuseReason) {
     let _ = stream
         .send(&ScreenMessage::Refused(Refused { reason }))
@@ -942,15 +1519,68 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+/// The `lpview` installed beside the daemon's own executable (`~/.local/bin`
+/// on both desktops, `target/debug` in a checkout), if there is one.
+#[must_use]
+pub fn lpview_beside(exe: &std::path::Path) -> Option<std::path::PathBuf> {
+    let name = if cfg!(windows) {
+        "lpview.exe"
+    } else {
+        "lpview"
+    };
+    let candidate = exe.parent()?.join(name);
+    candidate.is_file().then_some(candidate)
+}
+
+/// What a desktop daemon does with an offered cast: starts `lpview --receive`
+/// for the caster, which takes the offer over the control socket and shows
+/// it (milestone 9 decision 6); `None` when no `lpview` is installed beside
+/// the daemon, so the device does not advertise `receives`.
+#[must_use]
+pub fn lpview_launcher(locations: &lp_core::paths::Locations) -> Option<OnOffer> {
+    let lpview = lpview_beside(&std::env::current_exe().ok()?)?;
+    let (data_dir, runtime_dir) = (locations.data_dir.clone(), locations.runtime_dir.clone());
+    tracing::info!(lpview = %lpview.display(), "casts offered to this device open in lpview");
+    Some(Arc::new(move |peer, offer| {
+        let name = offer
+            .source
+            .name
+            .clone()
+            .unwrap_or_else(|| offer.source.id.clone());
+        match std::process::Command::new(&lpview)
+            .arg("--receive")
+            .arg("--data-dir")
+            .arg(&data_dir)
+            .arg("--runtime-dir")
+            .arg(&runtime_dir)
+            .arg(peer.to_string())
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+        {
+            Ok(_) => tracing::info!(%peer, source = %name, "lpview started for an offered cast"),
+            Err(e) => {
+                tracing::warn!(%peer, %e, "cannot start lpview for an offered cast; it will be declined");
+            }
+        }
+    }))
+}
+
 /// An in-memory capture for tests and `LIGATURE_FAKE_SCREEN=1`: fixed
 /// displays, frames the test emits or a generator paces at the agreed rate,
 /// and a record of what was asked.
 pub struct FakeCapture {
     shares: Mutex<bool>,
     encodes: Mutex<Vec<Format>>,
+    audio_encodes: Mutex<Vec<AudioFormat>>,
     displays: Vec<Display>,
-    /// Running shares by display: where emitted frames go.
-    running: Mutex<HashMap<String, mpsc::UnboundedSender<Captured>>>,
+    windows: Vec<Window>,
+    /// The settings of the last share started, for tests.
+    last: Mutex<Option<Settings>>,
+    /// Running shares by display or window: where emitted frames go, until
+    /// the share is stopped or ended.
+    running: Arc<Mutex<HashMap<String, mpsc::UnboundedSender<Captured>>>>,
     keyframe_requests: Arc<Mutex<u64>>,
     stops: Arc<Mutex<u64>>,
     /// Refuse the next start with this.
@@ -964,7 +1594,13 @@ impl FakeCapture {
     /// test emits them.
     #[must_use]
     pub fn new(displays: Vec<Display>) -> Arc<Self> {
-        Arc::new(Self::with(displays, false))
+        Arc::new(Self::with(displays, Vec::new(), false))
+    }
+
+    /// The same, with `windows` it can share by id.
+    #[must_use]
+    pub fn with_windows(displays: Vec<Display>, windows: Vec<Window>) -> Arc<Self> {
+        Arc::new(Self::with(displays, windows, false))
     }
 
     /// A capture of one 1920 by 1080 display that generates synthetic frames
@@ -981,16 +1617,24 @@ impl FakeCapture {
                 primary: true,
                 scale: None,
             }],
+            Vec::new(),
             true,
         ))
     }
 
-    fn with(displays: Vec<Display>, generate: bool) -> Self {
+    fn with(displays: Vec<Display>, windows: Vec<Window>, generate: bool) -> Self {
         Self {
             shares: Mutex::new(true),
             encodes: Mutex::new(vec![Format::H264]),
+            audio_encodes: Mutex::new(if generate {
+                vec![AudioFormat::OPUS_STEREO]
+            } else {
+                Vec::new()
+            }),
             displays,
-            running: Mutex::new(HashMap::new()),
+            windows,
+            last: Mutex::new(None),
+            running: Arc::new(Mutex::new(HashMap::new())),
             keyframe_requests: Arc::new(Mutex::new(0)),
             stops: Arc::new(Mutex::new(0)),
             refuse_next: Mutex::new(None),
@@ -1006,6 +1650,25 @@ impl FakeCapture {
     /// Sets the formats it says it encodes.
     pub fn set_encodes(&self, formats: Vec<Format>) {
         *lock(&self.encodes) = formats;
+    }
+
+    /// Sets the audio formats it says it encodes; none by default.
+    pub fn set_audio_encodes(&self, formats: Vec<AudioFormat>) {
+        *lock(&self.audio_encodes) = formats;
+    }
+
+    /// The settings of the last share started, if any.
+    #[must_use]
+    pub fn last_settings(&self) -> Option<Settings> {
+        lock(&self.last).clone()
+    }
+
+    /// Delivers a packet of sound on the share of `display`; false if none
+    /// runs.
+    pub fn emit_audio(&self, display: &str, packet: AudioPacket) -> bool {
+        lock(&self.running)
+            .get(display)
+            .is_some_and(|tx| tx.send(Captured::Audio(packet)).is_ok())
     }
 
     /// Refuses the next start with `reason`.
@@ -1053,6 +1716,7 @@ impl Capture for FakeCapture {
         ScreenParams {
             shares: *lock(&self.shares),
             encodes: lock(&self.encodes).clone(),
+            audio_encodes: lock(&self.audio_encodes).clone(),
             ..ScreenParams::default()
         }
     }
@@ -1061,21 +1725,28 @@ impl Capture for FakeCapture {
         self.displays.clone()
     }
 
+    fn windows(&self) -> Vec<Window> {
+        self.windows.clone()
+    }
+
     fn start(&self, settings: &Settings) -> Result<Share, RefuseReason> {
         if let Some(reason) = lock(&self.refuse_next).take() {
             return Err(reason);
         }
+        *lock(&self.last) = Some(settings.clone());
         let (frames_tx, frames) = mpsc::unbounded_channel();
         let (control, mut control_rx) = mpsc::unbounded_channel::<ShareControl>();
         lock(&self.running).insert(settings.display.clone(), frames_tx.clone());
         let running = Arc::new(Mutex::new(true));
         // A keyframe was asked for since the generator last looked.
         let wanted = Arc::new(Mutex::new(false));
-        let (requests, stops, running_c, wanted_c) = (
+        let (requests, stops, running_c, wanted_c, shares, id) = (
             self.keyframe_requests.clone(),
             self.stops.clone(),
             running.clone(),
             wanted.clone(),
+            self.running.clone(),
+            settings.display.clone(),
         );
         tokio::spawn(async move {
             while let Some(c) = control_rx.recv().await {
@@ -1091,7 +1762,28 @@ impl Capture for FakeCapture {
                 }
             }
             *lock(&running_c) = false;
+            lock(&shares).remove(&id);
         });
+        if self.generate && settings.audio.is_some() {
+            // Fifty packets a second of something, as Opus would be.
+            let (running, frames_tx) = (running.clone(), frames_tx.clone());
+            tokio::spawn(async move {
+                let started = Instant::now();
+                let mut interval = tokio::time::interval(Duration::from_millis(20));
+                let mut n: u64 = 0;
+                while *lock(&running) {
+                    interval.tick().await;
+                    let packet = AudioPacket {
+                        at: u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX),
+                        bytes: (0..160).map(|i| ((i as u64 + n) % 251) as u8).collect(),
+                    };
+                    if frames_tx.send(Captured::Audio(packet)).is_err() {
+                        break;
+                    }
+                    n += 1;
+                }
+            });
+        }
         if self.generate {
             let rate = u64::from(settings.frame_rate.max(1));
             let period = Duration::from_micros(1_000_000 / rate);
@@ -1133,10 +1825,16 @@ impl Capture for FakeCapture {
 
 /// Whether what the sharer settled on is within what the viewer asked for
 /// (LP-186): a picture at least one pixel and no larger, a rate no faster, a
-/// format from the offer, and the display asked for where one was. A sharer
-/// is one of the person's own devices, but a buggy or compromised one must not
-/// choose the viewer's buffers for it.
-fn check_started(start: &Start, started: &Started) -> Result<(), &'static str> {
+/// format from the offer, a sound format from the offer or none, and the
+/// display or window asked for where one was, or the source `offered` when
+/// the start answered a cast's offer. A sharer is one of the person's own
+/// devices, but a buggy or compromised one must not choose the viewer's
+/// buffers for it.
+fn check_started(
+    start: &Start,
+    started: &Started,
+    offered: Option<&Source>,
+) -> Result<(), &'static str> {
     if started.width == 0 || started.height == 0 {
         return Err("an empty picture");
     }
@@ -1149,13 +1847,32 @@ fn check_started(start: &Start, started: &Started) -> Result<(), &'static str> {
     if !start.formats.contains(&started.format) {
         return Err("a format that was not offered");
     }
-    if started.display.is_empty() || started.display.chars().count() > 128 {
-        return Err("a display name that is empty or too long");
+    if let Some(audio) = started.audio
+        && !start.audio.contains(&audio)
+    {
+        return Err("an audio format that was not offered");
     }
-    if let Some(asked) = &start.display
-        && *asked != started.display
+    if started.display.is_some() == started.window.is_some() {
+        return Err("not exactly one of a display and a window");
+    }
+    let id = started.source_id();
+    if id.is_empty() || id.chars().count() > 128 {
+        return Err("a source name that is empty or too long");
+    }
+    if let Some(source) = offered {
+        if id != source.id || started.kind() != source.kind {
+            return Err("a source other than the one offered");
+        }
+    } else if let Some(asked) = &start.window {
+        if started.window.as_deref() != Some(asked) {
+            return Err("a window other than the one asked for");
+        }
+    } else if let Some(asked) = &start.display
+        && started.display.as_deref() != Some(asked)
     {
         return Err("a display other than the one asked for");
+    } else if start.display.is_none() && started.window.is_some() {
+        return Err("a window where a display was asked for");
     }
     Ok(())
 }
@@ -1228,17 +1945,21 @@ mod tests {
     fn asked() -> Start {
         Start {
             display: Some("1".to_owned()),
+            window: None,
             formats: vec![Format::H264],
             width: 1280,
             height: 720,
             frame_rate: 60,
+            audio: vec![AudioFormat::OPUS_STEREO],
         }
     }
 
     fn settled() -> Started {
         Started {
-            display: "1".to_owned(),
+            display: Some("1".to_owned()),
+            window: None,
             format: Format::H264,
+            audio: None,
             width: 1280,
             height: 720,
             frame_rate: 60,
@@ -1248,19 +1969,19 @@ mod tests {
     #[test]
     fn a_started_within_the_request_passes_and_one_outside_it_is_refused() {
         // LP-186: the sharer chooses nothing the viewer did not ask for.
-        assert_eq!(check_started(&asked(), &settled()), Ok(()));
+        assert_eq!(check_started(&asked(), &settled(), None), Ok(()));
         let smaller = Started {
             width: 640,
             height: 360,
             frame_rate: 30,
             ..settled()
         };
-        assert_eq!(check_started(&asked(), &smaller), Ok(()));
+        assert_eq!(check_started(&asked(), &smaller, None), Ok(()));
         let any_display = Start {
             display: None,
             ..asked()
         };
-        assert_eq!(check_started(&any_display, &settled()), Ok(()));
+        assert_eq!(check_started(&any_display, &settled(), None), Ok(()));
         for (bad, why) in [
             (
                 Started {
@@ -1313,31 +2034,141 @@ mod tests {
             ),
             (
                 Started {
-                    display: "2".to_owned(),
+                    display: Some("2".to_owned()),
                     ..settled()
                 },
                 "display",
             ),
             (
                 Started {
-                    display: String::new(),
+                    display: Some(String::new()),
                     ..settled()
                 },
                 "display",
             ),
             (
                 Started {
-                    display: "x".repeat(129),
+                    display: Some("x".repeat(129)),
                     ..settled()
                 },
                 "display",
+            ),
+            (
+                Started {
+                    display: None,
+                    ..settled()
+                },
+                "neither a display nor a window",
+            ),
+            (
+                Started {
+                    window: Some("1".to_owned()),
+                    ..settled()
+                },
+                "both a display and a window",
+            ),
+            (
+                Started {
+                    audio: Some(AudioFormat::OPUS_MONO),
+                    ..settled()
+                },
+                "an audio format not offered",
             ),
         ] {
             assert!(
-                check_started(&asked(), &bad).is_err(),
+                check_started(&asked(), &bad, None).is_err(),
                 "{why}: {bad:?} should be refused"
             );
         }
+        // Milestone 9: sound from the offer passes; a window asked for must
+        // be the window started, and a display asked by default is never a
+        // window.
+        let with_sound = Started {
+            audio: Some(AudioFormat::OPUS_STEREO),
+            ..settled()
+        };
+        assert_eq!(check_started(&asked(), &with_sound, None), Ok(()));
+        let window_asked = Start {
+            display: None,
+            window: Some("w".to_owned()),
+            ..asked()
+        };
+        let window_started = Started {
+            display: None,
+            window: Some("w".to_owned()),
+            ..settled()
+        };
+        assert_eq!(check_started(&window_asked, &window_started, None), Ok(()));
+        assert!(check_started(&window_asked, &settled(), None).is_err());
+        assert!(check_started(&any_display, &window_started, None).is_err());
+        // The answer to an offer names nothing: the source offered must be
+        // the one started.
+        let answer = Start {
+            display: None,
+            ..asked()
+        };
+        let offered = Source {
+            kind: SourceKind::Window,
+            id: "w".to_owned(),
+            name: None,
+            app: None,
+            width: 1600,
+            height: 1000,
+            scale: None,
+        };
+        assert_eq!(
+            check_started(&answer, &window_started, Some(&offered)),
+            Ok(())
+        );
+        assert!(check_started(&answer, &settled(), Some(&offered)).is_err());
+        assert!(check_started(&answer, &window_started, None).is_err());
+    }
+
+    #[test]
+    fn lpview_is_found_beside_the_daemon_or_not_at_all() {
+        let dir = tempfile::tempdir().unwrap();
+        let daemon = dir.path().join("ligatured");
+        std::fs::write(&daemon, b"").unwrap();
+        assert_eq!(lpview_beside(&daemon), None);
+        let lpview = dir.path().join(if cfg!(windows) {
+            "lpview.exe"
+        } else {
+            "lpview"
+        });
+        std::fs::write(&lpview, b"").unwrap();
+        assert_eq!(lpview_beside(&daemon), Some(lpview.clone()));
+        // A directory of that name is not it.
+        std::fs::remove_file(&lpview).unwrap();
+        std::fs::create_dir(&lpview).unwrap();
+        assert_eq!(lpview_beside(&daemon), None);
+    }
+
+    #[test]
+    fn settings_become_started_by_their_kind() {
+        let settings = Settings {
+            display: "w-1".to_owned(),
+            kind: SourceKind::Window,
+            format: Format::H264,
+            audio: Some(AudioFormat::OPUS_STEREO),
+            width: 640,
+            height: 480,
+            frame_rate: 30,
+            viewer: "mac".to_owned(),
+        };
+        let started = settings.started();
+        assert_eq!(started.window.as_deref(), Some("w-1"));
+        assert_eq!(started.display, None);
+        assert_eq!(started.kind(), SourceKind::Window);
+        assert_eq!(started.audio, Some(AudioFormat::OPUS_STEREO));
+        let display = Settings {
+            kind: SourceKind::Display,
+            ..settings
+        }
+        .started();
+        assert_eq!(display.display.as_deref(), Some("w-1"));
+        assert_eq!(display.window, None);
+        let none: Vec<Display> = Vec::new();
+        assert!(primary(&none).is_none());
     }
 
     fn chunk(seq: u64, last: bool, len: usize) -> Frame {

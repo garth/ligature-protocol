@@ -541,11 +541,13 @@ impl Node {
             .ok_or_else(|| LpError::Internal("screen is not attached".to_owned()))?;
         let start = lp_core::screen::Start {
             display: None,
+            window: None,
             // All the phone decodes: MediaCodec's 4:2:0 (ADR 0044).
             formats: Vec::new(),
             width: max_width,
             height: max_height,
             frame_rate,
+            audio: Vec::new(),
         };
         let watching = self.with_runtime(|rt| rt.block_on(sync.watch(&peer, start)))??;
         let ligatured::screen::Watching {
@@ -564,6 +566,8 @@ impl Node {
                         ligatured::screen::Viewed::Frame { key, bytes, .. } => {
                             host.screen_frame(peer_s.clone(), key, bytes);
                         }
+                        // The phone asks for no sound until LP-202 plays it.
+                        ligatured::screen::Viewed::Audio { .. } => {}
                         ligatured::screen::Viewed::Stopped(reason) => {
                             if let Some(slot) = watching.upgrade() {
                                 lock_watch(&slot).take();
@@ -579,7 +583,7 @@ impl Node {
             });
         })?;
         Ok(crate::ScreenWatch {
-            display: started.display,
+            display: started.source_id().to_owned(),
             width: started.width,
             height: started.height,
             frame_rate: started.frame_rate,

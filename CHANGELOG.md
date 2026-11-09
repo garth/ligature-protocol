@@ -8,6 +8,20 @@ release workflow publishes the section as the release notes with the installers.
 
 ## [Unreleased]
 
+### Added
+
+- A cast: a share of the `screen` family that the sharing side starts, with `offer` answered
+  by the receiver's `start` or `refused` (`declined`, `no-decoder`), and a `receives` param for
+  a device that shows casts unasked. `lpctl screen cast` offers a display or a window to a
+  device, the daemon opens `lpview --receive` for a cast offered to a desktop, and `lpctl
+  screen status` lists casts and the offers waiting (milestone 9, LP-198, LP-199).
+- Windows beside displays: `displays` lists the windows a sharer can share by id, `start` may
+  name a `window`, and a window share is watched, never driven (LP-198, LP-199).
+- Sound with the picture: `audioEncodes` and `audioDecodes` params, `audio` formats in
+  `start`, `offer` and `started` (Opus, 48 kHz, mono or stereo), and `audio` packets of 20 ms
+  on the share's stream between the frame chunks, on the frames' clock and never dropped for
+  flow control; `lpctl screen start --audio-out` records them (LP-198, LP-199).
+
 ## [0.2.0-alpha] - 2026-11-08
 
 ### Added

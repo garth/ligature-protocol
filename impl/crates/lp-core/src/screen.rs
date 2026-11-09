@@ -1,12 +1,16 @@
 //! The screen capability: descriptor params and the messages of a share. Spec
 //! chapter 05 section 3h; `schemas/capability.screen.schema.json`; milestone 8.
 //!
-//! A share is one stream opened by the viewer: `displays` to list, `start`
-//! answered by `started` or `refused`, `frame` chunks from the sharer,
+//! A share is one stream that either side may open. Opened by the viewer, a
+//! watch: `displays` to list displays and windows, `start` answered by
+//! `started` or `refused`. Opened by the sharer, a cast (milestone 9): `offer`
+//! naming the source, answered by `start` or `refused`. Then `frame` chunks
+//! from the sharer, `audio` packets between them when sound was agreed,
 //! `keyframe` from the viewer, `stop` from either side. No chunk exceeds
 //! [`CHUNK_BYTES`], so no message exceeds the bound of ADR 0036. What the
-//! picture is sent as is a [`Format`], offered by the viewer and picked by the
-//! sharer from what each says it decodes and encodes (ADR 0044).
+//! picture is sent as is a [`Format`] and what the sound is sent as an
+//! [`AudioFormat`], offered by the viewer and picked by the sharer from what
+//! each says it decodes and encodes (ADR 0044).
 
 use std::fmt;
 
@@ -161,6 +165,130 @@ fn known_formats<'de, D: serde::Deserializer<'de>>(
     Ok(Format::known(&values))
 }
 
+/// An audio codec.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AudioCodec {
+    /// Opus (RFC 6716) at 48 kHz, one packet of 20 ms per `audio` message.
+    Opus,
+}
+
+impl AudioCodec {
+    /// The name on the wire.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Opus => "opus",
+        }
+    }
+}
+
+/// What a share's sound is sent as (ADR 0044 again): a codec and its channel
+/// count, never the encoder or decoder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct AudioFormat {
+    /// The codec.
+    pub codec: AudioCodec,
+    /// 1 for mono, 2 for stereo; 2 when the map leaves it out.
+    pub channels: u8,
+}
+
+impl AudioFormat {
+    /// Opus, stereo: a device's own sound.
+    pub const OPUS_STEREO: Self = Self {
+        codec: AudioCodec::Opus,
+        channels: 2,
+    };
+    /// Opus, mono: a microphone.
+    pub const OPUS_MONO: Self = Self {
+        codec: AudioCodec::Opus,
+        channels: 1,
+    };
+
+    /// Reads an audio format from its CBOR map; `None` when it has a key or
+    /// a value this device does not know, so the format is passed over.
+    #[must_use]
+    pub fn from_value(value: &ciborium::Value) -> Option<Self> {
+        let ciborium::Value::Map(entries) = value else {
+            return None;
+        };
+        let (mut codec, mut channels) = (None, 2u8);
+        for (k, v) in entries {
+            match (k.as_text()?, v) {
+                ("codec", ciborium::Value::Text(t)) if t == "opus" => {
+                    codec = Some(AudioCodec::Opus)
+                }
+                ("channels", ciborium::Value::Integer(i)) => {
+                    channels = u8::try_from(*i).ok().filter(|c| (1..=2).contains(c))?;
+                }
+                _ => return None,
+            }
+        }
+        Some(Self {
+            codec: codec?,
+            channels,
+        })
+    }
+
+    /// The format as its CBOR map.
+    #[must_use]
+    pub fn to_value(self) -> ciborium::Value {
+        use ciborium::Value;
+        Value::Map(vec![
+            (
+                Value::Text("codec".into()),
+                Value::Text(self.codec.as_str().into()),
+            ),
+            (
+                Value::Text("channels".into()),
+                Value::Integer(self.channels.into()),
+            ),
+        ])
+    }
+
+    /// The audio formats of a CBOR array that this device knows, in order.
+    #[must_use]
+    pub fn known(values: &[ciborium::Value]) -> Vec<Self> {
+        values.iter().filter_map(Self::from_value).collect()
+    }
+}
+
+impl fmt::Display for AudioFormat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} {}",
+            self.codec.as_str(),
+            if self.channels == 1 { "mono" } else { "stereo" }
+        )
+    }
+}
+
+impl Serialize for AudioFormat {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.to_value().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for AudioFormat {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = ciborium::Value::deserialize(deserializer)?;
+        Self::from_value(&value).ok_or_else(|| serde::de::Error::custom("an unknown audio format"))
+    }
+}
+
+/// The audio formats of a list, unknown ones passed over; an absent list is
+/// empty.
+fn known_audio_formats<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<AudioFormat>, D::Error> {
+    let values = Option::<Vec<ciborium::Value>>::deserialize(deserializer)?;
+    Ok(values
+        .as_deref()
+        .map(AudioFormat::known)
+        .unwrap_or_default())
+}
+
 /// The screen descriptor's `params`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScreenParams {
@@ -168,10 +296,18 @@ pub struct ScreenParams {
     pub shares: bool,
     /// The device decodes and shows a shared display.
     pub views: bool,
+    /// The device takes a share offered to it (a cast) and shows it unasked.
+    pub receives: bool,
     /// The formats it can encode as a sharer, most preferred first.
     pub encodes: Vec<Format>,
     /// The formats it can decode as a viewer, most preferred first.
     pub decodes: Vec<Format>,
+    /// The audio formats it can encode as a sharer; empty when it shares no
+    /// sound.
+    pub audio_encodes: Vec<AudioFormat>,
+    /// The audio formats it can decode and play as a viewer; empty when it
+    /// plays none.
+    pub audio_decodes: Vec<AudioFormat>,
     /// The widest picture it takes as a viewer.
     pub max_width: u32,
     /// The tallest picture it takes as a viewer.
@@ -185,8 +321,11 @@ impl Default for ScreenParams {
         Self {
             shares: false,
             views: false,
+            receives: false,
             encodes: vec![Format::H264],
             decodes: vec![Format::H264],
+            audio_encodes: Vec::new(),
+            audio_decodes: Vec::new(),
             max_width: 1920,
             max_height: 1080,
             max_frame_rate: 30,
@@ -209,11 +348,18 @@ impl ScreenParams {
                 match (k.as_text(), v) {
                     (Some("shares"), ciborium::Value::Bool(b)) => params.shares = *b,
                     (Some("views"), ciborium::Value::Bool(b)) => params.views = *b,
+                    (Some("receives"), ciborium::Value::Bool(b)) => params.receives = *b,
                     (Some("encodes"), ciborium::Value::Array(items)) => {
                         params.encodes = Format::known(items);
                     }
                     (Some("decodes"), ciborium::Value::Array(items)) => {
                         params.decodes = Format::known(items);
+                    }
+                    (Some("audioEncodes"), ciborium::Value::Array(items)) => {
+                        params.audio_encodes = AudioFormat::known(items);
+                    }
+                    (Some("audioDecodes"), ciborium::Value::Array(items)) => {
+                        params.audio_decodes = AudioFormat::known(items);
                     }
                     (Some("maxWidth"), ciborium::Value::Integer(i)) => {
                         if let Some(v) = int(i) {
@@ -253,6 +399,7 @@ pub fn screen_descriptor(params: &ScreenParams) -> Descriptor {
     d.params = Some(Value::Map(vec![
         (Value::Text("shares".into()), Value::Bool(params.shares)),
         (Value::Text("views".into()), Value::Bool(params.views)),
+        (Value::Text("receives".into()), Value::Bool(params.receives)),
         (
             Value::Text("encodes".into()),
             Value::Array(params.encodes.iter().map(|f| f.to_value()).collect()),
@@ -260,6 +407,14 @@ pub fn screen_descriptor(params: &ScreenParams) -> Descriptor {
         (
             Value::Text("decodes".into()),
             Value::Array(params.decodes.iter().map(|f| f.to_value()).collect()),
+        ),
+        (
+            Value::Text("audioEncodes".into()),
+            Value::Array(params.audio_encodes.iter().map(|f| f.to_value()).collect()),
+        ),
+        (
+            Value::Text("audioDecodes".into()),
+            Value::Array(params.audio_decodes.iter().map(|f| f.to_value()).collect()),
         ),
         (
             Value::Text("maxWidth".into()),
@@ -328,21 +483,129 @@ impl Display {
     }
 }
 
-/// `displays`: a request without a list, an answer with one.
+/// One window a sharer offers, where its platform lets it pick one by id.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Window {
+    /// The sharer's name for it, stable while the window exists.
+    pub id: String,
+    /// Its title.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// The application that owns it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app: Option<String>,
+    /// Its width in pixels when listed.
+    pub width: u32,
+    /// Its height in pixels when listed.
+    pub height: u32,
+    /// The pixels per logical point of the display it is on (ADR 0045).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scale: Option<f64>,
+}
+
+/// What kind of thing a cast shares.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SourceKind {
+    /// A whole display, which the receiver may drive.
+    Display,
+    /// One window, never driven.
+    Window,
+}
+
+impl fmt::Display for SourceKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Display => "display",
+            Self::Window => "window",
+        })
+    }
+}
+
+/// What a cast shares: a display or a window of the caster, as it chose it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Source {
+    /// A display or a window.
+    pub kind: SourceKind,
+    /// The caster's name for it, stable for the share.
+    pub id: String,
+    /// What the platform calls the display, or the window's title.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// For a window, the application that owns it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app: Option<String>,
+    /// Its width in pixels.
+    pub width: u32,
+    /// Its height in pixels.
+    pub height: u32,
+    /// Its pixels per logical point (ADR 0045).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scale: Option<f64>,
+}
+
+impl Source {
+    /// A display as a cast's source.
+    #[must_use]
+    pub fn display(d: &Display) -> Self {
+        Self {
+            kind: SourceKind::Display,
+            id: d.id.clone(),
+            name: d.name.clone(),
+            app: None,
+            width: d.width,
+            height: d.height,
+            scale: d.scale,
+        }
+    }
+
+    /// A window as a cast's source.
+    #[must_use]
+    pub fn window(w: &Window) -> Self {
+        Self {
+            kind: SourceKind::Window,
+            id: w.id.clone(),
+            name: w.name.clone(),
+            app: w.app.clone(),
+            width: w.width,
+            height: w.height,
+            scale: w.scale,
+        }
+    }
+
+    /// Its pixels per logical point: what it reported, or 1.
+    #[must_use]
+    pub fn scale(&self) -> f64 {
+        self.scale
+            .filter(|s| s.is_finite() && *s > 0.0)
+            .unwrap_or(1.0)
+    }
+}
+
+/// `displays`: a request without lists, an answer with them.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct Displays {
     /// The sharer's displays; present only in the answer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub displays: Option<Vec<Display>>,
+    /// The sharer's windows, where its platform lets it pick one by id;
+    /// absent where a picker of the platform's chooses or windows cannot be
+    /// shared.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub windows: Option<Vec<Window>>,
 }
 
-/// `start`: what the viewer wants.
+/// `start`: what the viewer wants, or what a receiver takes of an offer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Start {
-    /// The display, or the primary one when absent.
+    /// The display, or the primary one when neither a display nor a window
+    /// is named; absent in the answer to an offer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display: Option<String>,
+    /// The window, instead of a display.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<String>,
     /// The formats the viewer takes for this share, most preferred first;
     /// the sharer picks the first it can encode (ADR 0044).
     #[serde(deserialize_with = "known_formats")]
@@ -353,22 +616,79 @@ pub struct Start {
     pub height: u32,
     /// The frame rate wanted.
     pub frame_rate: u32,
+    /// The audio formats the viewer takes, most preferred first; empty for a
+    /// silent share.
+    #[serde(
+        default,
+        deserialize_with = "known_audio_formats",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub audio: Vec<AudioFormat>,
 }
 
-/// `started`: what the sharer settled on.
+/// `offer`: the first message of a cast, from the sharer.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Offer {
+    /// What will be shared.
+    pub source: Source,
+    /// The picture formats the caster encodes, most preferred first.
+    #[serde(deserialize_with = "known_formats")]
+    pub formats: Vec<Format>,
+    /// The fastest the caster paces to.
+    pub max_frame_rate: u32,
+    /// The audio formats the caster can send; empty when it has no sound.
+    #[serde(
+        default,
+        deserialize_with = "known_audio_formats",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub audio: Vec<AudioFormat>,
+}
+
+/// `started`: what the sharer settled on. Exactly one of `display` and
+/// `window` names the source.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Started {
     /// The display shared.
-    pub display: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display: Option<String>,
+    /// The window shared.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<String>,
     /// The format the sharer picked from the viewer's offer.
     pub format: Format,
+    /// The audio format picked, when sound was agreed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio: Option<AudioFormat>,
     /// The picture's width.
     pub width: u32,
     /// The picture's height.
     pub height: u32,
     /// The frame rate paced to.
     pub frame_rate: u32,
+}
+
+impl Started {
+    /// The id of what is shared, display or window.
+    #[must_use]
+    pub fn source_id(&self) -> &str {
+        self.window
+            .as_deref()
+            .or(self.display.as_deref())
+            .unwrap_or("")
+    }
+
+    /// What kind of source is shared.
+    #[must_use]
+    pub const fn kind(&self) -> SourceKind {
+        if self.window.is_some() {
+            SourceKind::Window
+        } else {
+            SourceKind::Display
+        }
+    }
 }
 
 /// Why a share did not start.
@@ -379,10 +699,14 @@ pub enum RefuseReason {
     Consent,
     /// No encoder for the codec asked.
     NoEncoder,
-    /// No display with that id.
+    /// No display or window with that id.
     NoDisplay,
-    /// A share of this display already runs.
+    /// A share of this source already runs, or the receiver shows one.
     Busy,
+    /// Nobody at the receiver took the offer, or the person closed it.
+    Declined,
+    /// The receiver decodes none of the formats offered.
+    NoDecoder,
 }
 
 impl fmt::Display for RefuseReason {
@@ -392,6 +716,8 @@ impl fmt::Display for RefuseReason {
             Self::NoEncoder => "no-encoder",
             Self::NoDisplay => "no-display",
             Self::Busy => "busy",
+            Self::Declined => "declined",
+            Self::NoDecoder => "no-decoder",
         })
     }
 }
@@ -415,6 +741,18 @@ pub struct Frame {
     /// Whether this chunk completes the frame.
     pub last: bool,
     /// The chunk, at most [`CHUNK_BYTES`].
+    pub bytes: Bytes,
+}
+
+/// `audio`: one packet of the share's sound.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Audio {
+    /// The packet's number from the start of the share.
+    pub seq: u64,
+    /// When its first sample was captured, microseconds since the share
+    /// started, on the clock `frame` uses.
+    pub at: u64,
+    /// One packet in the agreed audio format.
     pub bytes: Bytes,
 }
 
@@ -454,21 +792,27 @@ pub struct Stop {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ScreenMessage {
-    /// The displays, asked for or listed.
+    /// The displays and windows, asked for or listed.
     #[serde(rename = "org.ligatureprotocol.capability.screen.displays")]
     Displays(Displays),
-    /// From the viewer: share this.
+    /// From the sharer, opening a cast: here is what I will share.
+    #[serde(rename = "org.ligatureprotocol.capability.screen.offer")]
+    Offer(Offer),
+    /// From the viewer, or a receiver taking an offer: share this.
     #[serde(rename = "org.ligatureprotocol.capability.screen.start")]
     Start(Start),
     /// From the sharer: the share runs.
     #[serde(rename = "org.ligatureprotocol.capability.screen.started")]
     Started(Started),
-    /// From the sharer: it does not.
+    /// From the side that was asked: it does not.
     #[serde(rename = "org.ligatureprotocol.capability.screen.refused")]
     Refused(Refused),
     /// From the sharer: a chunk of a frame.
     #[serde(rename = "org.ligatureprotocol.capability.screen.frame")]
     Frame(Frame),
+    /// From the sharer: a packet of sound.
+    #[serde(rename = "org.ligatureprotocol.capability.screen.audio")]
+    Audio(Audio),
     /// From the viewer: a keyframe, please.
     #[serde(rename = "org.ligatureprotocol.capability.screen.keyframe")]
     Keyframe,
@@ -513,8 +857,11 @@ mod tests {
         let params = ScreenParams {
             shares: true,
             views: true,
+            receives: true,
             encodes: vec![Format::H264_444, Format::H264],
             decodes: vec![Format::H264],
+            audio_encodes: vec![AudioFormat::OPUS_STEREO],
+            audio_decodes: vec![AudioFormat::OPUS_STEREO, AudioFormat::OPUS_MONO],
             max_width: 1280,
             max_height: 720,
             max_frame_rate: 60,
@@ -579,17 +926,22 @@ mod tests {
                     primary: true,
                     scale: Some(1.5),
                 }]),
+                windows: None,
             }),
             ScreenMessage::Start(Start {
                 display: None,
+                window: None,
                 formats: vec![Format::H264_444, Format::H264],
                 width: 1280,
                 height: 720,
                 frame_rate: 30,
+                audio: Vec::new(),
             }),
             ScreenMessage::Started(Started {
-                display: "DP-1".into(),
+                display: Some("DP-1".into()),
+                window: None,
                 format: Format::H264_444,
+                audio: None,
                 width: 1280,
                 height: 720,
                 frame_rate: 30,
@@ -623,6 +975,126 @@ mod tests {
         assert_eq!(json["formats"][0]["chroma"], "4:4:4");
         let json = serde_json::to_value(&messages[3]).unwrap();
         assert_eq!(json["format"]["chroma"], "4:4:4");
+        assert!(json.get("window").is_none(), "an absent window is left out");
+        assert!(json.get("audio").is_none(), "a silent share has no audio");
+        let json = serde_json::to_value(&messages[2]).unwrap();
+        assert!(json.get("audio").is_none(), "no audio asked is left out");
+    }
+
+    /// Milestone 9: a cast's offer, a window's start and started, and an
+    /// audio packet round-trip, with the audio format negotiated as the
+    /// picture's is.
+    #[test]
+    fn the_cast_window_and_audio_messages_round_trip() {
+        let window = Window {
+            id: "w-7".into(),
+            name: Some("Firefox".into()),
+            app: Some("org.mozilla.firefox".into()),
+            width: 1600,
+            height: 1000,
+            scale: Some(2.0),
+        };
+        let messages = [
+            ScreenMessage::Displays(Displays {
+                displays: Some(Vec::new()),
+                windows: Some(vec![window.clone()]),
+            }),
+            ScreenMessage::Offer(Offer {
+                source: Source::window(&window),
+                formats: vec![Format::H264],
+                max_frame_rate: 60,
+                audio: vec![AudioFormat::OPUS_STEREO],
+            }),
+            ScreenMessage::Start(Start {
+                display: None,
+                window: Some("w-7".into()),
+                formats: vec![Format::H264],
+                width: 1600,
+                height: 1000,
+                frame_rate: 60,
+                audio: vec![AudioFormat::OPUS_STEREO, AudioFormat::OPUS_MONO],
+            }),
+            ScreenMessage::Started(Started {
+                display: None,
+                window: Some("w-7".into()),
+                format: Format::H264,
+                audio: Some(AudioFormat::OPUS_STEREO),
+                width: 1600,
+                height: 1000,
+                frame_rate: 60,
+            }),
+            ScreenMessage::Refused(Refused {
+                reason: RefuseReason::Declined,
+            }),
+            ScreenMessage::Audio(Audio {
+                seq: 3,
+                at: 60_000,
+                bytes: Bytes(vec![0xfc, 0xff, 0xfe]),
+            }),
+        ];
+        for m in &messages {
+            let mut bytes = Vec::new();
+            ciborium::into_writer(m, &mut bytes).unwrap();
+            let back: ScreenMessage = ciborium::from_reader(bytes.as_slice()).unwrap();
+            assert_eq!(&back, m);
+        }
+        let json = serde_json::to_value(&messages[1]).unwrap();
+        assert_eq!(json["source"]["kind"], "window");
+        assert_eq!(json["source"]["app"], "org.mozilla.firefox");
+        assert_eq!(json["maxFrameRate"], 60);
+        assert_eq!(json["audio"][0]["codec"], "opus");
+        assert_eq!(json["audio"][0]["channels"], 2);
+        let json = serde_json::to_value(&messages[3]).unwrap();
+        assert!(json.get("display").is_none());
+        assert_eq!(json["window"], "w-7");
+        assert_eq!(json["audio"]["channels"], 2);
+        let ScreenMessage::Started(started) = &messages[3] else {
+            unreachable!()
+        };
+        assert_eq!(started.source_id(), "w-7");
+        assert_eq!(started.kind(), SourceKind::Window);
+        assert_eq!(
+            serde_json::to_value(&messages[4]).unwrap()["reason"],
+            "declined"
+        );
+        // An unknown audio codec or channel count is passed over, and a
+        // missing channel count is stereo.
+        use ciborium::Value;
+        let offered = vec![
+            Value::Map(vec![(
+                Value::Text("codec".into()),
+                Value::Text("aac".into()),
+            )]),
+            Value::Map(vec![
+                (Value::Text("codec".into()), Value::Text("opus".into())),
+                (Value::Text("channels".into()), Value::Integer(6.into())),
+            ]),
+            Value::Map(vec![(
+                Value::Text("codec".into()),
+                Value::Text("opus".into()),
+            )]),
+            Value::Map(vec![
+                (Value::Text("codec".into()), Value::Text("opus".into())),
+                (Value::Text("channels".into()), Value::Integer(1.into())),
+            ]),
+        ];
+        assert_eq!(
+            AudioFormat::known(&offered),
+            [AudioFormat::OPUS_STEREO, AudioFormat::OPUS_MONO]
+        );
+        let mut d = Descriptor::new(SCREEN_TYPE, Scope::Device);
+        d.params = Some(Value::Map(vec![
+            (Value::Text("receives".into()), Value::Bool(true)),
+            (Value::Text("audioDecodes".into()), Value::Array(offered)),
+        ]));
+        let params = ScreenParams::from_descriptor(&d).unwrap();
+        assert!(params.receives);
+        assert_eq!(
+            params.audio_decodes,
+            [AudioFormat::OPUS_STEREO, AudioFormat::OPUS_MONO]
+        );
+        assert!(params.audio_encodes.is_empty());
+        assert_eq!(AudioFormat::OPUS_MONO.to_string(), "opus mono");
     }
 
     /// A format with a codec, a chroma or a key this device does not know is

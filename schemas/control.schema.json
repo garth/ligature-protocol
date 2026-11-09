@@ -46,6 +46,9 @@
         "org.ligatureprotocol.control.input.release",
         "org.ligatureprotocol.control.screen.displays",
         "org.ligatureprotocol.control.screen.start",
+        "org.ligatureprotocol.control.screen.cast",
+        "org.ligatureprotocol.control.screen.accept",
+        "org.ligatureprotocol.control.screen.decline",
         "org.ligatureprotocol.control.screen.stop",
         "org.ligatureprotocol.control.screen.status",
         "org.ligatureprotocol.control.input.drive",
@@ -61,7 +64,8 @@
         "org.ligatureprotocol.control.pair.code",
         "org.ligatureprotocol.control.files.progress",
         "org.ligatureprotocol.control.screen.started",
-        "org.ligatureprotocol.control.screen.frame"
+        "org.ligatureprotocol.control.screen.frame",
+        "org.ligatureprotocol.control.screen.audio"
       ]
     },
     "request": {
@@ -153,7 +157,15 @@
         },
         "display": {
           "type": "string",
-          "description": "screen.start: the display to watch, or the primary one when absent."
+          "description": "screen.start, screen.cast: the display, or the primary one when neither it nor window is given."
+        },
+        "window": {
+          "type": "string",
+          "description": "screen.start, screen.cast: a window, instead of a display."
+        },
+        "audio": {
+          "type": "boolean",
+          "description": "screen.start, screen.accept: whether the share's sound is wanted (no by default); screen.cast: whether it is offered (yes by default)."
         },
         "width": {
           "type": "integer",
@@ -279,10 +291,9 @@
         },
         "started": {
           "type": "object",
-          "description": "screen.started: what the sharer settled on, the started message of capability.screen.schema.json without its type.",
+          "description": "screen.started: what the sharer settled on, the started message of capability.screen.schema.json without its type; exactly one of display and window names the source.",
           "required": [
-            "display",
-            "codec",
+            "format",
             "width",
             "height",
             "frameRate"
@@ -291,8 +302,14 @@
             "display": {
               "type": "string"
             },
-            "codec": {
+            "window": {
               "type": "string"
+            },
+            "format": {
+              "type": "object"
+            },
+            "audio": {
+              "type": "object"
             },
             "width": {
               "type": "integer",
@@ -305,6 +322,28 @@
             "frameRate": {
               "type": "integer",
               "minimum": 1
+            }
+          }
+        },
+        "audio": {
+          "type": "object",
+          "description": "screen.audio: one packet of the share's sound, the audio message of capability.screen.schema.json without its type.",
+          "required": [
+            "seq",
+            "at",
+            "bytes"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "at": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "bytes": {
+              "type": "string"
             }
           }
         },

@@ -55,6 +55,9 @@ fn control_messages_validate() {
         types::INPUT_SEND,
         types::SCREEN_DISPLAYS,
         types::SCREEN_START,
+        types::SCREEN_CAST,
+        types::SCREEN_ACCEPT,
+        types::SCREEN_DECLINE,
         types::SCREEN_STOP,
         types::SCREEN_STATUS,
     ] {
@@ -66,6 +69,7 @@ fn control_messages_validate() {
         r.display = Some("DP-1".to_owned());
         r.width = Some(1280);
         r.frame_rate = Some(30);
+        r.audio = Some(true);
         check(&v, &r);
     }
     check(&v, &Response::ok(1, &Empty {}).unwrap());
@@ -80,6 +84,7 @@ fn control_messages_validate() {
             progress: None,
             started: None,
             frame: None,
+            audio: None,
         },
     );
     check(
@@ -92,6 +97,46 @@ fn control_messages_validate() {
             progress: None,
             started: None,
             frame: None,
+            audio: None,
+        },
+    );
+    // Milestone 9: a started with a window and sound, and an audio packet.
+    check(
+        &v,
+        &Event {
+            event_type: TypeName::new(types::SCREEN_STARTED),
+            id: 1,
+            offer: None,
+            code: None,
+            progress: None,
+            started: Some(lp_core::screen::Started {
+                display: None,
+                window: Some("w-1".to_owned()),
+                format: lp_core::screen::Format::H264,
+                audio: Some(lp_core::screen::AudioFormat::OPUS_STEREO),
+                width: 1280,
+                height: 720,
+                frame_rate: 60,
+            }),
+            frame: None,
+            audio: None,
+        },
+    );
+    check(
+        &v,
+        &Event {
+            event_type: TypeName::new(types::SCREEN_AUDIO),
+            id: 1,
+            offer: None,
+            code: None,
+            progress: None,
+            started: None,
+            frame: None,
+            audio: Some(lp_core::screen::Audio {
+                seq: 4,
+                at: 80_000,
+                bytes: lp_core::wire::Bytes(vec![1, 2, 3]),
+            }),
         },
     );
     assert!(

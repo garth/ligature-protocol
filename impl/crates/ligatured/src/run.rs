@@ -152,32 +152,39 @@ pub async fn run(
     }
     if std::env::var_os(FAKE_SCREEN_ENV).is_some_and(|v| v == "1") {
         tracing::warn!("using the synthetic screen capture ({FAKE_SCREEN_ENV}=1)");
-        daemon.attach_screen(
+        let screen = daemon.attach_screen(
             Some(crate::screen::FakeCapture::generating()),
             Some(lp_core::screen::ScreenParams {
                 views: true,
+                audio_decodes: vec![
+                    lp_core::screen::AudioFormat::OPUS_STEREO,
+                    lp_core::screen::AudioFormat::OPUS_MONO,
+                ],
                 ..lp_core::screen::ScreenParams::default()
             }),
         );
+        receive_casts_in_lpview(&screen, &locations);
     }
     #[cfg(target_os = "linux")]
     if std::env::var_os(FAKE_SCREEN_ENV).is_none() {
         // The ScreenCast portal or wlr-screencopy, and ffmpeg (LP-149).
-        daemon.attach_screen(
+        let screen = daemon.attach_screen(
             Some(crate::screen_linux::LinuxScreen::start(
                 daemon.store().clone(),
             )),
             crate::screen_linux::viewer_params(),
         );
+        receive_casts_in_lpview(&screen, &locations);
     }
     #[cfg(target_os = "macos")]
     if std::env::var_os(FAKE_SCREEN_ENV).is_none() {
         // ScreenCaptureKit into ffmpeg's VideoToolbox encoder (LP-150), and
         // lpview where ffmpeg decodes.
-        daemon.attach_screen(
+        let screen = daemon.attach_screen(
             Some(crate::screen_macos::MacScreen::start()),
             crate::screen::viewer_params(),
         );
+        receive_casts_in_lpview(&screen, &locations);
     }
 
     spawn_connection_events(daemon.clone(), events);
@@ -466,4 +473,19 @@ fn a_binding_is_missing(daemon: &Daemon) -> bool {
             .iter()
             .any(|e| e.role == "binding" && !e.this_device && !e.revoked && !e.connected)
     })
+}
+
+/// A cast offered to this desktop opens in `lpview`, when one is installed
+/// beside the daemon (milestone 9 decision 6); the device then advertises
+/// `receives`.
+fn receive_casts_in_lpview(
+    screen: &std::sync::Arc<crate::screen::ScreenSync>,
+    locations: &lp_core::paths::Locations,
+) {
+    match crate::screen::lpview_launcher(locations) {
+        Some(launcher) => screen.set_on_offer(launcher),
+        None => {
+            tracing::info!("no lpview beside the daemon: casts offered to this device are declined")
+        }
+    }
 }

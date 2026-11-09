@@ -113,8 +113,9 @@ enum Command {
         #[command(subcommand)]
         action: InputAction,
     },
-    /// Watch a device's screen or manage the shares this device runs
-    /// (diagnostics: the encoded stream goes to a file, no window).
+    /// Watch a device's screen, cast this device's screen or a window to
+    /// another, or manage the shares this device runs (diagnostics: a
+    /// watched stream goes to a file, no window; `lpview` shows one).
     Screen {
         #[command(subcommand)]
         action: ScreenAction,
@@ -143,19 +144,28 @@ enum PermissionsAction {
 /// `lpctl screen` actions.
 #[derive(Debug, Subcommand)]
 enum ScreenAction {
-    /// List a device's displays.
+    /// List a device's displays, and the windows it can share by id.
     Displays {
         /// The device: its name, or a prefix of its key or fingerprint.
         device: String,
     },
-    /// Watch a device's display: the encoded H.264 stream is written to a file
-    /// (play it with `ffplay -f h264 FILE`), progress to the terminal.
+    /// Watch a device's display or window: the encoded H.264 stream is
+    /// written to a file (play it with `ffplay -f h264 FILE`), progress to
+    /// the terminal.
     Start {
         /// The device: its name, or a prefix of its key or fingerprint.
         device: String,
         /// The display id, from `displays`; the primary one by default.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "window")]
         display: Option<String>,
+        /// A window id, from `displays`, instead of a display.
+        #[arg(long)]
+        window: Option<String>,
+        /// Ask for the device's sound too, written as Opus packets to this
+        /// file, each after its 4-byte big-endian length and 8-byte capture
+        /// time in microseconds.
+        #[arg(long)]
+        audio_out: Option<PathBuf>,
         /// The widest picture wanted.
         #[arg(long, default_value_t = 1280)]
         width: u32,
@@ -172,12 +182,31 @@ enum ScreenAction {
         #[arg(long)]
         frames: Option<u64>,
     },
+    /// Cast this device's display or window to a device, with this device's
+    /// sound: the picture opens there without anyone asking for it, in
+    /// `lpview` on a desktop or the app on the phone. Runs until the cast
+    /// ends; Ctrl-C leaves it running, `lpctl screen stop` ends it.
+    Cast {
+        /// The device: its name, or a prefix of its key or fingerprint.
+        device: String,
+        /// The display id, from `lpctl screen displays` of this device; the
+        /// primary one by default.
+        #[arg(long, conflicts_with = "window")]
+        display: Option<String>,
+        /// A window id, instead of a display (on Linux, the portal's picker
+        /// chooses the window; on a Mac, an id from `displays`).
+        #[arg(long)]
+        window: Option<String>,
+        /// Cast the picture alone, without this device's sound.
+        #[arg(long)]
+        no_audio: bool,
+    },
     /// Stop the shares with a device, or every share this device runs.
     Stop {
         /// The device: its name, or a prefix of its key or fingerprint.
         device: Option<String>,
     },
-    /// What this device shares and watches.
+    /// What this device shares, casts, watches and is offered.
     Status,
 }
 
@@ -519,18 +548,29 @@ fn input_status_next_steps(driving: bool) -> String {
     next_steps(&steps)
 }
 
-/// After `lpctl screen status`: watching a device, and stopping when anything runs.
-fn screen_status_next_steps(active: bool) -> String {
+/// After `lpctl screen status`: watching and casting, taking an offered
+/// cast when one waits, and stopping when anything runs.
+fn screen_status_next_steps(active: bool, offered: bool) -> String {
     let mut steps = vec![
         (
             "lpview <DEVICE>",
             "watches and drives a device's screen in a window",
         ),
         (
+            "lpctl screen cast <DEVICE> [--window ID] [--no-audio]",
+            "casts this device's display or a window to a device, with its sound",
+        ),
+        (
             "lpctl screen displays <DEVICE>",
-            "lists a device's displays",
+            "lists a device's displays and windows",
         ),
     ];
+    if offered {
+        steps.push((
+            "lpview --receive <DEVICE>",
+            "shows the cast a device offered this one",
+        ));
+    }
     if active {
         steps.push((
             "lpctl screen stop [DEVICE]",
@@ -538,6 +578,25 @@ fn screen_status_next_steps(active: bool) -> String {
         ));
     }
     next_steps(&steps)
+}
+
+/// One record of `lpctl screen start --audio-out`: the packet's length as 4
+/// big-endian bytes, its capture time in microseconds as 8, then the packet.
+fn audio_packet_record(at: u64, bytes: &[u8]) -> Vec<u8> {
+    let mut record = Vec::with_capacity(bytes.len() + 12);
+    record.extend_from_slice(&u32::try_from(bytes.len()).unwrap_or(u32::MAX).to_be_bytes());
+    record.extend_from_slice(&at.to_be_bytes());
+    record.extend_from_slice(bytes);
+    record
+}
+
+/// How `lpctl screen status` says what sound a share carried.
+fn sound_summary(with_sound: bool, packets: u64) -> String {
+    if with_sound {
+        format!(", {packets} packets of sound")
+    } else {
+        String::new()
+    }
 }
 
 /// After `lpctl files offers`: offering a file, and withdrawing one when any stands.
@@ -980,10 +1039,58 @@ async fn screen(client: &mut Client, action: &ScreenAction) -> Result<(), Error>
                     display.name.unwrap_or_default()
                 );
             }
+            for window in d.windows {
+                println!(
+                    "window {:<12} {}x{}  {}  {}",
+                    window.id,
+                    window.width,
+                    window.height,
+                    window.app.unwrap_or_default(),
+                    window.name.unwrap_or_default()
+                );
+            }
+        }
+        ScreenAction::Cast {
+            device,
+            display,
+            window,
+            no_audio,
+        } => {
+            let key = resolve_device(client, device).await?;
+            let mut req = Request::new(types::SCREEN_CAST, 0);
+            req.key = Some(key);
+            req.display = display.clone();
+            req.window = window.clone();
+            req.audio = Some(!no_audio);
+            eprintln!("offering the cast to {device}; waiting for it to be taken there");
+            let response = client
+                .call(req, |event: &Event| {
+                    if let Some(started) = &event.started {
+                        eprintln!(
+                            "casting {} {} to {device} at {}x{} {} fps ({}{})",
+                            started.kind(),
+                            started.source_id(),
+                            started.width,
+                            started.height,
+                            started.frame_rate,
+                            started.format,
+                            match started.audio {
+                                Some(audio) => format!(", {audio}"),
+                                None => ", no sound".to_owned(),
+                            }
+                        );
+                    }
+                    None
+                })
+                .await?;
+            let ended: ScreenStopped = response.into_ok()?;
+            eprintln!("cast ended ({})", ended.reason);
         }
         ScreenAction::Start {
             device,
             display,
+            window,
+            audio_out,
             width,
             height,
             rate,
@@ -994,24 +1101,43 @@ async fn screen(client: &mut Client, action: &ScreenAction) -> Result<(), Error>
             let mut req = Request::new(types::SCREEN_START, 0);
             req.key = Some(key);
             req.display = display.clone();
+            req.window = window.clone();
             req.width = Some(*width);
             req.height = Some(*height);
             req.frame_rate = Some(*rate);
+            req.audio = Some(audio_out.is_some());
             let mut file = std::fs::File::create(out)
                 .map_err(|e| Error::Io(format!("{}: {e}", out.display())))?;
+            let mut audio_file = match audio_out {
+                Some(path) => Some(
+                    std::fs::File::create(path)
+                        .map_err(|e| Error::Io(format!("{}: {e}", path.display())))?,
+                ),
+                None => None,
+            };
             let (mut count, mut bytes_total, mut asked_stop) = (0u64, 0u64, false);
+            let mut packets = 0u64;
             let response = client
                 .call(req, |event: &Event| {
                     if let Some(started) = &event.started {
                         eprintln!(
-                            "watching {} at {}x{} {} fps ({}); stream in {}",
-                            started.display,
+                            "watching {} {} at {}x{} {} fps ({}{}); stream in {}",
+                            started.kind(),
+                            started.source_id(),
                             started.width,
                             started.height,
                             started.frame_rate,
                             started.format,
+                            match started.audio {
+                                Some(audio) => format!(", {audio}"),
+                                None => String::new(),
+                            },
                             out.display()
                         );
+                    }
+                    if let (Some(packet), Some(file)) = (&event.audio, audio_file.as_mut()) {
+                        let _ = file.write_all(&audio_packet_record(packet.at, &packet.bytes.0));
+                        packets += 1;
                     }
                     if let Some(frame) = &event.frame {
                         let _ = file.write_all(&frame.bytes.0);
@@ -1034,9 +1160,14 @@ async fn screen(client: &mut Client, action: &ScreenAction) -> Result<(), Error>
                 .await?;
             let ended: ScreenStopped = response.into_ok()?;
             eprintln!(
-                "share ended ({}): {count} frames, {}",
+                "share ended ({}): {count} frames, {}{}",
                 ended.reason,
-                human(bytes_total)
+                human(bytes_total),
+                if audio_out.is_some() {
+                    format!(", {packets} packets of sound")
+                } else {
+                    String::new()
+                }
             );
         }
         ScreenAction::Stop { device } => {
@@ -1051,33 +1182,61 @@ async fn screen(client: &mut Client, action: &ScreenAction) -> Result<(), Error>
             let s: ScreenStatus = client
                 .request(Request::new(types::SCREEN_STATUS, 0))
                 .await?;
-            println!("shares: {}", s.shares);
-            println!("views:  {}", s.views);
+            println!("shares:   {}", s.shares);
+            println!("views:    {}", s.views);
+            println!("receives: {}", s.receives);
             let active = !s.sharing.is_empty() || !s.watching.is_empty();
+            let offered = !s.offered.is_empty();
             for share in s.sharing {
                 println!(
-                    "sharing {} to {}… at {}x{} {} fps, {} frames, {} dropped",
-                    share.started.display,
+                    "{} {} {} to {}… at {}x{} {} fps, {} frames, {} dropped{}",
+                    if share.cast { "casting" } else { "sharing" },
+                    share.started.kind(),
+                    share.started.source_id(),
                     share.peer.fingerprint(),
                     share.started.width,
                     share.started.height,
                     share.started.frame_rate,
                     share.frames,
-                    share.dropped
+                    share.dropped,
+                    sound_summary(share.started.audio.is_some(), share.audio)
                 );
             }
             for watch in s.watching {
                 println!(
-                    "watching {} of {}… at {}x{} {} fps, {} frames",
-                    watch.started.display,
+                    "{} {} {} of {}… at {}x{} {} fps, {} frames{}",
+                    if watch.cast { "receiving" } else { "watching" },
+                    watch.started.kind(),
+                    watch.started.source_id(),
                     watch.peer.fingerprint(),
                     watch.started.width,
                     watch.started.height,
                     watch.started.frame_rate,
-                    watch.frames
+                    watch.frames,
+                    sound_summary(watch.started.audio.is_some(), watch.audio)
                 );
             }
-            print!("{}", screen_status_next_steps(active));
+            for offer in s.offered {
+                println!(
+                    "offered {} {} by {}… at {}x{}{}",
+                    offer.offer.source.kind,
+                    offer
+                        .offer
+                        .source
+                        .name
+                        .as_deref()
+                        .unwrap_or(&offer.offer.source.id),
+                    offer.peer.fingerprint(),
+                    offer.offer.source.width,
+                    offer.offer.source.height,
+                    if offer.offer.audio.is_empty() {
+                        ""
+                    } else {
+                        ", with sound"
+                    }
+                );
+            }
+            print!("{}", screen_status_next_steps(active, offered));
         }
     }
     Ok(())
@@ -1552,11 +1711,18 @@ mod tests {
         assert!(!input_status_next_steps(false).contains("release"));
         assert!(input_status_next_steps(true).contains("lpctl input release"));
 
-        let idle = screen_status_next_steps(false);
+        let idle = screen_status_next_steps(false, false);
         assert!(idle.contains("lpview <DEVICE>"), "{idle}");
         assert!(idle.contains("lpctl screen displays <DEVICE>"), "{idle}");
         assert!(!idle.contains("stop"), "{idle}");
-        assert!(screen_status_next_steps(true).contains("lpctl screen stop [DEVICE]"));
+        assert!(screen_status_next_steps(true, false).contains("lpctl screen stop [DEVICE]"));
+        assert!(!idle.contains("lpview --receive"));
+        assert!(screen_status_next_steps(false, true).contains("lpview --receive <DEVICE>"));
+        assert!(idle.contains("lpctl screen cast <DEVICE>"));
+        let record = audio_packet_record(0x0102, &[7, 8, 9]);
+        assert_eq!(record, [0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 1, 2, 7, 8, 9]);
+        assert_eq!(sound_summary(false, 0), "");
+        assert_eq!(sound_summary(true, 12), ", 12 packets of sound");
 
         assert!(offers_next_steps(0).contains("lpctl files offer <PATH>"));
         assert!(!offers_next_steps(0).contains("withdraw"));

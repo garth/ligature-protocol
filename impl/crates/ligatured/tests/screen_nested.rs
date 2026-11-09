@@ -166,10 +166,12 @@ async fn a_nested_compositor_s_output_is_shared_encoded_and_decodes() {
             &sharer_key,
             Start {
                 display: None,
+                window: None,
                 formats: Vec::new(),
                 width: 640,
                 height: 640,
                 frame_rate: 15,
+                audio: Vec::new(),
             },
         )
         .await

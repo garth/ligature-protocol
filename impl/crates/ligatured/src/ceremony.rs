@@ -243,7 +243,7 @@ pub async fn handle_control(
             tokio::spawn(async move {
                 while let Some(code) = code_rx.recv().await {
                     let _ = events
-                        .send(Outgoing::Event(Event {
+                        .send(Outgoing::event(Event {
                             event_type: lp_core::wire::TypeName::new(types::PAIR_CODE),
                             id,
                             offer: None,
@@ -251,6 +251,7 @@ pub async fn handle_control(
                             progress: None,
                             started: None,
                             frame: None,
+                            audio: None,
                         }))
                         .await;
                 }
@@ -409,7 +410,7 @@ async fn run_join(
     tokio::spawn(async move {
         while let Some(offer) = offer_rx.recv().await {
             let _ = events
-                .send(Outgoing::Event(Event {
+                .send(Outgoing::event(Event {
                     event_type: lp_core::wire::TypeName::new(types::PAIR_OFFER),
                     id,
                     offer: Some(offer),
@@ -417,6 +418,7 @@ async fn run_join(
                     progress: None,
                     started: None,
                     frame: None,
+                    audio: None,
                 }))
                 .await;
         }

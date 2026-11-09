@@ -1042,10 +1042,12 @@ fn the_phone_watches_a_desktop_and_shares_its_own_screen() {
     );
     let start = Start {
         display: None,
+        window: None,
         formats: Vec::new(),
         width: 1080,
         height: 2400,
         frame_rate: 30,
+        audio: Vec::new(),
     };
     let watch = {
         let sync = desktop_sync.clone();
@@ -1061,7 +1063,7 @@ fn the_phone_watches_a_desktop_and_shares_its_own_screen() {
     assert_eq!((w, h, rate), (486, 1080, 30));
     phone.screen_share_started(true);
     let mut watching = runtime.block_on(watch).unwrap().unwrap();
-    assert_eq!(watching.started.display, "screen");
+    assert_eq!(watching.started.display.as_deref(), Some("screen"));
     phone.screen_share_frame(true, vec![9; 50_000]);
     phone.screen_share_frame(false, vec![8; 500]);
     let frames = runtime.block_on(async {
@@ -1069,6 +1071,7 @@ fn the_phone_watches_a_desktop_and_shares_its_own_screen() {
         while got.len() < 2 {
             match watching.frames.recv().await.unwrap() {
                 Viewed::Frame { key, bytes, .. } => got.push((key, bytes.len())),
+                Viewed::Audio { .. } => {}
                 Viewed::Stopped(r) => panic!("stopped: {r}"),
             }
         }

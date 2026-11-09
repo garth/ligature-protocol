@@ -1625,7 +1625,9 @@ mod tests {
     fn settings(w: u32, h: u32, rate: u32) -> Settings {
         Settings {
             display: "DP-1".to_owned(),
+            kind: lp_core::screen::SourceKind::Display,
             format: Format::H264,
+            audio: None,
             width: w,
             height: h,
             frame_rate: rate,

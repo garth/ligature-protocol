@@ -48,8 +48,16 @@ struct Options {
     /// The device: its name, or a prefix of its key or fingerprint.
     device: String,
     /// The display id, from `lpctl screen displays`; the primary one by default.
-    #[arg(long)]
+    #[arg(long, conflicts_with_all = ["window", "receive"])]
     display: Option<String>,
+    /// A window id, from `lpctl screen displays`, instead of a display. A
+    /// window is watched, never driven.
+    #[arg(long, conflicts_with = "receive")]
+    window: Option<String>,
+    /// Show the cast the device offered this one, rather than ask to watch
+    /// it: what the daemon runs when a cast arrives.
+    #[arg(long)]
+    receive: bool,
     /// The widest picture wanted.
     #[arg(long, default_value_t = 1920)]
     width: u32,
@@ -203,6 +211,8 @@ fn main() {
 struct OptionsForNet {
     device: String,
     display: Option<String>,
+    window: Option<String>,
+    receive: bool,
     width: u32,
     height: u32,
     rate: u32,
@@ -215,6 +225,8 @@ impl From<&Options> for OptionsForNet {
         Self {
             device: o.device.clone(),
             display: o.display.clone(),
+            window: o.window.clone(),
+            receive: o.receive,
             width: o.width,
             height: o.height,
             rate: o.rate,
@@ -666,6 +678,13 @@ async fn network(
         }
     });
 
+    // A cast offered to this device: take it, and the share runs as a watch.
+    if options.receive {
+        let mut req = Request::new(types::SCREEN_ACCEPT, 0);
+        req.key = Some(peer);
+        return run_share(req, watch, proxy, picture, decoder_slot, driver).await;
+    }
+
     // At the actual size, the picture asked for is the display's points in
     // this window's pixels (ADR 0045).
     let (width, height) = if options.actual_size {
@@ -696,10 +715,24 @@ async fn network(
     let mut req = Request::new(types::SCREEN_START, 0);
     req.key = Some(peer);
     req.display = options.display.clone();
+    req.window = options.window.clone();
     req.width = Some(width);
     req.height = Some(height);
     req.formats = options.formats.clone();
     req.frame_rate = Some(options.rate);
+    run_share(req, watch, proxy, picture, decoder_slot, driver).await
+}
+
+/// Runs one share from `req` (a `screen.start` or a `screen.accept`): the
+/// frames into the decoder until it ends.
+async fn run_share(
+    req: Request,
+    mut watch: Client,
+    proxy: EventLoopProxy<UserEvent>,
+    picture: Arc<Mutex<Picture>>,
+    decoder_slot: DecoderSlot,
+    driver: tokio::task::JoinHandle<()>,
+) -> Result<String, Error> {
     let mut feed: Option<std::process::ChildStdin> = None;
     let mut delimiting = Delimiting::default();
     let response = watch
@@ -818,12 +851,12 @@ impl App {
     fn title(&self) -> String {
         let state = match (&self.started, self.driving, self.view_only) {
             (None, _, _) => "connecting…".to_owned(),
-            (Some(s), true, _) => format!("{} — driving; both Ctrl keys to let go", s.display),
+            (Some(s), true, _) => format!("{} — driving; both Ctrl keys to let go", s.source_id()),
             (Some(s), false, true) => match &self.watch_only {
-                Some(why) => format!("{} — watch only: {why}", s.display),
-                None => s.display.clone(),
+                Some(why) => format!("{} — watch only: {why}", s.source_id()),
+                None => s.source_id().to_owned(),
             },
-            (Some(s), false, false) => format!("{} — click to drive", s.display),
+            (Some(s), false, false) => format!("{} — click to drive", s.source_id()),
         };
         match &self.started {
             Some(s) => format!(
@@ -1730,8 +1763,10 @@ mod tests {
                 return;
             };
             let started = Started {
-                display: "1".to_owned(),
+                display: Some("1".to_owned()),
+                window: None,
                 format,
+                audio: None,
                 width: 320,
                 height: 240,
                 frame_rate: 30,

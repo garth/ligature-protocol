@@ -166,7 +166,10 @@ and driven over Marionette, against synthetic cameras built as the presenter bui
 with only the test camera allowed in Firefox's own prompt: a YUY2 camera at 640 by 360
 showed 81 frames in three seconds; a camera of the same name at 1280 by 720 gave a track
 that ended at once with no frame, and its node was gone; a name that carried the size
-showed 82 frames at 1280 by 720.
+showed 82 frames at 1280 by 720. Then, with the build installed, the Pixel's front
+camera presented here was opened in that Firefox twice running: 1920 by 1080, about 70
+frames in three seconds each time, a picture that was not black and changed, the frames
+counted and summed and none kept.
 
 **A reader that can agree no format ends the presented camera.** That is the limit left:
 a program that asks the node for a form it does not offer takes the sink down as that

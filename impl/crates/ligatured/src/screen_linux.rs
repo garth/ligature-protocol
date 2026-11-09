@@ -22,6 +22,13 @@
 //! nothing. Since the compositor shows no indicator of its own, a share posts
 //! a local notification, "Sharing `display` with `device`", with a Stop
 //! action, for its life.
+//!
+//! Milestone 9 (LP-200): a cast of a window opens the portal's picker on
+//! window sources, whose choice is the source, its pick not kept; a window
+//! that changes shape is fitted into the agreed picture with black borders.
+//! A share's sound is the default output's monitor, captured and encoded as
+//! Opus by another ffmpeg ([`crate::screen::sound`]), when both sides agreed
+//! to it.
 
 use std::collections::HashMap;
 use std::io::Write as _;
@@ -35,7 +42,7 @@ use std::time::{Duration, Instant};
 use lp_core::Error;
 use lp_core::frame;
 use lp_core::input::Region;
-use lp_core::screen::{Display, RefuseReason, ScreenParams, StopReason};
+use lp_core::screen::{Display, RefuseReason, ScreenParams, Source, SourceKind, StopReason};
 use lp_identity::trust_store::TrustStore;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
@@ -44,7 +51,15 @@ use crate::clipboard_linux::select_wayland_socket;
 #[cfg(test)]
 use crate::screen::encode::{AccessUnits, KEYFRAME_BACKSTOP, X264_QP, encoder_args, is_keyframe};
 use crate::screen::encode::{Encoder, LiveEncoder, RawInput, encodes, probe_encoder};
+use crate::screen::sound;
 use crate::screen::{Capture, Captured, Settings, Share, ShareControl};
+
+/// The id prefix of a window the portal's picker chose for a cast, followed
+/// by its PipeWire node.
+const PICKED_WINDOW_PREFIX: &str = "window-";
+/// The picture a picked window is offered at when the portal does not say
+/// its size.
+const PICKED_WINDOW_DEFAULT: (u32, u32) = (1280, 720);
 
 /// The store key of the portal's restore token.
 pub const RESTORE_TOKEN_KEY: &str = "screen.restore_token";
@@ -233,14 +248,16 @@ fn region_of(outputs: &[OutputInfo], pick: impl Fn(&OutputInfo) -> bool) -> Opti
 /// BGRx frames of the share's size on stdout. The compositor sends a frame
 /// when the screen changes; `videorate` drops any beyond the share's rate
 /// and never adds one, and `keepalive-time` sends the last again once a
-/// second while the screen is still.
+/// second while the screen is still. `videoscale` keeps the source's aspect
+/// and adds black borders, so a window that changes shape stays in the
+/// agreed picture.
 #[must_use]
 pub fn pipewire_args(fd: i32, node: u32, settings: &Settings) -> Vec<String> {
     format!(
         "-q pipewiresrc fd={fd} path={node} do-timestamp=true keepalive-time={KEEPALIVE_MS} \
          ! videorate drop-only=true max-rate={} \
-         ! videoconvert ! videoscale \
-         ! video/x-raw,format=BGRx,width={},height={} \
+         ! videoconvert ! videoscale add-borders=true \
+         ! video/x-raw,format=BGRx,width={},height={},pixel-aspect-ratio=1/1 \
          ! fdsink fd=1 sync=false",
         settings.frame_rate.max(1),
         settings.width,
@@ -260,6 +277,8 @@ struct Probe {
     decoder: bool,
     pipewiresrc: bool,
     portal: bool,
+    /// Whether the default output's sound can be captured and encoded.
+    sound: bool,
     list: HelperList,
 }
 
@@ -277,10 +296,12 @@ struct Running {
     /// Set when the producer is stopped on purpose, so the end of its
     /// frames is not taken for a failure.
     generation: Arc<AtomicBool>,
+    /// The sound capture, when the share has sound.
+    sound: Option<sound::Sound>,
 }
 
 /// Where a running share's raw frames come from, to start them again.
-enum Source {
+enum Origin {
     /// The portal's stream: a new remote on the same session, no picker.
     Portal {
         session: Arc<PortalSession>,
@@ -334,7 +355,15 @@ struct PortalStart {
     session: PortalSession,
     node: u32,
     position: Option<(i32, i32)>,
+    size: Option<(i32, i32)>,
     fd: OwnedFd,
+}
+
+/// A window the portal's picker chose for a cast, waiting for its share to
+/// start.
+struct Picked {
+    start: PortalStart,
+    source: Source,
 }
 
 /// Where a share's raw frames come from.
@@ -362,6 +391,8 @@ pub struct LinuxScreen {
     env_display: Option<std::ffi::OsString>,
     helper_exe: PathBuf,
     force_screencopy: bool,
+    /// Windows the picker chose, by the id a cast's `start` names.
+    picked: Arc<Mutex<HashMap<String, Picked>>>,
 }
 
 impl std::fmt::Debug for LinuxScreen {
@@ -409,6 +440,7 @@ impl LinuxScreen {
             env_display,
             helper_exe,
             force_screencopy,
+            picked: Arc::new(Mutex::new(HashMap::new())),
         });
         let prober = this.clone();
         std::thread::Builder::new()
@@ -462,11 +494,13 @@ impl LinuxScreen {
                     })
         };
         let mut portal = probe_portal();
+        let sound = sound::probe();
         tracing::info!(
             ?encoder,
             decoder,
             pipewiresrc,
             portal,
+            sound,
             "screen sharing tools probed"
         );
         let mut round: u32 = 0;
@@ -487,6 +521,7 @@ impl LinuxScreen {
                 probe.decoder = decoder;
                 probe.pipewiresrc = pipewiresrc;
                 probe.portal = portal;
+                probe.sound = sound;
                 if probe.list != list {
                     tracing::debug!(
                         outputs = list.outputs.len(),
@@ -504,15 +539,24 @@ impl LinuxScreen {
         !self.force_screencopy && probe.portal && probe.pipewiresrc
     }
 
-    /// The portal's choice: a session, the stream's node, the remote's fd and
-    /// the output it is. Blocks on the picker the first time.
-    fn open_portal(&self) -> Result<PortalStart, RefuseReason> {
+    /// The portal's choice of a source of `kind`: a session, the stream's
+    /// node, the remote's fd, and where and how big it is. Blocks on the
+    /// picker, which a display's restore token spares the second time; a
+    /// window is picked every time and its token never kept.
+    fn open_portal(&self, kind: SourceKind) -> Result<PortalStart, RefuseReason> {
         use ashpd::desktop::screencast::{
             CursorMode, OpenPipeWireRemoteOptions, Screencast, SelectSourcesOptions, SourceType,
             StartCastOptions,
         };
         use ashpd::desktop::{CreateSessionOptions, PersistMode};
-        let token = self.store.local_setting(RESTORE_TOKEN_KEY).ok().flatten();
+        let (source_type, token, persist) = match kind {
+            SourceKind::Display => (
+                SourceType::Monitor,
+                self.store.local_setting(RESTORE_TOKEN_KEY).ok().flatten(),
+                PersistMode::ExplicitlyRevoked,
+            ),
+            SourceKind::Window => (SourceType::Window, None, PersistMode::DoNot),
+        };
         let store = self.store.clone();
         let result = self.handle.block_on(async move {
             let proxy = Screencast::new().await?;
@@ -524,10 +568,10 @@ impl LinuxScreen {
                     &session,
                     SelectSourcesOptions::default()
                         .set_cursor_mode(CursorMode::Embedded)
-                        .set_sources(ashpd::enumflags2::BitFlags::from_flag(SourceType::Monitor))
+                        .set_sources(ashpd::enumflags2::BitFlags::from_flag(source_type))
                         .set_multiple(false)
                         .set_restore_token(token.as_deref())
-                        .set_persist_mode(PersistMode::ExplicitlyRevoked),
+                        .set_persist_mode(persist),
                 )
                 .await?
                 .response()?;
@@ -535,13 +579,15 @@ impl LinuxScreen {
                 .start(&session, None, StartCastOptions::default())
                 .await?
                 .response()?;
-            if let Some(t) = streams.restore_token()
+            if kind == SourceKind::Display
+                && let Some(t) = streams.restore_token()
                 && let Err(e) = store.set_local_setting(RESTORE_TOKEN_KEY, Some(t))
             {
                 tracing::warn!(%e, "cannot keep the screen-cast restore token");
             }
             let stream = streams.streams().first().ok_or(ashpd::Error::NoResponse)?;
-            let (node, position) = (stream.pipe_wire_node_id(), stream.position());
+            let (node, position, size) =
+                (stream.pipe_wire_node_id(), stream.position(), stream.size());
             let fd = proxy
                 .open_pipe_wire_remote(&session, OpenPipeWireRemoteOptions::default())
                 .await?;
@@ -549,26 +595,41 @@ impl LinuxScreen {
                 session: PortalSession { proxy, session },
                 node,
                 position,
+                size,
                 fd,
             })
         });
         result.map_err(|e| {
-            tracing::info!(%e, "the screen-cast portal did not start a share");
+            tracing::info!(%e, %kind, "the screen-cast portal did not start a share");
             RefuseReason::Consent
         })
     }
 
     fn producer_portal(&self, settings: &Settings) -> Result<Producer, RefuseReason> {
+        // A picked window waits in its slot; a display opens the portal now.
+        let (started, region) = match settings.kind {
+            SourceKind::Window => {
+                let picked = lock(&self.picked)
+                    .remove(&settings.display)
+                    .ok_or(RefuseReason::NoDisplay)?;
+                (picked.start, None)
+            }
+            SourceKind::Display => {
+                let started = self.open_portal(SourceKind::Display)?;
+                let list = lock(&self.probe).list.clone();
+                let region = started
+                    .position
+                    .and_then(|(x, y)| list.at(x, y).map(|o| o.id.clone()))
+                    .and_then(|id| list.region(&id));
+                (started, region)
+            }
+        };
         let PortalStart {
             session: portal,
             node,
-            position,
             fd,
-        } = self.open_portal()?;
-        let list = lock(&self.probe).list.clone();
-        let region = position
-            .and_then(|(x, y)| list.at(x, y).map(|o| o.id.clone()))
-            .and_then(|id| list.region(&id));
+            ..
+        } = started;
         let child = Self::gst(fd, node, settings)?;
         Ok(Producer {
             child,
@@ -605,11 +666,11 @@ impl LinuxScreen {
     /// the runtime.
     fn relaunch(
         &self,
-        source: &Source,
+        source: &Origin,
         settings: &Settings,
     ) -> Result<(Child, RawInput), RefuseReason> {
         let (producer, input) = match source {
-            Source::Portal { session, node } => {
+            Origin::Portal { session, node } => {
                 use ashpd::desktop::screencast::OpenPipeWireRemoteOptions;
                 let fd = self
                     .handle
@@ -623,7 +684,7 @@ impl LinuxScreen {
                     })?;
                 (Self::gst(fd, *node, settings)?, portal_input(settings))
             }
-            Source::Screencopy => {
+            Origin::Screencopy => {
                 let p = self.producer_screencopy(settings)?;
                 (p.child, p.input)
             }
@@ -637,7 +698,7 @@ impl LinuxScreen {
     /// hold. Runs on a thread of its own until the share stops.
     fn watch_capture(
         &self,
-        source: &Source,
+        source: &Origin,
         settings: &Settings,
         running: &Mutex<Running>,
         stopping: &AtomicBool,
@@ -792,8 +853,51 @@ impl Capture for LinuxScreen {
             shares: probe.encoder.is_some() && can_capture,
             views: false,
             encodes: probe.encoder.map(encodes).unwrap_or_default(),
+            audio_encodes: if probe.sound {
+                sound::encodes()
+            } else {
+                Vec::new()
+            },
             ..ScreenParams::default()
         }
+    }
+
+    /// A window for a cast: the portal's picker on window sources, whose
+    /// choice waits for the share's `start` under the id returned. Only on
+    /// the portal path; `wlr-screencopy` copies outputs alone.
+    fn pick(&self, kind: SourceKind) -> Result<Source, RefuseReason> {
+        if kind != SourceKind::Window {
+            return Err(RefuseReason::NoDisplay);
+        }
+        if !self.use_portal(&lock(&self.probe)) {
+            tracing::info!("a window cast needs the screen-cast portal, which is not in use here");
+            return Err(RefuseReason::NoDisplay);
+        }
+        let start = self.open_portal(SourceKind::Window)?;
+        let (width, height) = start
+            .size
+            .and_then(|(w, h)| Some((u32::try_from(w).ok()?, u32::try_from(h).ok()?)))
+            .filter(|(w, h)| *w > 0 && *h > 0)
+            .unwrap_or(PICKED_WINDOW_DEFAULT);
+        let id = format!("{PICKED_WINDOW_PREFIX}{}", start.node);
+        let source = Source {
+            kind: SourceKind::Window,
+            id: id.clone(),
+            name: Some("the window picked".to_owned()),
+            app: None,
+            width,
+            height,
+            scale: None,
+        };
+        tracing::info!(%id, width, height, "a window was picked for a cast");
+        lock(&self.picked).insert(
+            id,
+            Picked {
+                start,
+                source: source.clone(),
+            },
+        );
+        Ok(source)
     }
 
     fn displays(&self) -> Vec<Display> {
@@ -818,7 +922,18 @@ impl Capture for LinuxScreen {
         {
             let frames_tx = frames_tx.clone();
             let notification = notification.clone();
-            let summary = format!("Sharing {} with {}", settings.display, settings.viewer);
+            let what = match settings.kind {
+                SourceKind::Window => lock(&self.picked)
+                    .get(&settings.display)
+                    .and_then(|p| p.source.name.clone())
+                    .unwrap_or_else(|| settings.display.clone()),
+                SourceKind::Display => settings.display.clone(),
+            };
+            let summary = format!(
+                "{} {what} with {}",
+                if settings.cast { "Casting" } else { "Sharing" },
+                settings.viewer
+            );
             self.handle.spawn(async move {
                 sharing_notification(&summary, notification, frames_tx, posted_tx).await;
             });
@@ -844,7 +959,7 @@ impl Capture for LinuxScreen {
             input,
             portal,
             region,
-        } = if self.use_portal(&probe) {
+        } = if self.use_portal(&probe) || settings.kind == SourceKind::Window {
             self.producer_portal(settings)?
         } else {
             self.producer_screencopy(settings)?
@@ -875,10 +990,19 @@ impl Capture for LinuxScreen {
             let _ = producer.wait();
             return Err(e);
         }
+        // The sound, when agreed: its own ffmpeg; one that cannot start
+        // leaves the share silent rather than refused.
+        let sound = settings.audio.and_then(|format| {
+            sound::Sound::start(format, frames_tx.clone())
+                .inspect_err(|e| tracing::warn!(%e, "cannot capture the sound; sharing silent"))
+                .ok()
+        });
         tracing::info!(
             display = %settings.display,
+            kind = %settings.kind,
             ?encoder,
             portal = portal.is_some(),
+            sound = sound.is_some(),
             input = format!("{}x{} {}", input.width, input.height, input.pix_fmt),
             "screen capture started"
         );
@@ -888,15 +1012,16 @@ impl Capture for LinuxScreen {
         let (portal, source) = match portal {
             Some((session, node)) => {
                 let session = Arc::new(session);
-                (Some(session.clone()), Source::Portal { session, node })
+                (Some(session.clone()), Origin::Portal { session, node })
             }
-            None => (None, Source::Screencopy),
+            None => (None, Origin::Screencopy),
         };
         let running = Arc::new(Mutex::new(Running {
             children: vec![producer],
             encoder: live,
             portal,
             generation,
+            sound,
         }));
 
         // A capture that produces nothing has stalled, since `keepalive-time`
@@ -954,6 +1079,7 @@ impl Capture for LinuxScreen {
                         let _ = child.wait();
                     }
                     r.encoder.stop();
+                    drop(r.sound.take());
                     r.portal.take()
                 };
                 if let Some(p) = portal {
@@ -1632,6 +1758,7 @@ mod tests {
             height: h,
             frame_rate: rate,
             viewer: "mac".to_owned(),
+            cast: false,
         }
     }
 
@@ -1744,7 +1871,10 @@ mod tests {
         // at the agreed rate, never padded to it.
         assert!(gst.contains("keepalive-time=1000"));
         assert!(gst.contains("videorate drop-only=true max-rate=25"));
-        assert!(gst.contains("format=BGRx,width=1280,height=720 !"));
+        // Milestone 9: the source is fitted into the picture with borders,
+        // so a window that changes shape never distorts or restarts.
+        assert!(gst.contains("videoscale add-borders=true !"));
+        assert!(gst.contains("format=BGRx,width=1280,height=720,pixel-aspect-ratio=1/1 !"));
         assert!(!gst.contains("framerate"));
     }
 

@@ -25,6 +25,7 @@ use clap::Parser;
 use ligatured::control::{
     Caps, Client, Devices, Empty, Event, InputDriven, Request, ScreenDisplays, ScreenStopped, types,
 };
+use ligatured::screen::ogg;
 use lp_core::input::keyid::{self, KeyId};
 use lp_core::input::{
     BTN_LEFT, BTN_MIDDLE, BTN_RIGHT, InputEvent, InputParams, KEY_LEFTCTRL, KEY_RIGHTCTRL,
@@ -58,6 +59,9 @@ struct Options {
     /// it: what the daemon runs when a cast arrives.
     #[arg(long)]
     receive: bool,
+    /// Picture only: ask for no sound, and play none that is offered.
+    #[arg(long)]
+    mute: bool,
     /// The widest picture wanted.
     #[arg(long, default_value_t = 1920)]
     width: u32,
@@ -93,6 +97,8 @@ struct Options {
 /// What the network thread tells the window.
 #[derive(Debug)]
 enum UserEvent {
+    /// The device's display name, once the daemon has said it.
+    Device(String),
     /// The share runs.
     Started(Started),
     /// A new picture is in the shared slot.
@@ -213,6 +219,7 @@ struct OptionsForNet {
     display: Option<String>,
     window: Option<String>,
     receive: bool,
+    mute: bool,
     width: u32,
     height: u32,
     rate: u32,
@@ -227,6 +234,7 @@ impl From<&Options> for OptionsForNet {
             display: o.display.clone(),
             window: o.window.clone(),
             receive: o.receive,
+            mute: o.mute,
             width: o.width,
             height: o.height,
             rate: o.rate,
@@ -243,14 +251,23 @@ impl From<&Options> for OptionsForNet {
 }
 
 /// A device by its key, or by its name or a prefix of its key or
-/// fingerprint among this person's bindings, as `lpctl` resolves it.
-async fn resolve_device(client: &mut Client, device: &str) -> Result<PublicKey, Error> {
-    if let Ok(key) = PublicKey::parse(device) {
-        return Ok(key);
-    }
+/// fingerprint among this person's bindings, as `lpctl` resolves it, with
+/// its display name for the window's title where the daemon knows one.
+async fn resolve_device(
+    client: &mut Client,
+    device: &str,
+) -> Result<(PublicKey, Option<String>), Error> {
     let known: Devices = client.request(Request::new(types::DEVICES, 0)).await?;
+    if let Ok(key) = PublicKey::parse(device) {
+        let name = known
+            .devices
+            .iter()
+            .find(|d| d.key == key)
+            .and_then(|d| d.display_name.clone());
+        return Ok((key, name));
+    }
     let needle = device.to_lowercase();
-    let matches: Vec<PublicKey> = known
+    let matches: Vec<(PublicKey, Option<String>)> = known
         .devices
         .iter()
         .filter(|d| d.role == "binding" && !d.this_device && !d.revoked)
@@ -261,10 +278,10 @@ async fn resolve_device(client: &mut Client, device: &str) -> Result<PublicKey, 
                 || d.key.to_string().starts_with(device)
                 || d.key.fingerprint().starts_with(device)
         })
-        .map(|d| d.key)
+        .map(|d| (d.key, d.display_name.clone()))
         .collect();
     match matches.as_slice() {
-        [one] => Ok(*one),
+        [one] => Ok(one.clone()),
         [] => Err(Error::Decode(format!(
             "no device named {device}; see lpctl devices"
         ))),
@@ -614,7 +631,10 @@ async fn network(
 ) -> Result<String, Error> {
     let socket = locations.control_socket();
     let mut watch = Client::connect(&socket).await?;
-    let peer = resolve_device(&mut watch, &options.device).await?;
+    let (peer, name) = resolve_device(&mut watch, &options.device).await?;
+    if let Some(name) = name {
+        let _ = proxy.send_event(UserEvent::Device(name));
+    }
     let caps: Caps = watch.request(Request::new(types::CAPS, 0)).await?;
     let input = caps
         .peers
@@ -682,6 +702,7 @@ async fn network(
     if options.receive {
         let mut req = Request::new(types::SCREEN_ACCEPT, 0);
         req.key = Some(peer);
+        req.audio = Some(!options.mute);
         return run_share(req, watch, proxy, picture, decoder_slot, driver).await;
     }
 
@@ -720,11 +741,12 @@ async fn network(
     req.height = Some(height);
     req.formats = options.formats.clone();
     req.frame_rate = Some(options.rate);
+    req.audio = Some(!options.mute);
     run_share(req, watch, proxy, picture, decoder_slot, driver).await
 }
 
 /// Runs one share from `req` (a `screen.start` or a `screen.accept`): the
-/// frames into the decoder until it ends.
+/// frames into the decoder, and the sound into the player, until it ends.
 async fn run_share(
     req: Request,
     mut watch: Client,
@@ -735,9 +757,22 @@ async fn run_share(
 ) -> Result<String, Error> {
     let mut feed: Option<std::process::ChildStdin> = None;
     let mut delimiting = Delimiting::default();
+    let mut sound: Option<(std::process::Child, std::process::ChildStdin, ogg::Writer)> = None;
     let response = watch
         .call(req, |event: &Event| {
             if let Some(started) = &event.started {
+                if let Some(format) = started.audio {
+                    match player() {
+                        Ok(mut child) => {
+                            if let Some(mut stdin) = child.stdin.take() {
+                                let mut writer = ogg::Writer::new(0x4c50);
+                                let _ = stdin.write_all(&writer.headers(format.channels));
+                                sound = Some((child, stdin, writer));
+                            }
+                        }
+                        Err(e) => eprintln!("lpview: cannot start ffmpeg to play the sound: {e}"),
+                    }
+                }
                 match decoder(started) {
                     Ok(mut c) => {
                         feed = c.stdin.take();
@@ -790,14 +825,66 @@ async fn run_share(
             {
                 feed = None;
             }
+            if let Some(packet) = &event.audio
+                && let Some((_, stdin, writer)) = sound.as_mut()
+                && stdin.write_all(&writer.packet(&packet.bytes.0)).is_err()
+            {
+                eprintln!("lpview: the sound player went away");
+                sound = None;
+            }
             None
         })
         .await?;
     drop(feed);
     stop_decoder(&decoder_slot);
+    if let Some((mut child, stdin, _)) = sound.take() {
+        drop(stdin);
+        let _ = child.kill();
+        let _ = child.wait();
+    }
     driver.abort();
     let ended: ScreenStopped = response.into_ok()?;
     Ok(ended.reason.to_string())
+}
+
+/// The ffmpeg that plays the share's sound: Ogg Opus on its stdin, decoded
+/// and written to the platform's default output (PulseAudio's interface on
+/// Linux, AudioToolbox on a Mac) with a small buffer, so the sound stays
+/// close to the picture.
+fn player_args() -> Vec<String> {
+    let mut args: Vec<String> = [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-fflags",
+        "nobuffer",
+        "-flags",
+        "low_delay",
+        "-f",
+        "ogg",
+        "-i",
+        "pipe:0",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    if cfg!(target_os = "macos") {
+        args.extend(["-f", "audiotoolbox", "-"].map(str::to_owned));
+    } else {
+        args.extend(["-f", "pulse", "-buffer_duration", "60", "Ligature"].map(str::to_owned));
+    }
+    args
+}
+
+fn player() -> std::io::Result<std::process::Child> {
+    use std::os::unix::process::CommandExt as _;
+    Command::new("ffmpeg")
+        .args(player_args())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit())
+        .process_group(0)
+        .spawn()
 }
 
 struct App {
@@ -1026,6 +1113,12 @@ impl ApplicationHandler<UserEvent> for App {
         let attributes = Window::default_attributes()
             .with_title(self.title())
             .with_inner_size(LogicalSize::new(1280.0, 720.0));
+        // The window's application id, for the compositor's rules and lists.
+        #[cfg(target_os = "linux")]
+        let attributes = {
+            use winit::platform::wayland::WindowAttributesExtWayland as _;
+            attributes.with_name("lpview", "lpview")
+        };
         let window = match event_loop.create_window(attributes) {
             Ok(w) => Arc::new(w),
             Err(e) => {
@@ -1069,6 +1162,10 @@ impl ApplicationHandler<UserEvent> for App {
                 if let Some(w) = &self.window {
                     w.request_redraw();
                 }
+            }
+            UserEvent::Device(name) => {
+                self.device = name;
+                self.retitle();
             }
             UserEvent::WatchOnly(why) => {
                 self.view_only = true;

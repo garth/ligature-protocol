@@ -20,7 +20,7 @@ use ligatured::screen::{ShareControl, Viewed};
 use ligatured::screen_linux::LinuxScreen;
 use lp_core::facts::Role;
 use lp_core::paths::Locations;
-use lp_core::screen::{Format, SCREEN_TYPE, ScreenParams, Start, StopReason};
+use lp_core::screen::{AudioFormat, Format, SCREEN_TYPE, ScreenParams, Start, StopReason};
 use lp_core::wire::Timestamp;
 use lp_identity::cross_signing::PersonKeys;
 use lp_identity::facts;
@@ -134,6 +134,7 @@ async fn a_nested_compositor_s_output_is_shared_encoded_and_decodes() {
         Some(ScreenParams {
             views: true,
             decodes: vec![Format::H264_444, Format::H264],
+            audio_decodes: vec![AudioFormat::OPUS_STEREO],
             ..ScreenParams::default()
         }),
     );
@@ -160,6 +161,20 @@ async fn a_nested_compositor_s_output_is_shared_encoded_and_decodes() {
     eprintln!("displays: {displays:?}");
     assert_eq!(displays.len(), 1);
     assert!(displays[0].primary);
+    // Sound comes where the sharer has ffmpeg's libopus and a default
+    // output (milestone 9, LP-200); the test asks and takes what it gets.
+    let sharer_params = viewer
+        .registry()
+        .peers()
+        .iter()
+        .find_map(|p| {
+            p.capabilities
+                .iter()
+                .find_map(ScreenParams::from_descriptor)
+        })
+        .expect("the sharer's params");
+    let sharer_sounds = !sharer_params.audio_encodes.is_empty();
+    eprintln!("the sharer encodes sound: {sharer_sounds}");
 
     let mut watching = viewer_sync
         .watch(
@@ -171,14 +186,26 @@ async fn a_nested_compositor_s_output_is_shared_encoded_and_decodes() {
                 width: 640,
                 height: 640,
                 frame_rate: 15,
-                audio: Vec::new(),
+                audio: vec![AudioFormat::OPUS_STEREO],
             },
         )
         .await
         .unwrap();
     eprintln!("started: {:?}", watching.started);
-    // x264 encodes 4:4:4, the viewer's first choice (ADR 0044).
-    assert_eq!(watching.started.format, Format::H264_444);
+    assert_eq!(
+        watching.started.audio.is_some(),
+        sharer_sounds,
+        "sound is agreed exactly when the sharer encodes it"
+    );
+    // The sharer picks the first format of the viewer's offer it encodes
+    // (ADR 0044): 4:4:4 from x264, which lists it first, and 4:2:0 alone
+    // from VA-API where that works.
+    assert_eq!(watching.started.format, sharer_params.encodes[0]);
+    let pix_fmt = if watching.started.format == Format::H264_444 {
+        "yuv444p"
+    } else {
+        "yuv420p"
+    };
     let expect_h = (displays[0].height * 640 / displays[0].width) & !1;
     assert_eq!(
         (watching.started.width, watching.started.height),
@@ -188,7 +215,9 @@ async fn a_nested_compositor_s_output_is_shared_encoded_and_decodes() {
     // Two seconds of frames: the first is a keyframe, and no other comes
     // unasked.
     let mut stream = Vec::new();
-    let (mut frames, mut keys) = (0, 0);
+    let mut sound = ligatured::screen::ogg::Writer::new(1);
+    let mut ogg = sound.headers(2);
+    let (mut frames, mut keys, mut packets) = (0, 0, 0u32);
     let started = Instant::now();
     while started.elapsed() < Duration::from_secs(3) && frames < 30 {
         match tokio::time::timeout(Duration::from_secs(5), watching.frames.recv()).await {
@@ -203,16 +232,51 @@ async fn a_nested_compositor_s_output_is_shared_encoded_and_decodes() {
                 keys += u32::from(key);
                 stream.extend_from_slice(&bytes);
             }
+            Ok(Some(Viewed::Audio { bytes, .. })) => {
+                assert!(!bytes.is_empty(), "a packet of sound has bytes");
+                ogg.extend(sound.packet(&bytes));
+                packets += 1;
+            }
             other => panic!("expected a frame, got {other:?}"),
         }
     }
     let rate = f64::from(frames) / started.elapsed().as_secs_f64();
     eprintln!(
-        "{frames} frames, {keys} keyframes, {} bytes, {rate:.1} fps",
+        "{frames} frames, {keys} keyframes, {} bytes, {rate:.1} fps, {packets} packets of sound",
         stream.len()
     );
     assert!(frames >= 20, "{frames} frames in time");
     assert_eq!(keys, 1, "keyframes are asked for, not timed");
+    if sharer_sounds {
+        assert!(
+            packets >= 20,
+            "{packets} packets of sound in about two seconds"
+        );
+        // Put back into Ogg pages, the packets are Opus that decodes.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sound.ogg");
+        std::fs::write(&path, &ogg).unwrap();
+        let probe = std::process::Command::new("ffprobe")
+            .args([
+                "-v",
+                "error",
+                "-count_packets",
+                "-select_streams",
+                "a:0",
+                "-show_entries",
+                "stream=codec_name,sample_rate,channels,nb_read_packets",
+                "-of",
+                "csv=p=0",
+            ])
+            .arg(&path)
+            .output()
+            .unwrap();
+        let probed = String::from_utf8_lossy(&probe.stdout).trim().to_owned();
+        eprintln!("ffprobe sound: {probed}");
+        assert!(probed.starts_with("opus,48000,2,"), "{probed}");
+        let decoded: u32 = probed.rsplit(',').next().unwrap().parse().unwrap();
+        assert_eq!(decoded, packets, "every packet is read back");
+    }
 
     // A keyframe asked for comes from the encoder started again, and the
     // stream goes on from it.
@@ -227,6 +291,7 @@ async fn a_nested_compositor_s_output_is_shared_encoded_and_decodes() {
                     break;
                 }
             }
+            Ok(Some(Viewed::Audio { .. })) => continue,
             other => panic!("expected the keyframe, got {other:?}"),
         }
     }
@@ -258,7 +323,7 @@ async fn a_nested_compositor_s_output_is_shared_encoded_and_decodes() {
     let probed = String::from_utf8_lossy(&probe.stdout).trim().to_owned();
     eprintln!("ffprobe: {probed}");
     assert!(
-        probed.starts_with(&format!("h264,640,{expect_h},yuv444p,")),
+        probed.starts_with(&format!("h264,640,{expect_h},{pix_fmt},")),
         "{probed}"
     );
     let decoded: u32 = probed.rsplit(',').next().unwrap().parse().unwrap();
@@ -285,6 +350,7 @@ async fn a_nested_compositor_s_output_is_shared_encoded_and_decodes() {
                     break;
                 }
             }
+            Ok(Some(Viewed::Audio { .. })) => continue,
             other => panic!("expected the frames to resume, got {other:?}"),
         }
     }
@@ -303,7 +369,7 @@ async fn a_nested_compositor_s_output_is_shared_encoded_and_decodes() {
                 assert_eq!(reason, StopReason::Viewer);
                 break;
             }
-            Ok(Some(Viewed::Frame { .. })) => continue,
+            Ok(Some(Viewed::Frame { .. } | Viewed::Audio { .. })) => continue,
             other => panic!("expected the stop, got {other:?}"),
         }
     }

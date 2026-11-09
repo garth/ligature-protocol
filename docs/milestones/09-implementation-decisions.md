@@ -57,3 +57,58 @@ and the generating capture of `LIGATURE_FAKE_SCREEN=1` encodes stereo Opus and s
 synthetic packets a second when a share asked for sound; the fake-screen daemon decodes Opus
 too, so a cast with sound runs end to end on one machine. A stopped share is forgotten by the
 fake, so `running()` says what runs now.
+
+## LP-200: Linux sound, the window picker and `lpview`'s playback
+
+**Sound is another ffmpeg, through Ogg.** The default output's monitor (`pactl
+get-default-sink` plus `.monitor`, PipeWire's PulseAudio interface) is captured by ffmpeg's
+`pulse` input and encoded by its `libopus` in 20 ms packets at 64 kbit/s a channel, the
+`lowdelay` application; ffmpeg writes bare Opus packets in no form the daemon could cut, so
+it writes Ogg with a page a packet (`-page_duration 20000`, flushed) and the daemon takes
+the packets out of the pages (`screen::ogg`, a reader and a writer of some hundred lines,
+RFC 3533 and RFC 7845). The packets carry no capture time of their own: the sync stamps
+them on arrival, as it does a frame the encoder did not stamp, so sound and picture sit on
+one clock at the sharer and the run measures what the pipelines add. A machine without
+`libopus`, the `pulse` input or a default output advertises no `audioEncodes`, and a sound
+capture that fails or ends leaves the share silent rather than refused or ended. The
+viewer side advertises `audioDecodes` when ffmpeg decodes Opus.
+
+**`lpview` plays through ffmpeg too.** The proposal was `cpal`; ffmpeg already decodes the
+picture in `lpview`, has an output device on both desktops (`pulse` on Linux,
+`audiotoolbox` on a Mac) and needs no new crate or build dependency, so a second ffmpeg takes
+the packets back in Ogg pages (the `ogg::Writer`, with the two header pages first) and plays
+them on the default output with a 60 ms buffer, `-fflags nobuffer -flags low_delay` on its
+input; `--mute` asks for no sound and plays none. Checked here against a null sink with a
+one-second tone; the Mac's device is checked in LP-201's run.
+
+**A window is picked, not listed.** The portal's picker is the only way to a window on
+Linux (`wlr-screencopy` copies outputs alone, and a toplevel-export protocol is Hyprland's
+own), so the Linux capture lists no windows and implements the sync's `pick`: a cast with
+`--window` and no id opens the picker on window sources, with no restore token offered or
+kept, and the stream's size from the portal (1280 by 720 when it gives none) is what the
+offer carries. The picked session waits in a slot under `window-<node>` until the cast's
+`start` names it, and a window share never has an input region. GStreamer's `videoscale`
+now adds borders and the caps fix the pixel aspect, so a window that changes shape is
+letterboxed into the agreed picture rather than stretched, on display shares too.
+
+**The notification says cast.** The sharing notification reads "Casting <source> with
+<device>" for a cast and "Sharing …" for a watch, the source a picked window's label or the
+display's id, with the same Stop action and the same rules.
+
+**Checked in the nested Hyprland, found VA-API.** The ignored `screen_nested` test now asks
+for sound and checks the packets, put back into Ogg, read as Opus by ffprobe: 83 packets in
+about two seconds beside 30 frames, every one read back. The probe found VA-API's H.264
+encoder working on this machine, which it had refused at LP-149, so the share came as 4:2:0
+and the test takes the sharer's first format rather than assuming x264's 4:4:4. A nested
+compositor keeps its window's size until `hyprctl reload` applies the config's monitor line.
+
+**Checked live in the nested Hyprland.** Two fake-screen daemons of one person, paired with
+`lpctl pair --yes` on each, the receiver's daemon running with the nested display: `lpctl
+screen cast castB` on the caster had the receiver's daemon start `lpview --receive`, whose
+window appeared in the nested compositor as `lpview` with the title "castA · fake-1 — click
+to drive", the frames and the sound's packets counted the same on both sides' `lpctl screen
+status` ("casting" and "receiving", with sound), and closing the window ended the cast with
+`viewer` on the caster's `lpctl screen cast`. The fake's synthetic packets are not Opus, so
+`lpview`'s player complained of each and played nothing; real packets, from the nested test's
+capture, decode. `lpview` now sets its Wayland application id and shows the device's name in
+its title when it was given a key, as the daemon gives it.

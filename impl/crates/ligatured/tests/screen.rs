@@ -726,6 +726,32 @@ async fn a_cast_is_offered_taken_and_runs_with_sound() {
         "nothing left to decline"
     );
 
+    // An empty window id lets the platform's picker choose: the fake picks
+    // its first window.
+    let caster = p.sharer_sync.clone();
+    let casting = tokio::spawn(async move {
+        caster
+            .cast(
+                &viewer_key,
+                CastSource {
+                    display: None,
+                    window: Some(String::new()),
+                },
+                false,
+            )
+            .await
+    });
+    let (_, offer) = tokio::time::timeout(Duration::from_secs(5), offers.recv())
+        .await
+        .expect("an offer in time")
+        .expect("the hook is live");
+    assert_eq!(
+        (offer.source.kind, offer.source.id.as_str()),
+        (SourceKind::Window, "w-1")
+    );
+    p.viewer_sync.decline(&sharer_key).unwrap();
+    assert!(casting.await.unwrap().is_err());
+
     // A cast the receiver could not decode is not even offered.
     p.capture.set_encodes(vec![Format::H264_444]);
     let err = p

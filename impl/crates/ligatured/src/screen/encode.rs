@@ -812,6 +812,7 @@ mod tests {
             height: 720,
             frame_rate: 30,
             viewer: String::new(),
+            cast: false,
         };
         let args = encoder_args(Encoder::Vaapi, &input, &settings).join(" ");
         assert!(args.contains("-c:v h264_vaapi -async_depth 1"), "{args}");
@@ -833,6 +834,7 @@ mod tests {
             height: 900,
             frame_rate: 30,
             viewer: "linux".to_owned(),
+            cast: false,
         };
         let args = encoder_args(Encoder::VideoToolbox, &input, &settings).join(" ");
         assert!(args.contains(
@@ -871,6 +873,7 @@ mod tests {
             height: h,
             frame_rate: 30,
             viewer: "test".to_owned(),
+            cast: false,
         };
         let mut child = Command::new("ffmpeg")
             .args(encoder_args(Encoder::X264, &input, &settings))
@@ -948,6 +951,7 @@ mod tests {
             height: h,
             frame_rate: 30,
             viewer: "test".to_owned(),
+            cast: false,
         };
         let (tx, mut rx) = mpsc::unbounded_channel();
         let output = Arc::new(Mutex::new(Instant::now()));

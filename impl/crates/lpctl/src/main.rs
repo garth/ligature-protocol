@@ -193,9 +193,9 @@ enum ScreenAction {
         /// primary one by default.
         #[arg(long, conflicts_with = "window")]
         display: Option<String>,
-        /// A window id, instead of a display (on Linux, the portal's picker
-        /// chooses the window; on a Mac, an id from `displays`).
-        #[arg(long)]
+        /// A window instead of a display: an id from `displays` on a Mac,
+        /// or no id to choose the window in the portal's picker on Linux.
+        #[arg(long, num_args = 0..=1, default_missing_value = "")]
         window: Option<String>,
         /// Cast the picture alone, without this device's sound.
         #[arg(long)]

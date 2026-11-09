@@ -41,6 +41,8 @@ use tokio::sync::{mpsc, oneshot};
 use crate::daemon::Daemon;
 
 pub mod encode;
+pub mod ogg;
+pub mod sound;
 
 /// How often the capture's flags are re-read for the manifest.
 const ADVERTISE_POLL: Duration = Duration::from_secs(1);
@@ -118,6 +120,9 @@ pub struct Settings {
     pub frame_rate: u32,
     /// The viewing device's name, for the platform's sharing indicator.
     pub viewer: String,
+    /// Whether this device started the share, as a cast: the indicator says
+    /// so.
+    pub cast: bool,
 }
 
 impl Settings {
@@ -161,6 +166,18 @@ pub trait Capture: Send + Sync {
     /// pick one without a picker; empty elsewhere.
     fn windows(&self) -> Vec<Window> {
         Vec::new()
+    }
+    /// Lets the platform's own picker choose a source of `kind` for a cast,
+    /// where the platform has one (the ScreenCast portal on Linux), and
+    /// returns it with an id a later `start` may name. Blocks on the picker,
+    /// so it runs off the async runtime. Elsewhere there is nothing to pick.
+    ///
+    /// # Errors
+    ///
+    /// `NoDisplay` when the platform has no picker for `kind`, `Consent`
+    /// when the person dismissed it.
+    fn pick(&self, _kind: SourceKind) -> Result<Source, RefuseReason> {
+        Err(RefuseReason::NoDisplay)
     }
     /// Where `display` lies in the whole screen, for a device with several.
     fn region(&self, _display: &str) -> Option<Region> {
@@ -704,6 +721,17 @@ impl ScreenSync {
             ));
         }
         let (chosen, kind) = match (&source.window, &source.display) {
+            // An empty window id: the platform's picker chooses.
+            (Some(id), _) if id.is_empty() => {
+                let picker = capture.clone();
+                let picked = tokio::task::spawn_blocking(move || picker.pick(SourceKind::Window))
+                    .await
+                    .map_err(|_| Error::Io("the window picker did not answer".to_owned()))?
+                    .map_err(|reason| {
+                        Error::Refused(format!("no window was picked to cast: {reason}"))
+                    })?;
+                (picked, SourceKind::Window)
+            }
             (Some(id), _) => (
                 capture
                     .windows()
@@ -774,7 +802,7 @@ impl ScreenSync {
             }
         };
         let (settings, share) = match self
-            .start_share(&capture, peer, &chosen, kind, &start, &mut stream)
+            .start_share(&capture, peer, &chosen, kind, &start, true)
             .await
         {
             Ok(started) => started,
@@ -1088,7 +1116,7 @@ impl ScreenSync {
             },
         };
         let (settings, share) = match self
-            .start_share(&capture, &peer, &chosen, kind, &start, &mut stream)
+            .start_share(&capture, &peer, &chosen, kind, &start, false)
             .await
         {
             Ok(started) => started,
@@ -1196,7 +1224,7 @@ impl ScreenSync {
         chosen: &Source,
         kind: SourceKind,
         start: &Start,
-        _stream: &mut FramedStream,
+        cast: bool,
     ) -> Result<(Settings, Share), RefuseReason> {
         let params = capture.params();
         if !params.shares {
@@ -1231,6 +1259,7 @@ impl ScreenSync {
                 .daemon
                 .device_display_name(peer)
                 .unwrap_or_else(|| peer.fingerprint()),
+            cast,
         };
         let starting = {
             let capture = capture.clone();
@@ -1499,17 +1528,19 @@ pub const VIEW_RATE: u32 = 60;
 /// The viewer params a desktop daemon advertises: views when ffmpeg decodes
 /// H.264, which `lpview` uses, at 4:4:4 first, since its software decoder
 /// takes it and it keeps coloured text sharp, and at 4:2:0, up to
-/// [`VIEW_RATE`].
+/// [`VIEW_RATE`]; plays a share's sound when ffmpeg decodes Opus too.
 #[must_use]
 pub fn viewer_params() -> Option<ScreenParams> {
-    viewer_params_for(probe_decoder())
+    viewer_params_for(probe_decoder(), sound::probe_decoder())
 }
 
-/// [`viewer_params`] for a daemon that does or does not have a decoder.
-fn viewer_params_for(decodes: bool) -> Option<ScreenParams> {
+/// [`viewer_params`] for a daemon that does or does not have a picture
+/// decoder, and a sound decoder.
+fn viewer_params_for(decodes: bool, plays: bool) -> Option<ScreenParams> {
     decodes.then(|| ScreenParams {
         views: true,
         decodes: vec![Format::H264_444, Format::H264],
+        audio_decodes: if plays { sound::decodes() } else { Vec::new() },
         max_frame_rate: VIEW_RATE,
         ..ScreenParams::default()
     })
@@ -1556,7 +1587,9 @@ pub fn lpview_launcher(locations: &lp_core::paths::Locations) -> Option<OnOffer>
             .arg(peer.to_string())
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
+            // Its complaints go where the daemon's do: the journal, or the
+            // terminal of a daemon run by hand.
+            .stderr(std::process::Stdio::inherit())
             .spawn()
         {
             Ok(_) => tracing::info!(%peer, source = %name, "lpview started for an offered cast"),
@@ -1727,6 +1760,14 @@ impl Capture for FakeCapture {
 
     fn windows(&self) -> Vec<Window> {
         self.windows.clone()
+    }
+
+    /// The fake's picker chooses its first window.
+    fn pick(&self, kind: SourceKind) -> Result<Source, RefuseReason> {
+        match (kind, self.windows.first()) {
+            (SourceKind::Window, Some(w)) => Ok(Source::window(w)),
+            _ => Err(RefuseReason::NoDisplay),
+        }
     }
 
     fn start(&self, settings: &Settings) -> Result<Share, RefuseReason> {
@@ -2154,6 +2195,7 @@ mod tests {
             height: 480,
             frame_rate: 30,
             viewer: "mac".to_owned(),
+            cast: true,
         };
         let started = settings.started();
         assert_eq!(started.window.as_deref(), Some("w-1"));
@@ -2219,9 +2261,16 @@ mod tests {
     fn a_viewer_takes_and_asks_for_sixty_frames_a_second() {
         // LP-177: every per-frame wait halves at 60.
         assert_eq!(VIEW_RATE, 60);
-        let params = viewer_params_for(true).expect("a decoder views");
+        let params = viewer_params_for(true, true).expect("a decoder views");
         assert_eq!(params.max_frame_rate, VIEW_RATE);
-        assert!(viewer_params_for(false).is_none());
+        assert_eq!(params.audio_decodes, sound::decodes());
+        assert!(
+            viewer_params_for(true, false)
+                .unwrap()
+                .audio_decodes
+                .is_empty()
+        );
+        assert!(viewer_params_for(false, true).is_none());
     }
 
     fn f(key: bool, n: u8) -> EncodedFrame {

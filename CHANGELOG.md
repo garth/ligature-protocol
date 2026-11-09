@@ -20,7 +20,11 @@ release workflow publishes the section as the release notes with the installers.
 - Sound with the picture: `audioEncodes` and `audioDecodes` params, `audio` formats in
   `start`, `offer` and `started` (Opus, 48 kHz, mono or stereo), and `audio` packets of 20 ms
   on the share's stream between the frame chunks, on the frames' clock and never dropped for
-  flow control; `lpctl screen start --audio-out` records them (LP-198, LP-199).
+  flow control; `lpctl screen start --audio-out` records them (LP-198, LP-199). On Linux the
+  default output's sound is captured through PipeWire and encoded by ffmpeg's `libopus`,
+  `lpview` plays a share's sound through ffmpeg (`--mute` for the picture alone), a cast with
+  `--window` and no id picks the window in the portal's picker, and a window that changes
+  shape is letterboxed (LP-200).
 
 ## [0.2.0-alpha] - 2026-11-08
 

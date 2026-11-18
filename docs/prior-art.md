@@ -8,8 +8,8 @@ what LP takes from it and where LP differs. This list is a starting point and sh
 **KDE Connect**: Mature Linux-to-Android device integration (notifications, clipboard,
 file transfer, remote input, media control) over a TLS-secured LAN protocol with mDNS
 discovery. LP takes its capability list and plugin architecture as a reference. LP differs
-by having a user identity above the device, group encryption instead of pairwise TLS, and
-a remote path. LP intends to bridge to KDE Connect.
+by having a user identity above the device and a remote path. LP intends to bridge to KDE
+Connect.
 
 **Valent**: A GNOME-oriented implementation of the KDE Connect protocol. Useful evidence
 that the KDE Connect protocol is implementable independently.
@@ -105,10 +105,12 @@ capabilities.
 
 **Apple BLE accessory profiles (ANCS, AMS) and Bluetooth HFP/MAP/PBAP**: The only way for a
 non-Apple device to receive iPhone notifications, control media, and access calls, messages
-and contacts without an app. Basis for LP's iPhone support (ADR 0010).
+and contacts without an app. The path ADR 0010 names for an iPhone; no milestone is planned
+for Apple phones and tablets
+([platform notes](spec/08-platform-notes.md#4-ios-and-ipados)).
 
 **EU Digital Markets Act interoperability**: Emerging iOS APIs mandated in the EU for
-third-party device interoperability; LP will adopt them where available.
+third-party device interoperability, the other path ADR 0010 names.
 
 ## Calendar and contacts
 

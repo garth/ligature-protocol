@@ -98,8 +98,9 @@ depends on what Android allows:
   Opening the app also sends what is on the clipboard.
 - **With `DriveService` on under Accessibility** (any ROM): the service sees SystemUI's
   clipboard indicator appear, takes the focus for a moment with an invisible window, reads and
-  sends. Android shows its toast for each read, a copy within about six seconds of the last is
-  not noticed, and a clip marked sensitive is passed over.
+  sends. Android shows its toast for each read, a copy within about six seconds of the last
+  raises no event and is sent once the indicator has gone, and a clip marked sensitive is
+  passed over.
 - **Platform-signed build** (a LineageOS you build yourself, or any ROM whose platform key
   you hold): the app declares `android.permission.READ_CLIPBOARD_IN_BACKGROUND`, which is
   granted only to apps signed with the platform certificate. With it every copy is sent as
@@ -122,8 +123,8 @@ depends on what Android allows:
 
 ## Touchpad
 
-Once a desktop of yours that accepts input is connected (a Linux machine, with milestone
-7), the main screen shows a Touchpad card with a button per desktop. Tapping one opens the
+Once a desktop of yours that accepts input is connected (a Linux machine or a Mac),
+the main screen shows a Touchpad card with a button per desktop. Tapping one opens the
 touchpad: one finger moves the pointer, a tap clicks, a touch held still presses and drags
 until the finger lifts, two fingers scroll, and the field at the bottom types what the
 phone's keyboard produces, with Backspace, Enter and right-click buttons. The pointer starts
@@ -134,7 +135,7 @@ inject (chapter 08).
 
 ## Screen
 
-A desktop of yours that shares its screen (a Linux machine with ffmpeg, milestone 8) shows
+A desktop of yours that shares its screen (a Linux machine with ffmpeg, or a Mac) shows
 on the main screen as a Watch button. Watching shows its primary display at its shape;
 touching the picture drives it: a tap clicks where it lands, a drag moves the pointer
 there, a touch held still then dragged drags with the button down, two fingers scroll,

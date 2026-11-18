@@ -7,7 +7,7 @@ platform allows. Each platform differs in what it can see of its own notificatio
 | Device | Shows the others' notifications | Sends its own |
 | --- | --- | --- |
 | Linux | Yes, through the desktop's notification service | Yes, by watching the session bus |
-| macOS | Yes, without icons | No: macOS lets no third party read them |
+| macOS | Yes | No: macOS lets no third party read them |
 | Android | Yes | Yes, once you grant notification access |
 
 ## Linux

@@ -20,7 +20,8 @@ and then stopped, and the share's carriage watches for that. It used to notice o
 next frame failed to reach the viewer, so a share whose capture had stalled outlived its
 viewer and refused the next as `busy`.
 
-**Two traits again, either side optional.** `ligatured::screen::Capture` is the sharer's
+**A trait for the sharer and parameters for the viewer, either side optional.**
+`ligatured::screen::Capture` is the sharer's
 platform: it lists displays and starts a share, which hands back a channel of encoded frames
 and a control channel for keyframe requests and the stop; it may block on the platform's
 consent dialog, so the sync calls it off the runtime. The viewer side is not a trait: it is

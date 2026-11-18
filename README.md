@@ -256,7 +256,7 @@ follow them.
    progress and cancel, and a receiver can fetch content a sender has offered
    ([plan](docs/milestones/04-files.md)).
 5. **A clipboard that carries rich text, images and files.** Done: a `set` carries several
-   representations of one selection, small content is pushed on copy as text is today, and
+   representations of one selection, small content is pushed on copy, and
    large content is announced and fetched only when pasted
    ([plan](docs/milestones/05-rich-clipboard.md)).
 6. **The phone's SMS and calls, and media control.** Planned: messages and calls that

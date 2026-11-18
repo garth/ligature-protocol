@@ -157,8 +157,8 @@ The reference implementation is Rust and is also the production implementation
   the wire conversion in `lp-core::camera`, a `Presenter` beside the viewer, `camera_linux`
   with readers that forbid PipeWire's fallback to another device, `camera_macos` over
   `lp_macos::camera`, `HostCamera` and the app's `CameraShareService`).
-  macOS share the clipboard) and `01-implementation-decisions.md` records its non-protocol
-  choices (store is
+  `01-clipboard-poc.md` is done (Linux and macOS share the clipboard) and
+  `01-implementation-decisions.md` records its non-protocol choices (store is
   SQLite via rusqlite bundled; keys in a separate 0600 file; state under `data/` in the
   project root during milestone 1, gitignored, and in the platform data directory since
   LP-85; no configuration file; `lpctl init --name` creates the first identity).

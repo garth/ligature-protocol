@@ -283,7 +283,7 @@ flowchart LR
   and the plist gains what it needs.
 - **Migration.** Only the dialling side's address can change under QUIC version 1, and the
   phone is the dialler only when it connected first. The exit criterion holds either way
-  for a roam that keeps the address and is recorded honestly for one that does not.
+  for a roam that keeps the address and is recorded for one that does not.
 - **Disk full mid-transfer.** The free-space check before `accept` is advisory; a write
   that fails later is a `failed` with `no-space` and a removed part file, and the sender
   moves on to nothing, since the stream is reset.

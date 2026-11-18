@@ -75,7 +75,7 @@ accepted, and either key works. The revocation reaches your other devices at onc
 are connected and at their next session otherwise, and every device closes any session it
 holds with the revoked one and refuses it from then on. The device stays in the list marked
 `REVOKED`, so you can see what was cut off; nothing undoes a revocation. The revoked device
-itself cannot announce or reverse anything: it simply finds no device that will talk to it.
+itself cannot announce or reverse anything: it finds no device that will talk to it.
 
 Revoking a device you are still using is possible and final. Pair it again afterwards, with
 a fresh install, as a new device.
@@ -84,7 +84,7 @@ a fresh install, as a new device.
 
 There is nothing to recover and no one to ask: your identity lived on your devices alone.
 Start over on a fresh install with `lpctl init` or **Create my keys on this phone**, pair
-the devices you still hold, and revoke nothing, since the old key simply disappears. Other
+the devices you still hold, and revoke nothing, since the old key disappears. Other
 people who knew the old key would re-verify you in person; today no one does, since the apps
 pair only your own devices.
 

@@ -85,7 +85,7 @@ the READMEs under `impl/` and `vectors/` included, with the version its action b
 same on every Markdown change:
 
 ```sh
-npx --yes markdownlint-cli2@0.23.2 "**/*.md"
+npx --yes markdownlint-cli2@0.24.0 "**/*.md"
 ```
 
 Every schema must compile under draft 2020-12 with formats, with `-r` for each schema it

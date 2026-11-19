@@ -116,7 +116,7 @@ cargo test --workspace
 cargo deny check
 cargo ndk -t arm64-v8a -t x86_64 build -p ligature-android --release     # the Android library
 (cd android && ./gradlew assembleDebug)                                   # the APK, bindings regenerated
-npx --yes markdownlint-cli2@0.23.2 "**/*.md"                                     # from the repository root
+npx --yes markdownlint-cli2@0.24.0 "**/*.md"                                     # from the repository root
 ```
 
 A flaky test is looped before it is blamed on an update; the two-node and multi-daemon

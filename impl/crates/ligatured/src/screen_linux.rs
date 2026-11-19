@@ -490,7 +490,7 @@ impl LinuxScreen {
                         proxy.available_source_types().await
                     })
                     .is_ok_and(|types| {
-                        types.contains(ashpd::desktop::screencast::SourceType::Monitor)
+                        types.contains(ashpd::desktop::screencast::SourceType::MONITOR)
                     })
         };
         let mut portal = probe_portal();
@@ -551,11 +551,11 @@ impl LinuxScreen {
         use ashpd::desktop::{CreateSessionOptions, PersistMode};
         let (source_type, token, persist) = match kind {
             SourceKind::Display => (
-                SourceType::Monitor,
+                SourceType::MONITOR,
                 self.store.local_setting(RESTORE_TOKEN_KEY).ok().flatten(),
                 PersistMode::ExplicitlyRevoked,
             ),
-            SourceKind::Window => (SourceType::Window, None, PersistMode::DoNot),
+            SourceKind::Window => (SourceType::WINDOW, None, PersistMode::DoNot),
             // A camera is the camera family's, never the portal's screen cast.
             SourceKind::Camera => return Err(RefuseReason::NoDisplay),
         };
@@ -569,8 +569,8 @@ impl LinuxScreen {
                 .select_sources(
                     &session,
                     SelectSourcesOptions::default()
-                        .set_cursor_mode(CursorMode::Embedded)
-                        .set_sources(ashpd::enumflags2::BitFlags::from_flag(source_type))
+                        .set_cursor_mode(CursorMode::EMBEDDED)
+                        .set_sources(source_type)
                         .set_multiple(false)
                         .set_restore_token(token.as_deref())
                         .set_persist_mode(persist),

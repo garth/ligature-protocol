@@ -46,13 +46,13 @@ hex = "0.4"
 base64 = { version = "0.23", default-features = false, features = ["std"] }
 time = { version = "0.3", features = ["std", "formatting", "parsing", "serde-well-known", "macros"] }
 tokio = { version = "1.53", features = ["rt-multi-thread", "net", "sync", "time", "macros", "fs", "io-util", "signal"] }
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.43", features = ["bundled"] }
 
 # Networking and discovery (LP-28). ring is the rustls provider on both platforms;
 # no platform verifier, since peers are verified as raw public keys.
 quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring", "log"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "logging"] }
-mdns-sd = "0.21"
+mdns-sd = "0.22"
 if-addrs = "0.15"
 
 # The daemon, the CLI and the Android library: the daemon's own crates, logging,
@@ -75,7 +75,7 @@ semver = "1.0"
 tempfile = "3"
 # blake2: minisign prehashes with BLAKE2b-512, so a test can sign as minisign does.
 blake2 = "0.11"
-jsonschema = { version = "0.60", default-features = false }
+jsonschema = { version = "0.61", default-features = false }
 
 # Platform integration (LP-29). Clipboard, notification and pasteboard crates are
 # target-gated in ligatured; library crates never depend on them.
@@ -89,7 +89,7 @@ wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 wayland-protocols-misc = { version = "0.3", features = ["client"] }
 reis = { version = "0.7", features = ["tokio"] }
 # The portal wrapper, for the InputCapture session, barriers and signals.
-ashpd = { version = "0.13", default-features = false, features = ["tokio", "input_capture", "screencast"] }
+ashpd = { version = "0.14", default-features = false, features = ["tokio", "input_capture", "screencast"] }
 # lpview (LP-149): a window and a software framebuffer to draw decoded frames
 # in, without a GPU or toolkit dependency; client-side decorations without a
 # title font.

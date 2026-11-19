@@ -1521,7 +1521,7 @@ impl LinuxCapture {
             .create_session(
                 None,
                 CreateSessionOptions::default()
-                    .set_capabilities(Capabilities::Keyboard | Capabilities::Pointer),
+                    .set_capabilities(Capabilities::KEYBOARD | Capabilities::POINTER),
             )
             .await
             .map_err(portal_err)?;

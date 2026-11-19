@@ -107,8 +107,8 @@ async fn a_stale_socket_file_is_replaced() {
 }
 
 /// `permissions` is answered by the router itself, whatever capabilities the
-/// daemon has (LP-169): the Mac lists its three, any other platform an empty
-/// list.
+/// daemon has (LP-169): the Mac lists its five (LP-208), any other platform an
+/// empty list.
 #[tokio::test]
 async fn permissions_are_answered_over_the_socket() {
     use ligatured::control::Permissions;
@@ -129,7 +129,13 @@ async fn permissions_are_answered_over_the_socket() {
     if cfg!(target_os = "macos") {
         assert_eq!(
             names,
-            ["accessibility", "input-monitoring", "screen-recording"]
+            [
+                "accessibility",
+                "input-monitoring",
+                "screen-recording",
+                "camera",
+                "microphone"
+            ]
         );
     } else {
         assert!(names.is_empty());

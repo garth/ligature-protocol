@@ -875,7 +875,8 @@ pub async fn handle(
                 id,
                 ErrorBody::new(
                     "bad-request",
-                    "permissions.request needs accessibility, input-monitoring or screen-recording",
+                    "permissions.request needs accessibility, input-monitoring, \
+                     screen-recording, camera or microphone",
                 ),
             )),
         },
